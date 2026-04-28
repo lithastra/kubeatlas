@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# KubeAtlas generated artifacts
+output/*
+!output/.gitkeep
+bin/
