@@ -31,6 +31,11 @@ var skippedGVRs = map[string]bool{
 	"authentication.k8s.io/v1/tokenreviews":            true,
 	"authorization.k8s.io/v1/subjectaccessreviews":     true,
 	"authorization.k8s.io/v1/selfsubjectaccessreviews": true,
+	// Endpoints and EndpointSlices are auto-derived from Service selectors
+	// by the control plane; they carry no architectural intent. v1/endpoints
+	// also emits a deprecation warning in k8s 1.33+ (use EndpointSlice).
+	"v1/endpoints":                       true,
+	"discovery.k8s.io/v1/endpointslices": true,
 }
 
 // Client wraps the Kubernetes discovery and dynamic clients, and caches the

@@ -1,0 +1,27 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: '1.26'
+
+linters:
+  default: none
+  enable:
+    - errcheck      # Catch unchecked errors
+    - govet         # Reports suspicious constructs
+    - ineffassign   # Detects unused assignments
+    - staticcheck   # The big one: lots of useful checks (includes gosimple in v2)
+    - unused        # Find unused code
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - fmt.Print
+        - fmt.Println
+        - fmt.Printf
+        - fmt.Fprintln(os.Stderr)
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck   # Tests can ignore errors more freely

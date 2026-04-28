@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  non-ascii-check:
+    name: No non-ASCII in source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan source paths for CJK characters
+        run: |
+          set -e
+          # Match any CJK character in the listed source dirs.
+          # docs/<locale>/ is exempt by not being in the search path.
+          if grep -rPnI '[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]' \
+               cmd pkg 2>/dev/null; then
+            echo "::error::Non-ASCII (CJK) characters found in source paths."
+            echo "Source code, comments, and identifiers MUST be English."
+            exit 1
+          fi
+          echo "OK: no CJK characters in cmd/ or pkg/."
+
+  commitlint:
+    name: Commit messages follow Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-save @commitlint/cli@19 @commitlint/config-conventional@19
+      - name: Validate PR title (if PR)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx commitlint --extends '@commitlint/config-conventional'
+      - name: Validate commits in PR
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          npx commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+  dco-check:
+    name: All commits signed off (DCO)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify Signed-off-by on each commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -e
+          missing=$(git log --format='%H %s' "${BASE_SHA}..${HEAD_SHA}" | while read sha rest; do
+            if ! git log -1 --format=%B "$sha" | grep -q "^Signed-off-by: "; then
+              echo "$sha"
+            fi
+          done)
+          if [ -n "$missing" ]; then
+            echo "::error::The following commits are missing a Signed-off-by line:"
+            echo "$missing"
+            echo "Run: git rebase --signoff main"
+            exit 1
+          fi
+          echo "OK: all commits are signed off."
+
+  go-test:
+    name: Go tests + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - run: go test -race -coverprofile=cover.out ./...
+      - run: go tool cover -func=cover.out | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: cover.out
+
+  go-lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.11.4

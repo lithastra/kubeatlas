@@ -37,16 +37,16 @@ func ToDOT(g *Graph) string {
 		// different namespaces are visually distinct. Cluster-scoped resources
 		// (empty Namespace) render as "Kind\n/Name", matching Resource.ID().
 		label := fmt.Sprintf("%s\\n%s/%s", r.Kind, r.Namespace, r.Name)
-		b.WriteString(fmt.Sprintf("  \"%s\" [label=\"%s\", fillcolor=\"%s\", fontcolor=\"white\"];\n",
-			r.ID(), label, color))
+		fmt.Fprintf(&b, "  \"%s\" [label=\"%s\", fillcolor=\"%s\", fontcolor=\"white\"];\n",
+			r.ID(), label, color)
 	}
 
 	b.WriteString("\n")
 
 	// Edges
 	for _, e := range g.Edges {
-		b.WriteString(fmt.Sprintf("  \"%s\" -> \"%s\" [label=\"%s\"];\n",
-			e.From, e.To, e.Relation))
+		fmt.Fprintf(&b, "  \"%s\" -> \"%s\" [label=\"%s\"];\n",
+			e.From, e.To, e.Relation)
 	}
 
 	b.WriteString("}\n")
