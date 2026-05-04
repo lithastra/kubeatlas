@@ -67,30 +67,14 @@ done
 
 # ---------------------------------------------------------------------
 # Assertion 2: every Phase 0 edge type is present at least once.
-# Falls back to the legacy 'relation' field when 'type' is empty (PoC
-# extractor path emits relation-strings; the new extractor path emits
-# typed edges). Either signal counts.
+# All edges now carry the typed `type` field (the PoC's `relation`
+# field was removed in Phase 1 W5).
 # ---------------------------------------------------------------------
-declare -A EDGE_FROM_RELATION=(
-  [OWNS]="ownerRef"
-  [USES_CONFIGMAP]="configMapRef"
-  [USES_SECRET]="secretRef"
-  [MOUNTS_VOLUME]="persistentVolumeClaim"
-  [SELECTS]="selector"
-  [USES_SERVICEACCOUNT]="serviceAccountName"
-  [ROUTES_TO]="backend"
-  [ATTACHED_TO]="parentRef"
-)
 EXPECTED_EDGES=(OWNS USES_CONFIGMAP USES_SECRET MOUNTS_VOLUME SELECTS USES_SERVICEACCOUNT ROUTES_TO ATTACHED_TO)
 for EDGE in "${EXPECTED_EDGES[@]}"; do
-  TYPE_COUNT=$(jq "[.edges[] | select(.type == \"${EDGE}\")] | length" "${GRAPH_RESOURCE}")
-  REL_COUNT=0
-  if [[ -n "${EDGE_FROM_RELATION[$EDGE]:-}" ]]; then
-    REL_COUNT=$(jq "[.edges[] | select(.relation == \"${EDGE_FROM_RELATION[$EDGE]}\")] | length" "${GRAPH_RESOURCE}")
-  fi
-  TOTAL=$((TYPE_COUNT + REL_COUNT))
-  [[ "${TOTAL}" -gt 0 ]] || fail "no ${EDGE} edges in ${GRAPH_RESOURCE}"
-  ok "${EDGE}: ${TOTAL} (type=${TYPE_COUNT} relation=${REL_COUNT})"
+  COUNT=$(jq "[.edges[] | select(.type == \"${EDGE}\")] | length" "${GRAPH_RESOURCE}")
+  [[ "${COUNT}" -gt 0 ]] || fail "no ${EDGE} edges in ${GRAPH_RESOURCE}"
+  ok "${EDGE}: ${COUNT}"
 done
 
 # ---------------------------------------------------------------------
@@ -104,13 +88,10 @@ ok "blacklist enforced (no Event/Lease/Endpoints/etc.)"
 
 # ---------------------------------------------------------------------
 # Assertion 4: api Pod -> ReplicaSet OWNS edge exists.
-# Accepts either the typed edge (type=OWNS) or the legacy relation
-# (relation=ownerRef) so this passes against either extraction path.
 # ---------------------------------------------------------------------
 API_POD_OWNER=$(jq -r '
   .edges[]
-  | select(((.type == "OWNS") or (.relation == "ownerRef"))
-           and ((.from | tostring) | contains("/Pod/api-")))
+  | select((.type == "OWNS") and ((.from | tostring) | contains("/Pod/api-")))
   | .to' "${GRAPH_RESOURCE}" | head -1)
 [[ "${API_POD_OWNER}" == *"/ReplicaSet/api-"* ]] || \
   fail "api Pod owner chain broken (got: '${API_POD_OWNER}')"

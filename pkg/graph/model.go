@@ -76,14 +76,9 @@ var AllEdgeTypes = []EdgeType{
 
 // Edge represents a directed dependency between two resources.
 type Edge struct {
-	From string   `json:"from"`           // Resource ID
-	To   string   `json:"to"`             // Resource ID
-	Type EdgeType `json:"type,omitempty"` // Phase 0 W2: strongly typed
-
-	// Deprecated: use Type. Kept for one release cycle for backward
-	// compatibility with PoC-era JSON output. Will be removed in
-	// Phase 1 W5.
-	Relation string `json:"relation,omitempty"`
+	From string   `json:"from"` // Resource ID
+	To   string   `json:"to"`   // Resource ID
+	Type EdgeType `json:"type"` // strongly typed; one of AllEdgeTypes
 }
 
 // Graph is a snapshot of the dependency graph.

@@ -105,25 +105,10 @@ func TestAllEdgeTypes_CoversAllConstants(t *testing.T) {
 	}
 }
 
-func TestEdge_DeprecatedRelationStillRoundTrips(t *testing.T) {
-	// PoC-era output that only set Relation (no Type) must still parse.
-	pocJSON := `{"from":"a","to":"b","relation":"configMapRef"}`
-	var e Edge
-	if err := json.Unmarshal([]byte(pocJSON), &e); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if e.Relation != "configMapRef" {
-		t.Errorf("Relation = %q, want configMapRef", e.Relation)
-	}
-	if e.Type != "" {
-		t.Errorf("Type = %q, want empty (PoC payload had no type)", e.Type)
-	}
-}
-
-func TestEdge_TypeAndRelationCoexist(t *testing.T) {
-	// During the deprecation window, an Edge may have both Type (new)
-	// and Relation (legacy mirror). JSON output should include both.
-	e := Edge{From: "a", To: "b", Type: EdgeTypeUsesConfigMap, Relation: "configMapRef"}
+func TestEdge_MarshalsTypedFields(t *testing.T) {
+	// Edges marshal with from/to/type only — no legacy "relation" key
+	// (removed in Phase 1 W5 along with the PoC-era extractor wrapper).
+	e := Edge{From: "a", To: "b", Type: EdgeTypeUsesConfigMap}
 	b, err := json.Marshal(e)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -132,8 +117,8 @@ func TestEdge_TypeAndRelationCoexist(t *testing.T) {
 	if !contains(got, `"type":"USES_CONFIGMAP"`) {
 		t.Errorf("missing type field in %s", got)
 	}
-	if !contains(got, `"relation":"configMapRef"`) {
-		t.Errorf("missing relation field in %s", got)
+	if contains(got, `"relation"`) {
+		t.Errorf("legacy relation field unexpectedly present in %s", got)
 	}
 }
 

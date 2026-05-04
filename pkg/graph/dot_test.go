@@ -13,9 +13,9 @@ func TestToDOT_ContainsHeaderNodesAndEdge(t *testing.T) {
 		},
 		Edges: []Edge{
 			{
-				From:     "demo/Deployment/web-app",
-				To:       "demo/ConfigMap/app-config",
-				Relation: "configMapRef",
+				From: "demo/Deployment/web-app",
+				To:   "demo/ConfigMap/app-config",
+				Type: EdgeTypeUsesConfigMap,
 			},
 		},
 	}
@@ -30,7 +30,7 @@ func TestToDOT_ContainsHeaderNodesAndEdge(t *testing.T) {
 		"label=\"Deployment\\ndemo/web-app\"",
 		"label=\"ConfigMap\\ndemo/app-config\"",
 		"\"demo/Deployment/web-app\" -> \"demo/ConfigMap/app-config\"",
-		"label=\"configMapRef\"",
+		"label=\"USES_CONFIGMAP\"",
 	}
 	for _, w := range wants {
 		if !strings.Contains(out, w) {

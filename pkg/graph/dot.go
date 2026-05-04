@@ -46,7 +46,7 @@ func ToDOT(g *Graph) string {
 	// Edges
 	for _, e := range g.Edges {
 		fmt.Fprintf(&b, "  \"%s\" -> \"%s\" [label=\"%s\"];\n",
-			e.From, e.To, e.Relation)
+			e.From, e.To, string(e.Type))
 	}
 
 	b.WriteString("}\n")

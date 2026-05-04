@@ -56,11 +56,8 @@ func runOnce(level, namespace string) {
 	}
 
 	// Extract edges through the typed extractor.Registry, the same path
-	// the informer uses. This gives -once mode full coverage of all
-	// eight Phase 0 edge types — the PoC's client.ExtractDependencies
-	// only ever emitted a subset (no MOUNTS_VOLUME, no
-	// USES_SERVICEACCOUNT). The deprecated PoC method remains exported
-	// for one release cycle and is removed in Phase 1 W5.
+	// the informer uses, so -once mode and the watch loop produce the
+	// same eight edge types from the same code.
 	reg := extractor.Default()
 	for _, r := range resources {
 		for _, e := range reg.ExtractAll(r, resources) {
