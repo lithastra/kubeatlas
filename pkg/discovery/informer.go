@@ -256,7 +256,8 @@ func defaultKindFromResource(r string) string {
 }
 
 // unstructuredToResource builds a graph.Resource from a K8s object,
-// populating all the W2-introduced metadata fields.
+// populating all the W2-introduced metadata fields plus the Raw
+// unstructured object that extractors use to read spec-level fields.
 func unstructuredToResource(u *unstructured.Unstructured, kind string) graph.Resource {
 	r := graph.Resource{
 		Kind:            kind,
@@ -267,6 +268,7 @@ func unstructuredToResource(u *unstructured.Unstructured, kind string) graph.Res
 		UID:             u.GetUID(),
 		Annotations:     u.GetAnnotations(),
 		ResourceVersion: u.GetResourceVersion(),
+		Raw:             u.DeepCopy().Object,
 	}
 	if owners := u.GetOwnerReferences(); len(owners) > 0 {
 		r.OwnerReferences = make([]graph.OwnerRef, 0, len(owners))

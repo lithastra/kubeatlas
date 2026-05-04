@@ -18,6 +18,13 @@ type Resource struct {
 	Annotations     map[string]string `json:"annotations,omitempty"`
 	OwnerReferences []OwnerRef        `json:"ownerReferences,omitempty"`
 	ResourceVersion string            `json:"resourceVersion,omitempty"`
+
+	// Raw carries the full unstructured object as it came from the
+	// apiserver. Extractors (pkg/extractor) read spec-level fields
+	// from it. Marked json:"-" because it duplicates the structured
+	// fields above and would double the serialized payload — clients
+	// don't need it on the wire.
+	Raw map[string]any `json:"-"`
 }
 
 // OwnerRef captures the K8s metadata.ownerReferences entry that the

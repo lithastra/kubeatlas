@@ -137,6 +137,14 @@ func TestEdge_TypeAndRelationCoexist(t *testing.T) {
 	}
 }
 
+func TestErrNotFound_FormatsID(t *testing.T) {
+	err := ErrNotFound{ID: "demo/Pod/missing"}
+	want := "resource not found: demo/Pod/missing"
+	if err.Error() != want {
+		t.Errorf("Error() = %q, want %q", err.Error(), want)
+	}
+}
+
 // contains is a tiny helper so tests don't need to import strings.
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {

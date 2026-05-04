@@ -36,6 +36,13 @@ var skippedGVRs = map[string]bool{
 	// also emits a deprecation warning in k8s 1.33+ (use EndpointSlice).
 	"v1/endpoints":                       true,
 	"discovery.k8s.io/v1/endpointslices": true,
+	// ComponentStatus is etcd/scheduler/controller-manager health
+	// (observability), not an architectural building block, and is
+	// deprecated since k8s 1.19.
+	"v1/componentstatuses": true,
+	// Bindings are write-only (used by the scheduler to bind a Pod to
+	// a Node); they have no list semantics worth graphing.
+	"v1/bindings": true,
 }
 
 // Client wraps the Kubernetes discovery and dynamic clients, and caches the
@@ -98,7 +105,9 @@ func (c *Client) CollectAll() ([]graph.Resource, error) {
 			continue
 		}
 		for _, r := range list.APIResources {
-			if !r.Namespaced || strings.Contains(r.Name, "/") {
+			// Skip subresources (status, scale, etc.) — they appear with a
+			// "/" in the resource name.
+			if strings.Contains(r.Name, "/") {
 				continue
 			}
 			if !hasVerb(r.Verbs, "list") {
@@ -127,12 +136,28 @@ func (c *Client) CollectAll() ([]graph.Resource, error) {
 }
 
 func toResource(u *unstructured.Unstructured, kind string) graph.Resource {
-	return graph.Resource{
-		Kind:      kind,
-		Name:      u.GetName(),
-		Namespace: u.GetNamespace(),
-		Labels:    u.GetLabels(),
+	r := graph.Resource{
+		Kind:            kind,
+		Name:            u.GetName(),
+		Namespace:       u.GetNamespace(),
+		Labels:          u.GetLabels(),
+		GroupVersion:    u.GetAPIVersion(),
+		UID:             u.GetUID(),
+		Annotations:     u.GetAnnotations(),
+		ResourceVersion: u.GetResourceVersion(),
+		Raw:             u.DeepCopy().Object,
 	}
+	if owners := u.GetOwnerReferences(); len(owners) > 0 {
+		r.OwnerReferences = make([]graph.OwnerRef, 0, len(owners))
+		for _, o := range owners {
+			r.OwnerReferences = append(r.OwnerReferences, graph.OwnerRef{
+				Kind: o.Kind,
+				Name: o.Name,
+				UID:  o.UID,
+			})
+		}
+	}
+	return r
 }
 
 func hasVerb(verbs []string, target string) bool {

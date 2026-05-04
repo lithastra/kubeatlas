@@ -35,3 +35,8 @@ go.work.sum
 output/*
 !output/.gitkeep
 bin/
+
+# Docusaurus build artifacts
+docs/.docusaurus/
+docs/build/
+docs/node_modules/

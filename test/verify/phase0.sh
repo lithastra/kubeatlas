@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# test/verify/phase0.sh - Phase 0 exit verification.
+#
+# Reads three JSON snapshots produced by `kubeatlas -once` against a
+# cluster that has the PetClinic fixture deployed, and asserts every
+# Phase 0 invariant: 16 resource kinds, 8 edge types, the PoC blacklist
+# is enforced, the OwnerRef chain is complete, and the cluster /
+# namespace aggregations look right.
+#
+# Inputs (defaults shown; override by passing positional args):
+#   $1 - resource-level graph JSON   (default /tmp/graph-resource.json)
+#   $2 - cluster-level aggregation   (default /tmp/graph-cluster.json)
+#   $3 - namespace-level aggregation (default /tmp/graph-namespace.json)
+#
+# Usage from a fresh kind cluster (with PetClinic deployed):
+#
+#   go run ./cmd/kubeatlas/ -once -level=resource > /tmp/graph-resource.json
+#   go run ./cmd/kubeatlas/ -once -level=cluster   > /tmp/graph-cluster.json
+#   go run ./cmd/kubeatlas/ -once -level=namespace -namespace=petclinic > /tmp/graph-namespace.json
+#   bash test/verify/phase0.sh
+set -euo pipefail
+
+GRAPH_RESOURCE="${1:-/tmp/graph-resource.json}"
+GRAPH_CLUSTER="${2:-/tmp/graph-cluster.json}"
+GRAPH_NS="${3:-/tmp/graph-namespace.json}"
+
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+
+[[ -f "${GRAPH_RESOURCE}" ]] || {
+  echo "Missing ${GRAPH_RESOURCE}" >&2
+  echo "Run: go run ./cmd/kubeatlas/ -once -level=resource > ${GRAPH_RESOURCE}" >&2
+  exit 1
+}
+
+fail() { echo "✗ FAIL: $*" >&2; exit 1; }
+ok()   { echo "✓ $*"; }
+
+# ---------------------------------------------------------------------
+# Assertion 1: every resource kind we care about is present.
+# ---------------------------------------------------------------------
+EXPECTED_KINDS=(
+  Namespace Pod Deployment ReplicaSet StatefulSet DaemonSet
+  Job CronJob Service Ingress ConfigMap Secret
+  PersistentVolumeClaim ServiceAccount Gateway HTTPRoute
+)
+for KIND in "${EXPECTED_KINDS[@]}"; do
+  COUNT=$(jq "[.resources[] | select(.kind == \"${KIND}\")] | length" "${GRAPH_RESOURCE}")
+  [[ "${COUNT}" -gt 0 ]] || fail "no ${KIND} resources in ${GRAPH_RESOURCE}"
+  ok "${KIND}: ${COUNT}"
+done
+
+# ---------------------------------------------------------------------
+# Assertion 2: every Phase 0 edge type is present at least once.
+# Falls back to the legacy 'relation' field when 'type' is empty (PoC
+# extractor path emits relation-strings; the new extractor path emits
+# typed edges). Either signal counts.
+# ---------------------------------------------------------------------
+declare -A EDGE_FROM_RELATION=(
+  [OWNS]="ownerRef"
+  [USES_CONFIGMAP]="configMapRef"
+  [USES_SECRET]="secretRef"
+  [MOUNTS_VOLUME]="persistentVolumeClaim"
+  [SELECTS]="selector"
+  [USES_SERVICEACCOUNT]="serviceAccountName"
+  [ROUTES_TO]="backend"
+  [ATTACHED_TO]="parentRef"
+)
+EXPECTED_EDGES=(OWNS USES_CONFIGMAP USES_SECRET MOUNTS_VOLUME SELECTS USES_SERVICEACCOUNT ROUTES_TO ATTACHED_TO)
+for EDGE in "${EXPECTED_EDGES[@]}"; do
+  TYPE_COUNT=$(jq "[.edges[] | select(.type == \"${EDGE}\")] | length" "${GRAPH_RESOURCE}")
+  REL_COUNT=0
+  if [[ -n "${EDGE_FROM_RELATION[$EDGE]:-}" ]]; then
+    REL_COUNT=$(jq "[.edges[] | select(.relation == \"${EDGE_FROM_RELATION[$EDGE]}\")] | length" "${GRAPH_RESOURCE}")
+  fi
+  TOTAL=$((TYPE_COUNT + REL_COUNT))
+  [[ "${TOTAL}" -gt 0 ]] || fail "no ${EDGE} edges in ${GRAPH_RESOURCE}"
+  ok "${EDGE}: ${TOTAL} (type=${TYPE_COUNT} relation=${REL_COUNT})"
+done
+
+# ---------------------------------------------------------------------
+# Assertion 3: the PoC GVR blacklist is honoured.
+# ---------------------------------------------------------------------
+for BLOCKED in Event Lease TokenReview SubjectAccessReview SelfSubjectAccessReview Endpoints EndpointSlice; do
+  COUNT=$(jq "[.resources[] | select(.kind == \"${BLOCKED}\")] | length" "${GRAPH_RESOURCE}")
+  [[ "${COUNT}" -eq 0 ]] || fail "${BLOCKED} should be blacklisted but appears ${COUNT} time(s)"
+done
+ok "blacklist enforced (no Event/Lease/Endpoints/etc.)"
+
+# ---------------------------------------------------------------------
+# Assertion 4: api Pod -> ReplicaSet OWNS edge exists.
+# Accepts either the typed edge (type=OWNS) or the legacy relation
+# (relation=ownerRef) so this passes against either extraction path.
+# ---------------------------------------------------------------------
+API_POD_OWNER=$(jq -r '
+  .edges[]
+  | select(((.type == "OWNS") or (.relation == "ownerRef"))
+           and ((.from | tostring) | contains("/Pod/api-")))
+  | .to' "${GRAPH_RESOURCE}" | head -1)
+[[ "${API_POD_OWNER}" == *"/ReplicaSet/api-"* ]] || \
+  fail "api Pod owner chain broken (got: '${API_POD_OWNER}')"
+ok "ownerRef chain: api Pod -> ReplicaSet"
+
+# ---------------------------------------------------------------------
+# Assertion 5: cluster-level aggregation contains the petclinic node.
+# ---------------------------------------------------------------------
+if [[ -f "${GRAPH_CLUSTER}" ]]; then
+  PETCLINIC=$(jq '[.nodes[]? | select(.id == "petclinic")] | length' "${GRAPH_CLUSTER}")
+  [[ "${PETCLINIC}" -ge 1 ]] || fail "petclinic node missing in ${GRAPH_CLUSTER}"
+  ok "cluster-level aggregation: petclinic node present"
+else
+  echo "↷ skipped cluster-level check (${GRAPH_CLUSTER} not found)"
+fi
+
+# ---------------------------------------------------------------------
+# Assertion 6: namespace-level aggregation has at least 8 nodes.
+# Workload kinds in the fixture: Deployment(api), StatefulSet(postgres),
+# DaemonSet(fluentbit), Job(migrate), CronJob(db-backup), Service(api-svc,
+# postgres), Ingress(web-ingress), HTTPRoute(web-route) = 9 aggregated
+# nodes plus passthrough ConfigMaps / Secrets / SA / PVC.
+# ---------------------------------------------------------------------
+if [[ -f "${GRAPH_NS}" ]]; then
+  NODE_COUNT=$(jq '.nodes | length' "${GRAPH_NS}")
+  [[ "${NODE_COUNT}" -ge 8 ]] || \
+    fail "namespace-level expected >= 8 nodes, got ${NODE_COUNT}"
+  ok "namespace-level aggregation: ${NODE_COUNT} nodes"
+else
+  echo "↷ skipped namespace-level check (${GRAPH_NS} not found)"
+fi
+
+echo
+echo "Phase 0 verification passed"
