@@ -1,27 +1,86 @@
 package graph
 
+import "k8s.io/apimachinery/pkg/types"
+
 // Resource represents a K8s resource instance.
 type Resource struct {
-	Kind      string            // e.g. "Deployment"
-	Name      string            // e.g. "web-app"
-	Namespace string            // e.g. "demo"
-	Labels    map[string]string // Used for Service selector matching.
+	// PoC fields. Do not rename or reorder: external scripts and PR
+	// reviews from the PoC era reference these names.
+	Kind      string            `json:"kind"`
+	Name      string            `json:"name"`
+	Namespace string            `json:"namespace"`
+	Labels    map[string]string `json:"labels,omitempty"`
+
+	// Phase 0 W2 additions. New fields are append-only to preserve the
+	// JSON shape that PoC consumers may have parsed.
+	GroupVersion    string            `json:"groupVersion,omitempty"`
+	UID             types.UID         `json:"uid,omitempty"`
+	Annotations     map[string]string `json:"annotations,omitempty"`
+	OwnerReferences []OwnerRef        `json:"ownerReferences,omitempty"`
+	ResourceVersion string            `json:"resourceVersion,omitempty"`
 }
 
-// ID returns the resource's unique identifier.
+// OwnerRef captures the K8s metadata.ownerReferences entry that the
+// graph cares about. We deliberately do not include APIVersion or the
+// Controller bool: KubeAtlas resolves owner edges via UID, and the
+// Kind+Name+UID triple is enough.
+type OwnerRef struct {
+	Kind string    `json:"kind"`
+	Name string    `json:"name"`
+	UID  types.UID `json:"uid"`
+}
+
+// ID returns the resource's unique identifier within KubeAtlas.
+// Format: <namespace>/<kind>/<name>; namespace is empty for cluster-
+// scoped resources (e.g. "/Namespace/demo").
 func (r Resource) ID() string {
 	return r.Namespace + "/" + r.Kind + "/" + r.Name
 }
 
-// Edge represents a dependency between two resources.
-type Edge struct {
-	From     string // Resource ID
-	To       string // Resource ID
-	Relation string // e.g. "configMapRef", "secretRef", "selector", "backend"
+// EdgeType is the strongly-typed enumeration of supported edge kinds.
+// Underlying type is string for ergonomic JSON output and log
+// readability.
+type EdgeType string
+
+const (
+	EdgeTypeOwns               EdgeType = "OWNS"
+	EdgeTypeUsesConfigMap      EdgeType = "USES_CONFIGMAP"
+	EdgeTypeUsesSecret         EdgeType = "USES_SECRET"
+	EdgeTypeMountsVolume       EdgeType = "MOUNTS_VOLUME"
+	EdgeTypeSelects            EdgeType = "SELECTS"
+	EdgeTypeUsesServiceAccount EdgeType = "USES_SERVICEACCOUNT"
+	EdgeTypeRoutesTo           EdgeType = "ROUTES_TO"
+	EdgeTypeAttachedTo         EdgeType = "ATTACHED_TO"
+)
+
+// AllEdgeTypes is the canonical Phase 0 list. Adding a new type means:
+// add the constant above, append to this slice, write an extractor in
+// pkg/extractor, and document it in docs/architecture.md.
+var AllEdgeTypes = []EdgeType{
+	EdgeTypeOwns,
+	EdgeTypeUsesConfigMap,
+	EdgeTypeUsesSecret,
+	EdgeTypeMountsVolume,
+	EdgeTypeSelects,
+	EdgeTypeUsesServiceAccount,
+	EdgeTypeRoutesTo,
+	EdgeTypeAttachedTo,
 }
 
-// Graph is the resulting dependency graph.
+// Edge represents a directed dependency between two resources.
+type Edge struct {
+	From string   `json:"from"`           // Resource ID
+	To   string   `json:"to"`             // Resource ID
+	Type EdgeType `json:"type,omitempty"` // Phase 0 W2: strongly typed
+
+	// Deprecated: use Type. Kept for one release cycle for backward
+	// compatibility with PoC-era JSON output. Will be removed in
+	// Phase 1 W5.
+	Relation string `json:"relation,omitempty"`
+}
+
+// Graph is a snapshot of the dependency graph.
 type Graph struct {
-	Resources []Resource
-	Edges     []Edge
+	Resources []Resource `json:"resources"`
+	Edges     []Edge     `json:"edges"`
 }
