@@ -77,6 +77,7 @@ const config: Config = {
             {label: 'Quick Start', to: '/quick-start'},
             {label: 'Architecture', to: '/architecture'},
             {label: 'Developer Guide', to: '/developer-guide'},
+            {label: 'Roadmap', to: '/roadmap'},
           ],
         },
         {

@@ -6,5 +6,5 @@
 // Extractors are registered through the Extractor interface defined in
 // extractor.go and consumed by the informer event handlers in
 // pkg/discovery. User-defined extractors written in Rego/Wasm live in
-// the sub-package pkg/extractor/rego (enabled in milestone M4).
+// the sub-package pkg/extractor/rego (enabled in v1.0).
 package extractor

@@ -40,7 +40,7 @@ kubeatlas/
 │   │   └── storetest/    # Reusable contract test suite
 │   ├── store/
 │   │   ├── memory/       # Tier 1 in-memory backend (default)
-│   │   └── postgres/     # Tier 2 placeholder, enabled in M4
+│   │   └── postgres/     # Tier 2 placeholder, enabled in v1.0
 │   ├── discovery/        # K8s client + informer + GVR registry
 │   ├── extractor/        # Edge extractors (Phase 0 W4)
 │   ├── aggregator/       # Pre-aggregated views (Phase 0 W4)

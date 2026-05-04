@@ -7,9 +7,8 @@ import "context"
 //
 // Tier 1 (in-memory) lives in pkg/store/memory and is the default
 // backend through Phase 1. Tier 2 (PostgreSQL + Apache AGE) lives in
-// pkg/store/postgres and is enabled in milestone M4. Both
-// implementations must satisfy the contract test suite in
-// store_contract_test.go.
+// pkg/store/postgres and is enabled in v1.0. Both implementations
+// must satisfy the contract test suite in pkg/graph/storetest.
 type GraphStore interface {
 	// Mutations.
 	UpsertResource(ctx context.Context, r Resource) error

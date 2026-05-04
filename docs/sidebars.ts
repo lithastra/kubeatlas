@@ -6,6 +6,7 @@ const sidebars: SidebarsConfig = {
     'quick-start',
     'architecture',
     'developer-guide',
+    'roadmap',
   ],
 };
 

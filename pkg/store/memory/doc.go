@@ -3,5 +3,5 @@
 // runs as a single Pod without persistence.
 //
 // See pkg/store/postgres for the Tier 2 PostgreSQL + Apache AGE
-// implementation (enabled in milestone M4).
+// implementation (enabled in v1.0).
 package memory

@@ -109,8 +109,9 @@ any assertion fails.
 
 ## What's next
 
-- The **REST API** and **Web UI** land in v0.1.0. See the project
-  guides shipped in the repository for the Phase 1 plan.
+- The **REST API** and **Web UI** land in v0.1.0. See the
+  [Roadmap](./roadmap.md) for the Phase 1 plan and what comes
+  after.
 - To **contribute**, read the [Developer Guide](./developer-guide.md).
 - To learn **how the pieces fit together**, read the
   [Architecture overview](./architecture.md).

@@ -18,8 +18,8 @@ The REST API and Web UI sketched at the bottom land in Phase 1.
    already exposes; no external services are contacted at runtime, no
    telemetry is reported, no API keys are needed.
 3. **Zero data dependency at v0.1.0.** Tier 1 storage is in-memory.
-   PostgreSQL + Apache AGE (Tier 2) is opt-in, and arrives in
-   milestone M4.
+   PostgreSQL + Apache AGE (Tier 2) is opt-in, and arrives in v1.0
+   (see the [Roadmap](./roadmap.md)).
 4. **CRD-friendly.** The discovery layer is GVR-driven. Adding a
    custom resource means appending one entry to the registry; the
    informer pipeline handles it like any other kind.
@@ -113,13 +113,29 @@ materialising the full graph in the browser.
 
 ## What lands in Phase 1 (preview)
 
-- **`pkg/api`** — REST endpoints for graph queries and a WebSocket
-  watch endpoint, served by the same binary.
-- **`web/`** — React 19 + TypeScript + MUI v5 + Cytoscape Web UI,
-  technology-stack-aligned with Headlamp.
-- **`helm/`** — installable chart with secure defaults and a Helm
-  `values.schema.json` gate that requires explicit acknowledgement
-  before exposing KubeAtlas through an Ingress.
+- **`pkg/api`** — REST endpoints for graph queries (`GET
+  /api/v1alpha1/graph` at four levels: cluster / namespace /
+  workload / resource), a single-resource detail endpoint, search,
+  health/readiness/metrics, and a WebSocket watch endpoint
+  (`/api/v1alpha1/watch`). All served by the same binary.
+- **`web/`** — React 19 + TypeScript + MUI v5 Web UI,
+  technology-stack-aligned with Headlamp so a v1.0 Headlamp plugin
+  is a port rather than a rewrite. Cytoscape topology view at the
+  cluster, namespace, and workload levels; Mermaid neighbor view
+  at the single-resource level; a DataGrid resource list with
+  namespace filtering.
+- **`helm/`** — installable chart with secure defaults baked in:
+  ClusterIP-only Service, Ingress disabled by default, a Helm
+  `values.schema.json` gate that requires explicit
+  `acknowledgeNoBuiltinAuth=true` before exposing KubeAtlas, an
+  RBAC ClusterRole hard-coded to `[get, list, watch]`, and a Pod
+  that runs as non-root with a read-only root filesystem.
+- **Distribution** — multi-arch container image on
+  `ghcr.io/lithastra/kubeatlas`, four-platform binaries, Helm Chart
+  published as an OCI artifact.
+
+For the full Phase 1 plan plus what's deliberately out of scope for
+v0.1.0, see the [Roadmap](./roadmap.md).
 
 The Phase 0 code paths above stay frozen during Phase 1: only new
 methods, new files, and new tests are added. No PoC-era field is

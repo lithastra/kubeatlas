@@ -11,8 +11,7 @@ import (
 //
 // Concurrency-safe via a single RWMutex; suitable for clusters up to
 // roughly 5K resources. Beyond that scale, switch to the PostgreSQL +
-// Apache AGE backend in pkg/store/postgres (available from milestone
-// M4).
+// Apache AGE backend in pkg/store/postgres (available from v1.0).
 type Store struct {
 	mu        sync.RWMutex
 	resources map[string]graph.Resource         // id -> Resource

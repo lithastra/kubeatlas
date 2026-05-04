@@ -28,8 +28,8 @@ the tools above instead of replacing them.
 ## Project status
 
 **Pre-Alpha (Phase 0).** The CLI works on real clusters. The REST API
-and Web UI land in Phase 1 (v0.1.0). The roadmap from v0.1.0 onwards
-is published in the project guides; the [Quick Start](./quick-start.md)
+and Web UI land in Phase 1 (v0.1.0). See the [Roadmap](./roadmap.md)
+for what's planned beyond that; the [Quick Start](./quick-start.md)
 walks through what runs today.
 
 ## Reading order
@@ -42,3 +42,5 @@ walks through what runs today.
 3. [Developer Guide](./developer-guide.md) — for contributors:
    prerequisites, build, test, and a worked example of adding an edge
    type.
+4. [Roadmap](./roadmap.md) — where v0.1.0, v1.0, and v2.0 are headed
+   and what's deliberately deferred.
