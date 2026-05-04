@@ -12,7 +12,8 @@
 #   $2 - cluster-level aggregation   (default /tmp/graph-cluster.json)
 #   $3 - namespace-level aggregation (default /tmp/graph-namespace.json)
 #
-# Usage from a fresh kind cluster (with PetClinic deployed):
+# Usage on any Kubernetes cluster you control with the PetClinic
+# fixture deployed (kind is one option; managed clusters work too):
 #
 #   go run ./cmd/kubeatlas/ -once -level=resource > /tmp/graph-resource.json
 #   go run ./cmd/kubeatlas/ -once -level=cluster   > /tmp/graph-cluster.json
@@ -26,11 +27,26 @@ GRAPH_NS="${3:-/tmp/graph-namespace.json}"
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 
-[[ -f "${GRAPH_RESOURCE}" ]] || {
-  echo "Missing ${GRAPH_RESOURCE}" >&2
-  echo "Run: go run ./cmd/kubeatlas/ -once -level=resource > ${GRAPH_RESOURCE}" >&2
+# Preflight: all three snapshots must exist. The script only reads JSON,
+# so we want to fail loud and early when any input is missing rather
+# than silently skip half the assertions.
+missing=()
+declare -A GENERATE_CMD=(
+  ["${GRAPH_RESOURCE}"]="go run ./cmd/kubeatlas/ -once > ${GRAPH_RESOURCE}"
+  ["${GRAPH_CLUSTER}"]="go run ./cmd/kubeatlas/ -once -level=cluster > ${GRAPH_CLUSTER}"
+  ["${GRAPH_NS}"]="go run ./cmd/kubeatlas/ -once -level=namespace -namespace=petclinic > ${GRAPH_NS}"
+)
+for f in "${GRAPH_RESOURCE}" "${GRAPH_CLUSTER}" "${GRAPH_NS}"; do
+  [[ -f "${f}" ]] || missing+=("${f}")
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "Missing input file(s):" >&2
+  for f in "${missing[@]}"; do
+    echo "  - ${f}" >&2
+    echo "      generate with: ${GENERATE_CMD[$f]}" >&2
+  done
   exit 1
-}
+fi
 
 fail() { echo "✗ FAIL: $*" >&2; exit 1; }
 ok()   { echo "✓ $*"; }
@@ -103,13 +119,9 @@ ok "ownerRef chain: api Pod -> ReplicaSet"
 # ---------------------------------------------------------------------
 # Assertion 5: cluster-level aggregation contains the petclinic node.
 # ---------------------------------------------------------------------
-if [[ -f "${GRAPH_CLUSTER}" ]]; then
-  PETCLINIC=$(jq '[.nodes[]? | select(.id == "petclinic")] | length' "${GRAPH_CLUSTER}")
-  [[ "${PETCLINIC}" -ge 1 ]] || fail "petclinic node missing in ${GRAPH_CLUSTER}"
-  ok "cluster-level aggregation: petclinic node present"
-else
-  echo "↷ skipped cluster-level check (${GRAPH_CLUSTER} not found)"
-fi
+PETCLINIC=$(jq '[.nodes[]? | select(.id == "petclinic")] | length' "${GRAPH_CLUSTER}")
+[[ "${PETCLINIC}" -ge 1 ]] || fail "petclinic node missing in ${GRAPH_CLUSTER}"
+ok "cluster-level aggregation: petclinic node present"
 
 # ---------------------------------------------------------------------
 # Assertion 6: namespace-level aggregation has at least 8 nodes.
@@ -118,14 +130,10 @@ fi
 # postgres), Ingress(web-ingress), HTTPRoute(web-route) = 9 aggregated
 # nodes plus passthrough ConfigMaps / Secrets / SA / PVC.
 # ---------------------------------------------------------------------
-if [[ -f "${GRAPH_NS}" ]]; then
-  NODE_COUNT=$(jq '.nodes | length' "${GRAPH_NS}")
-  [[ "${NODE_COUNT}" -ge 8 ]] || \
-    fail "namespace-level expected >= 8 nodes, got ${NODE_COUNT}"
-  ok "namespace-level aggregation: ${NODE_COUNT} nodes"
-else
-  echo "↷ skipped namespace-level check (${GRAPH_NS} not found)"
-fi
+NODE_COUNT=$(jq '.nodes | length' "${GRAPH_NS}")
+[[ "${NODE_COUNT}" -ge 8 ]] || \
+  fail "namespace-level expected >= 8 nodes, got ${NODE_COUNT}"
+ok "namespace-level aggregation: ${NODE_COUNT} nodes"
 
 echo
 echo "Phase 0 verification passed"

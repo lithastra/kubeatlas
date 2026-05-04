@@ -12,16 +12,21 @@ diagram describing the PetClinic reference application.
 ## Prerequisites
 
 - **Go 1.26 or later**
-- **Docker**
-- [`kind`](https://kind.sigs.k8s.io/) v0.22+ for the local cluster
+- **A Kubernetes cluster you control** — any cluster works (EKS,
+  GKE, AKS, OpenShift, k3s, microk8s, …). If you don't already have
+  one, [`kind`](https://kind.sigs.k8s.io/) v0.22+ on top of Docker is
+  the fastest path; the rest of this guide uses it as the example.
 - [`kubectl`](https://kubernetes.io/docs/tasks/tools/) at the same
-  minor version as your kind nodes
+  minor version as your cluster
 - [`helm`](https://helm.sh/) v3 — used to install Envoy Gateway and
   Traefik
 - [`graphviz`](https://graphviz.org/) for `dot -Tsvg` rendering
   (`brew install graphviz` / `apt-get install graphviz`)
 
-## 1. Create a kind cluster
+## 1. Have a cluster ready
+
+If you already have a cluster, set your `kubectl` context to it and
+skip ahead. Otherwise, spin up a local one with kind:
 
 ```bash
 kind create cluster --name kubeatlas
@@ -82,13 +87,25 @@ ServiceAccount they run as.
 
 ## 5. (Optional) Run the verification script
 
+The verifier reads three JSON snapshots (one per aggregation level)
+and asserts every Phase 0 invariant — 16 resource kinds, 8 edge
+types, the GVR blacklist, the OwnerRef chain, and the cluster /
+namespace aggregations.
+
+Generate the three snapshots first, then run the script:
+
 ```bash
+go run ./cmd/kubeatlas/ -once                                                  > /tmp/graph-resource.json
+go run ./cmd/kubeatlas/ -once -level=cluster                                   > /tmp/graph-cluster.json
+go run ./cmd/kubeatlas/ -once -level=namespace -namespace=petclinic            > /tmp/graph-namespace.json
+
 bash test/verify/phase0.sh
 ```
 
-The script asserts that the JSON contains the expected resource and
-edge counts. A passing run is what Phase 0 calls "the cluster is
-graph-complete".
+The script reads `/tmp/graph-{resource,cluster,namespace}.json` by
+default and prints `Phase 0 verification passed` on success. It
+exits non-zero with a clear message if any input file is missing or
+any assertion fails.
 
 ## What's next
 

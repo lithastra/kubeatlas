@@ -3,7 +3,8 @@
 # This manifest exercises every Phase 0 resource kind and edge type so
 # `test/verify/phase0.sh` has something to assert against. It is small
 # (single-namespace, single-tenant) and uses minimal images so it fits
-# comfortably in a default kind cluster.
+# comfortably in any small cluster (kind / k3s / Docker Desktop /
+# managed K8s — anything you control is fine).
 #
 # Resource kinds (16):
 #   Namespace, Pod, Deployment, ReplicaSet (auto), StatefulSet,
@@ -15,8 +16,9 @@
 #   USES_SERVICEACCOUNT, ROUTES_TO, ATTACHED_TO
 #
 # Prerequisites:
-#   - kind cluster with a default StorageClass (kind ships
-#     "standard" via local-path-provisioner).
+#   - Any Kubernetes cluster you control with a default StorageClass
+#     (kind ships "standard" via local-path-provisioner; managed
+#     clusters typically come with one already).
 #   - Envoy Gateway installed (provides Gateway / HTTPRoute CRDs).
 #   - An Ingress controller (Traefik recommended) for `Ingress`.
 ---

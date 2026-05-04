@@ -34,8 +34,9 @@ walks through what runs today.
 
 ## Reading order
 
-1. [Quick Start](./quick-start.md) — get a graph out of a kind cluster
-   in a few minutes.
+1. [Quick Start](./quick-start.md) — get a graph out of a cluster
+   (any cluster you control; kind works if you don't have one) in a
+   few minutes.
 2. [Architecture](./architecture.md) — six design principles and how
    the pieces fit together.
 3. [Developer Guide](./developer-guide.md) — for contributors:

@@ -90,10 +90,15 @@ go tool cover -html=cover.out
 # Integration tests (envtest, no real cluster needed; requires KUBEBUILDER_ASSETS)
 go test ./pkg/discovery/...
 
-# End-to-end (requires a kind cluster + PetClinic deployed)
+# End-to-end (requires any Kubernetes cluster you control with PetClinic deployed; kind is the fastest local option)
 test/petclinic/run.sh base
-go run ./cmd/kubeatlas/ -once > /tmp/graph.json
-test/verify/phase0.sh
+
+# Generate the three snapshots the verifier reads (must be run before phase0.sh)
+go run ./cmd/kubeatlas/ -once                                                  > /tmp/graph-resource.json
+go run ./cmd/kubeatlas/ -once -level=cluster                                   > /tmp/graph-cluster.json
+go run ./cmd/kubeatlas/ -once -level=namespace -namespace=petclinic            > /tmp/graph-namespace.json
+
+bash test/verify/phase0.sh
 ```
 
 ### Running the binary

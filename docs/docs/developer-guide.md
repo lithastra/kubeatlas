@@ -12,9 +12,12 @@ start with the [Quick Start](./quick-start.md) instead.
 
 - **Go 1.26 or later** — KubeAtlas uses `log/slog`, generics, and the
   Go 1.22+ `net/http` `ServeMux` features (the latter from Phase 1).
-- **Docker** — for building images and running [kind](https://kind.sigs.k8s.io/).
-- **kind** — for spinning up local Kubernetes clusters.
-- **kubectl** — at the same minor version as your kind cluster.
+- **A Kubernetes cluster you control** — any cluster works for the
+  end-to-end flow. If you don't already have one, install
+  [Docker](https://docs.docker.com/get-docker/) +
+  [kind](https://kind.sigs.k8s.io/); the docs use kind as the example
+  because it's the fastest local path.
+- **kubectl** — at the same minor version as your cluster.
 - **`golangci-lint`** *(optional locally; required in CI)* —
   `brew install golangci-lint` or see [installation docs](https://golangci-lint.run/).
 - **`setup-envtest`** *(optional)* — needed only to run the informer
@@ -66,10 +69,15 @@ KUBEBUILDER_ASSETS=$(setup-envtest use 1.30.x -p path) go test ./pkg/discovery/.
 # Lint
 golangci-lint run ./...
 
-# End-to-end on a real cluster (kind + PetClinic)
+# End-to-end on a real cluster (kind is one option; any K8s cluster you control works)
 test/petclinic/run.sh base
-go run ./cmd/kubeatlas/ -once > /tmp/graph.json
-test/verify/phase0.sh
+
+# Generate the three snapshots the verifier reads (must be run before phase0.sh)
+go run ./cmd/kubeatlas/ -once                                                  > /tmp/graph-resource.json
+go run ./cmd/kubeatlas/ -once -level=cluster                                   > /tmp/graph-cluster.json
+go run ./cmd/kubeatlas/ -once -level=namespace -namespace=petclinic            > /tmp/graph-namespace.json
+
+bash test/verify/phase0.sh
 ```
 
 ## Two run modes
