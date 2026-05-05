@@ -1,0 +1,127 @@
+# Default values for kubeatlas.
+#
+# Phase 1 §2.3 ("Secure defaults are a product promise") locks down five
+# things that are NOT individual values you can flip with a single
+# `--set`. They're enforced together by values.schema.json:
+#
+#   1. service.type defaults to ClusterIP and the schema forbids NodePort.
+#   2. ingress.enabled defaults to false; flipping it to true requires
+#      ingress.acknowledgeNoBuiltinAuth=true (the operator confirming
+#      that an external auth layer fronts the Ingress).
+#   3. RBAC ClusterRole verbs are hard-coded in the template to
+#      [get, list, watch] -- not exposed as values.
+#   4. Pod securityContext defaults below.
+#   5. The chart never installs a database; persistence stays disabled
+#      until Tier 2 (v1.0).
+#
+# A user who deliberately wants to weaken any of these defaults must
+# touch multiple values; that friction is intentional.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/lithastra/kubeatlas
+  # Empty tag -> chart uses .Chart.AppVersion (defined in Chart.yaml).
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# RBAC. The role's verbs are hard-coded in templates/clusterrole.yaml
+# to [get, list, watch] -- not exposed as a value -- so nobody can
+# disable the read-only invariant by editing values.yaml.
+rbac:
+  create: true
+
+# Pod-level security. All five fields are tightened by default; the
+# values.schema.json refuses to relax them below the spec's bar.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security.
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  # Schema enum: ClusterIP only. NodePort + LoadBalancer are rejected.
+  type: ClusterIP
+  port: 80
+  # Container port the kubeatlas binary listens on (matches DefaultAddr
+  # in pkg/api/server.go).
+  containerPort: 8080
+
+ingress:
+  # Default off. Flipping to true demands acknowledgeNoBuiltinAuth=true
+  # (enforced by values.schema.json's `if/then`).
+  enabled: false
+  # Operator must set this to true to acknowledge that authentication
+  # is provided by the Ingress layer (oauth2-proxy / Pomerium / etc.)
+  # before exposing the API.
+  acknowledgeNoBuiltinAuth: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: kubeatlas.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Liveness + readiness probes — match the /healthz and /readyz handlers.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 1
+  periodSeconds: 5
+
+# Persistence is Tier 2 (PostgreSQL + Apache AGE), enabled in v1.0.
+# v0.1.0 is in-memory only; restart loses the graph.
+persistence:
+  enabled: false
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Placeholder for the NetworkPolicy template (P1-T19). Default-deny
+# inbound; allow only the namespace its Ingress controller runs in.
+networkPolicy:
+  enabled: true
+  ingressNamespaceLabel: ""
+
+# Extra labels applied to every resource the chart renders.
+extraLabels: {}
