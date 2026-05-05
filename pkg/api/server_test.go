@@ -86,7 +86,7 @@ func TestServer_HealthzReturns200(t *testing.T) {
 	}
 }
 
-func TestServer_ReadyzReturns200(t *testing.T) {
+func TestServer_ReadyzReturns503BeforeMarkReady(t *testing.T) {
 	base, stop := startServer(t)
 	defer stop()
 
@@ -95,8 +95,8 @@ func TestServer_ReadyzReturns200(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 (gate not yet flipped)", resp.StatusCode)
 	}
 }
 

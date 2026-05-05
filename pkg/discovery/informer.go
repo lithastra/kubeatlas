@@ -61,6 +61,9 @@ type InformerManager struct {
 	extractor ExtractorRegistry
 	gvrs      []schema.GroupVersionResource
 	kindCache map[schema.GroupVersionResource]string
+	// onSynced is invoked exactly once, after WaitForCacheSync returns
+	// successfully for every GVR. nil means "no callback".
+	onSynced func()
 }
 
 // InformerOption configures an InformerManager.
@@ -75,6 +78,14 @@ func WithGVRs(gvrs []schema.GroupVersionResource) InformerOption {
 // informer still updates resources but emits no edges.
 func WithExtractor(r ExtractorRegistry) InformerOption {
 	return func(m *InformerManager) { m.extractor = r }
+}
+
+// WithOnSynced registers a callback the informer fires exactly once,
+// after every watched GVR has finished its initial cache sync. The
+// API server uses this to flip its readiness gate so /readyz starts
+// returning 200.
+func WithOnSynced(fn func()) InformerOption {
+	return func(m *InformerManager) { m.onSynced = fn }
 }
 
 // WithResync overrides the default resync period.
@@ -165,6 +176,9 @@ func (m *InformerManager) Start(ctx context.Context) error {
 		}
 	}
 	slog.Info("all informers synced", "count", len(syncs))
+	if m.onSynced != nil {
+		m.onSynced()
+	}
 	<-ctx.Done()
 	return ctx.Err()
 }

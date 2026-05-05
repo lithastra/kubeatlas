@@ -59,6 +59,23 @@ func accessLogMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// metricsMiddleware increments the request counter once the inner
+// handler has finished, so the recorded status reflects what was
+// actually written. Skips its own /metrics path so scrapes don't
+// inflate their own counter.
+func metricsMiddleware(c *metricsCounter) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			next.ServeHTTP(rec, r)
+			if r.URL.Path == "/metrics" {
+				return
+			}
+			c.inc(r.Method, rec.status)
+		})
+	}
+}
+
 // corsMiddleware permits cross-origin requests from any origin. The
 // Phase 1 deployment story is "stand the API up behind an Ingress that
 // owns the auth + origin policy", so the server itself is permissive.

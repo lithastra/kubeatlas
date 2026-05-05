@@ -26,28 +26,32 @@ const shutdownGrace = 10 * time.Second
 // REST handlers ship in W6 (P1-T6); the WebSocket watch endpoint and
 // readiness gating land in W5/W9.
 type Server struct {
-	addr  string
-	store graph.GraphStore
-	aggs  *aggregator.Registry
-	hub   *WatchHub
+	addr      string
+	store     graph.GraphStore
+	aggs      *aggregator.Registry
+	hub       *WatchHub
+	readiness *ReadinessGate
+	metrics   *metricsCounter
 
 	// httpSrv is created in Start; nil before then.
 	httpSrv *http.Server
 }
 
-// New builds a Server. addr defaults to ":8080" if empty. The hub is
-// constructed with default heartbeat + buffer sizes; callers needing
-// to drive the hub from outside (e.g. the informer in P1-T16) can read
-// it back via Hub().
+// New builds a Server. addr defaults to ":8080" if empty. The server
+// owns its WatchHub, ReadinessGate, and metrics counter; callers that
+// need to drive any of them (e.g. the informer flipping readiness)
+// reach in via Hub() / Readiness().
 func New(addr string, store graph.GraphStore, aggs *aggregator.Registry) *Server {
 	if addr == "" {
 		addr = DefaultAddr
 	}
 	return &Server{
-		addr:  addr,
-		store: store,
-		aggs:  aggs,
-		hub:   NewWatchHub(),
+		addr:      addr,
+		store:     store,
+		aggs:      aggs,
+		hub:       NewWatchHub(),
+		readiness: NewReadinessGate(),
+		metrics:   newMetricsCounter(),
 	}
 }
 
@@ -55,6 +59,10 @@ func New(addr string, store graph.GraphStore, aggs *aggregator.Registry) *Server
 // /api/v1alpha1/watch. Callers like the informer pipeline use it to
 // Broadcast graph updates.
 func (s *Server) Hub() *WatchHub { return s.hub }
+
+// Readiness returns the ReadinessGate. The informer manager calls
+// MarkReady() on it once the cache has finished its initial sync.
+func (s *Server) Readiness() *ReadinessGate { return s.readiness }
 
 // Start boots the HTTP listener and blocks until ctx is cancelled or
 // the listener fails. On ctx.Done() it triggers a graceful shutdown
@@ -66,6 +74,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.registerRoutes(mux)
 	handler := chain(mux,
 		recoveryMiddleware,
+		metricsMiddleware(s.metrics),
 		accessLogMiddleware,
 		corsMiddleware,
 	)
@@ -111,12 +120,29 @@ func (s *Server) Addr() string {
 	return s.addr
 }
 
-// registerRoutes binds every API endpoint. Phase 1 W5 has the
-// operational endpoints (health/readiness) and the WebSocket watch;
-// the v1alpha1 REST graph endpoints land in P1-T6.
+// registerRoutes binds every API endpoint.
+//
+//	Operational:
+//	  GET /healthz
+//	  GET /readyz
+//	  GET /metrics
+//	v1alpha1 graph endpoints:
+//	  GET /api/v1alpha1/graph
+//	  GET /api/v1alpha1/resources/{namespace}/{kind}/{name}
+//	  GET /api/v1alpha1/resources/{namespace}/{kind}/{name}/incoming
+//	  GET /api/v1alpha1/resources/{namespace}/{kind}/{name}/outgoing
+//	  GET /api/v1alpha1/search
+//	  GET /api/v1alpha1/watch    (WebSocket upgrade)
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleReady)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+
+	mux.HandleFunc("GET /api/v1alpha1/graph", s.handleGraph)
+	mux.HandleFunc("GET /api/v1alpha1/resources/{namespace}/{kind}/{name}", s.handleResource)
+	mux.HandleFunc("GET /api/v1alpha1/resources/{namespace}/{kind}/{name}/incoming", s.handleIncoming)
+	mux.HandleFunc("GET /api/v1alpha1/resources/{namespace}/{kind}/{name}/outgoing", s.handleOutgoing)
+	mux.HandleFunc("GET /api/v1alpha1/search", s.handleSearch)
 	mux.HandleFunc("GET /api/v1alpha1/watch", s.hub.Handle)
 }
 
@@ -126,10 +152,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleReady is the readiness probe. In W5 it always returns 200;
-// W6's full implementation will gate on informer-cache sync via a
-// readiness flag the informer manager flips.
+// handleReady is the readiness probe. Returns 503 until the informer
+// flips the gate to ready, then 200.
 func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
+	if !s.readiness.IsReady() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "not_ready",
+			"reason": "informer cache has not completed initial sync",
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

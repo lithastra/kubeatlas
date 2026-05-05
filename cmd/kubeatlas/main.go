@@ -163,11 +163,12 @@ func runWatch() {
 		log.Fatalf("filter GVRs: %v", err)
 	}
 	store := memory.New()
+	srv := api.New(api.DefaultAddr, store, aggregator.NewRegistry())
 	mgr := discovery.NewInformerManager(client.Dynamic(), store,
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),
+		discovery.WithOnSynced(srv.Readiness().MarkReady),
 	)
-	srv := api.New(api.DefaultAddr, store, aggregator.NewRegistry())
 
 	// Run both components under the same cancellable context. If
 	// either returns an error (or the user hits Ctrl-C), cancel the
