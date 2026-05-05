@@ -120,30 +120,14 @@ func (s *Server) Addr() string {
 	return s.addr
 }
 
-// registerRoutes binds every API endpoint.
-//
-//	Operational:
-//	  GET /healthz
-//	  GET /readyz
-//	  GET /metrics
-//	v1alpha1 graph endpoints:
-//	  GET /api/v1alpha1/graph
-//	  GET /api/v1alpha1/resources/{namespace}/{kind}/{name}
-//	  GET /api/v1alpha1/resources/{namespace}/{kind}/{name}/incoming
-//	  GET /api/v1alpha1/resources/{namespace}/{kind}/{name}/outgoing
-//	  GET /api/v1alpha1/search
-//	  GET /api/v1alpha1/watch    (WebSocket upgrade)
+// registerRoutes binds every API endpoint by walking the route table
+// from Routes(). Routes() is the single source of truth for both
+// registration and OpenAPI emission, so the spec can't drift from
+// what the server serves.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /healthz", s.handleHealth)
-	mux.HandleFunc("GET /readyz", s.handleReady)
-	mux.HandleFunc("GET /metrics", s.handleMetrics)
-
-	mux.HandleFunc("GET /api/v1alpha1/graph", s.handleGraph)
-	mux.HandleFunc("GET /api/v1alpha1/resources/{namespace}/{kind}/{name}", s.handleResource)
-	mux.HandleFunc("GET /api/v1alpha1/resources/{namespace}/{kind}/{name}/incoming", s.handleIncoming)
-	mux.HandleFunc("GET /api/v1alpha1/resources/{namespace}/{kind}/{name}/outgoing", s.handleOutgoing)
-	mux.HandleFunc("GET /api/v1alpha1/search", s.handleSearch)
-	mux.HandleFunc("GET /api/v1alpha1/watch", s.hub.Handle)
+	for _, r := range s.Routes() {
+		mux.HandleFunc(r.Method+" "+r.Pattern, r.handler)
+	}
 }
 
 // handleHealth is the liveness probe. Returns 200 unless the process
