@@ -29,12 +29,16 @@ type Server struct {
 	addr  string
 	store graph.GraphStore
 	aggs  *aggregator.Registry
+	hub   *WatchHub
 
 	// httpSrv is created in Start; nil before then.
 	httpSrv *http.Server
 }
 
-// New builds a Server. addr defaults to ":8080" if empty.
+// New builds a Server. addr defaults to ":8080" if empty. The hub is
+// constructed with default heartbeat + buffer sizes; callers needing
+// to drive the hub from outside (e.g. the informer in P1-T16) can read
+// it back via Hub().
 func New(addr string, store graph.GraphStore, aggs *aggregator.Registry) *Server {
 	if addr == "" {
 		addr = DefaultAddr
@@ -43,8 +47,14 @@ func New(addr string, store graph.GraphStore, aggs *aggregator.Registry) *Server
 		addr:  addr,
 		store: store,
 		aggs:  aggs,
+		hub:   NewWatchHub(),
 	}
 }
+
+// Hub returns the WatchHub the server registers on
+// /api/v1alpha1/watch. Callers like the informer pipeline use it to
+// Broadcast graph updates.
+func (s *Server) Hub() *WatchHub { return s.hub }
 
 // Start boots the HTTP listener and blocks until ctx is cancelled or
 // the listener fails. On ctx.Done() it triggers a graceful shutdown
@@ -101,12 +111,13 @@ func (s *Server) Addr() string {
 	return s.addr
 }
 
-// registerRoutes binds every API endpoint. Phase 1 W5 only registers
-// the operational endpoints (health/readiness); the v1alpha1 graph
-// endpoints land in P1-T6.
+// registerRoutes binds every API endpoint. Phase 1 W5 has the
+// operational endpoints (health/readiness) and the WebSocket watch;
+// the v1alpha1 REST graph endpoints land in P1-T6.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /readyz", s.handleReady)
+	mux.HandleFunc("GET /api/v1alpha1/watch", s.hub.Handle)
 }
 
 // handleHealth is the liveness probe. Returns 200 unless the process

@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bufio"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -74,7 +77,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 // statusRecorder wraps http.ResponseWriter so the access log sees the
-// status code that was actually written.
+// status code that was actually written. It forwards Hijack so the
+// WebSocket upgrade in pkg/api/websocket.go still works through the
+// middleware chain, and Flush so future SSE / streaming endpoints
+// aren't blocked on the wrapper.
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -83,4 +89,18 @@ type statusRecorder struct {
 func (s *statusRecorder) WriteHeader(code int) {
 	s.status = code
 	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := s.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("response writer does not support hijacking")
+	}
+	return hj.Hijack()
+}
+
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
