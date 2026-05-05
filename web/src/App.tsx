@@ -1,26 +1,26 @@
-import { Box, Button, Container, Stack, Typography } from '@mui/material';
+import { Navigate, Route, Routes } from 'react-router-dom';
 
-// W6 scaffold: the smallest renderable surface that proves the
-// React + MUI + provider stack actually compiles and runs. The real
-// AppShell with nav drawer + routing lands in P1-T10 (theme) and
-// P1-T12 (resources page).
+import { AppShell } from './components/AppShell';
+import { DocsPage } from './pages/DocsPage';
+import { ResourcesPage } from './pages/ResourcesPage';
+import { SearchPage } from './pages/SearchPage';
+import { TopologyPage } from './pages/TopologyPage';
+
+// App is the routing root. AppShell renders the persistent chrome
+// (top bar + nav drawer); each route renders inside its main area.
+//
+// Adding a page means: create the component under src/pages/, add a
+// <Route> here, and add a nav entry in AppShell's navItems.
 export function App() {
   return (
-    <Container maxWidth="md" sx={{ py: 6 }}>
-      <Stack spacing={3} alignItems="flex-start">
-        <Typography variant="h3" component="h1">
-          KubeAtlas
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Kubernetes resource dependency graph. Web UI scaffold — real
-          pages land in Phase 1 W7+.
-        </Typography>
-        <Box>
-          <Button variant="contained" color="primary">
-            Hello, MUI
-          </Button>
-        </Box>
-      </Stack>
-    </Container>
+    <AppShell>
+      <Routes>
+        <Route path="/" element={<Navigate to="/resources" replace />} />
+        <Route path="/resources" element={<ResourcesPage />} />
+        <Route path="/topology" element={<TopologyPage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="/docs" element={<DocsPage />} />
+      </Routes>
+    </AppShell>
   );
 }
