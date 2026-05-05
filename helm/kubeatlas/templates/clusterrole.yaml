@@ -1,0 +1,49 @@
+{{- if .Values.rbac.create -}}
+# Cluster-wide read-only access. The verbs are HARD-CODED to
+# [get, list, watch] — they are not exposed as a Helm value. KubeAtlas
+# is read-only, always (Phase 1 §2.3 promise #3); changing this list
+# changes the security model and must go through a code review.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kubeatlas.fullname" . }}
+  labels:
+    {{- include "kubeatlas.labels" . | nindent 4 }}
+rules:
+  # Core API group resources we watch.
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - pods
+      - services
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+      - serviceaccounts
+    verbs: ["get", "list", "watch"]
+  # apps/v1
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+  # batch/v1
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  # networking.k8s.io
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  # gateway.networking.k8s.io (optional — controller may not be installed)
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - gateways
+      - httproutes
+    verbs: ["get", "list", "watch"]
+{{- end }}

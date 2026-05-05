@@ -1,0 +1,37 @@
+suite: ingress
+templates:
+  - ingress.yaml
+tests:
+  - it: ingress is not rendered when disabled (default)
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: ingress renders when enabled with acknowledgement
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.className: traefik
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.ingressClassName
+          value: traefik
+      - equal:
+          path: spec.rules[0].host
+          value: kubeatlas.local
+
+  - it: ingress backend points at the chart Service on the configured port
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: RELEASE-NAME-kubeatlas
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.number
+          value: 80

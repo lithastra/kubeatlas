@@ -1,0 +1,36 @@
+{{- $fullname := include "kubeatlas.fullname" . -}}
+{{- $ns := .Release.Namespace -}}
+KubeAtlas {{ .Chart.AppVersion }} is installed.
+
+To open the UI without exposing the Service publicly:
+
+  kubectl port-forward -n {{ $ns }} svc/{{ $fullname }} 8080:{{ .Values.service.port }}
+
+Then visit http://localhost:8080
+
+{{- if .Values.ingress.enabled }}
+
+WARNING: Ingress is enabled. KubeAtlas itself does not authenticate
+requests; the operator confirmed by setting
+ingress.acknowledgeNoBuiltinAuth=true that the chosen Ingress
+controller fronts the API with an authentication layer
+(oauth2-proxy, Pomerium, Cloudflare Access, controller-native SSO,
+etc.). If that's not the case, disable Ingress immediately.
+
+  helm upgrade {{ .Release.Name }} -n {{ $ns }} --reuse-values --set ingress.enabled=false
+{{- else }}
+
+Ingress is disabled. To expose KubeAtlas externally, configure an
+authentication layer at your Ingress controller, then:
+
+  helm upgrade {{ .Release.Name }} -n {{ $ns }} \
+    --reuse-values \
+    --set ingress.enabled=true \
+    --set ingress.acknowledgeNoBuiltinAuth=true \
+    --set ingress.className=<your-ingress-class>
+{{- end }}
+
+Verify the ServiceAccount only has read access:
+
+  kubectl auth can-i delete pods --as=system:serviceaccount:{{ $ns }}:{{ include "kubeatlas.serviceAccountName" . }}
+  # expected output: no

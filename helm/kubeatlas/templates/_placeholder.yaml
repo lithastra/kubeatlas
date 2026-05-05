@@ -1,8 +1,0 @@
-{{/*
-Placeholder template. The real Deployment / Service / RBAC / Ingress /
-NetworkPolicy templates land in P1-T19 — this file exists so Helm has
-at least one render target during P1-T18 (chart skeleton + values
-schema gate).
-
-Once templates/deployment.yaml etc. exist, this file should be deleted.
-*/}}

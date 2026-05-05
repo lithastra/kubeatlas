@@ -1,0 +1,28 @@
+# Example values for exposing KubeAtlas through Traefik (the project's
+# default ingress fixture; see test/petclinic/run.sh).
+#
+# Apply with:
+#   helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
+#     --namespace kubeatlas --create-namespace \
+#     --values helm/kubeatlas/examples/ingress-traefik.yaml
+
+ingress:
+  enabled: true
+  acknowledgeNoBuiltinAuth: true   # operator promises an external auth layer fronts Traefik
+  className: traefik
+  annotations:
+    # Treat the WebSocket /api/v1alpha1/watch endpoint as a long-lived stream.
+    traefik.ingress.kubernetes.io/router.middlewares: kubeatlas-websocket@kubernetescrd
+  hosts:
+    - host: kubeatlas.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: kubeatlas-tls
+      hosts:
+        - kubeatlas.example.com
+
+networkPolicy:
+  enabled: true
+  ingressNamespaceLabel: traefik

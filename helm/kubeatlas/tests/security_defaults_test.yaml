@@ -1,0 +1,52 @@
+suite: secure defaults
+templates:
+  - service.yaml
+  - deployment.yaml
+tests:
+  - it: Service is ClusterIP by default
+    template: service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+
+  - it: NodePort is rejected by the values schema
+    set:
+      service.type: NodePort
+    asserts:
+      - failedTemplate:
+          errorPattern: "service\\.type does not match"
+
+  - it: persistence.enabled=true is rejected
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "persistence\\.enabled does not match"
+
+  - it: weakening readOnlyRootFilesystem is rejected
+    template: deployment.yaml
+    set:
+      securityContext.readOnlyRootFilesystem: false
+    asserts:
+      - failedTemplate:
+          errorPattern: "securityContext\\.readOnlyRootFilesystem does not match"
+
+  - it: ingress.enabled=true without acknowledgement is rejected
+    template: deployment.yaml
+    set:
+      ingress.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "ingress\\.acknowledgeNoBuiltinAuth does not match"
+
+  - it: ingress.enabled=true with acknowledgement passes the schema
+    template: deployment.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+    asserts:
+      - notFailedTemplate: {}

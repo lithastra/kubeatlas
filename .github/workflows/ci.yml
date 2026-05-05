@@ -134,6 +134,21 @@ jobs:
       - working-directory: web
         run: npm run typecheck
 
+  helm-unittest:
+    name: Helm chart unittest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.20.0
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v0.5.2
+      - name: helm lint
+        run: helm lint helm/kubeatlas
+      - name: helm unittest
+        run: helm unittest helm/kubeatlas
+
   web-test:
     name: Web Jest tests
     runs-on: ubuntu-latest

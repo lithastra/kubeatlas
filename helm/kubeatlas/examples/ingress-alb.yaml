@@ -1,0 +1,33 @@
+# Example values for exposing KubeAtlas through the AWS Load Balancer
+# Controller (kubernetes-sigs/aws-load-balancer-controller).
+#
+# Apply with:
+#   helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
+#     --namespace kubeatlas --create-namespace \
+#     --values helm/kubeatlas/examples/ingress-alb.yaml
+
+ingress:
+  enabled: true
+  acknowledgeNoBuiltinAuth: true   # ALB itself has no auth — pair with Cognito / OIDC at the listener
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    # Auth is REQUIRED. Replace with your Cognito user pool / OIDC IDP details.
+    alb.ingress.kubernetes.io/auth-type: cognito
+    alb.ingress.kubernetes.io/auth-idp-cognito: '{"UserPoolARN":"arn:aws:cognito-idp:...","UserPoolClientID":"...","UserPoolDomain":"..."}'
+  hosts:
+    - host: kubeatlas.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - kubeatlas.example.com
+
+networkPolicy:
+  # ALB lives outside the cluster; the NetworkPolicy gate doesn't
+  # restrict it. Disable to avoid the false sense of protection.
+  enabled: false

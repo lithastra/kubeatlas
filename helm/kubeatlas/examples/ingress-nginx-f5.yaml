@@ -1,0 +1,33 @@
+# Example values for exposing KubeAtlas through F5 NGINX Ingress
+# Controller (nginxinc/kubernetes-ingress).
+#
+# IMPORTANT: this is the F5/NGINX Inc. distribution, NOT the community
+# kubernetes/ingress-nginx project (which announced EOL on 2026-03 —
+# see docs/docs/installation/ingress-nginx-eol-notice.md).
+#
+# Annotation prefix is `nginx.org/*`, NOT `nginx.ingress.kubernetes.io/*`.
+# Apply with:
+#   helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
+#     --namespace kubeatlas --create-namespace \
+#     --values helm/kubeatlas/examples/ingress-nginx-f5.yaml
+
+ingress:
+  enabled: true
+  acknowledgeNoBuiltinAuth: true   # remember to deploy oauth2-proxy / similar in front
+  className: nginx
+  annotations:
+    nginx.org/proxy-buffer-size: "16k"
+    nginx.org/websocket-services: "kubeatlas"
+  hosts:
+    - host: kubeatlas.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: kubeatlas-tls
+      hosts:
+        - kubeatlas.example.com
+
+networkPolicy:
+  enabled: true
+  ingressNamespaceLabel: nginx-ingress
