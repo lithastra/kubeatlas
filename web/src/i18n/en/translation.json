@@ -1,0 +1,47 @@
+{
+  "nav": {
+    "resources": "Resources",
+    "topology": "Topology",
+    "search": "Search",
+    "docs": "Docs"
+  },
+  "page": {
+    "resources": {
+      "title": "Resources",
+      "placeholder": "Resource list with namespace filter — coming in P1-T12."
+    },
+    "topology": {
+      "title": "Topology",
+      "placeholder": "Cytoscape graph at cluster / namespace / workload levels — coming in P1-T13."
+    },
+    "search": {
+      "title": "Search",
+      "placeholder": "Cross-namespace resource search — coming alongside the resources page."
+    },
+    "docs": {
+      "title": "Documentation",
+      "intro": "The full KubeAtlas docs — quick start, architecture, roadmap, developer guide — live at:"
+    }
+  },
+  "list": {
+    "column": {
+      "kind": "Kind",
+      "namespace": "Namespace",
+      "name": "Name",
+      "age": "Age",
+      "status": "Status"
+    },
+    "empty": "No resources match the current filter.",
+    "loading": "Loading resources…"
+  },
+  "filter": {
+    "namespace": {
+      "label": "Namespace",
+      "all": "All namespaces"
+    }
+  },
+  "action": {
+    "refresh": "Refresh",
+    "openDetails": "Open details"
+  }
+}

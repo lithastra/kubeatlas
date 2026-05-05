@@ -1,0 +1,36 @@
+{
+  "kind": {
+    "Namespace": "Namespace",
+    "Pod": "Pod",
+    "Deployment": "Deployment",
+    "ReplicaSet": "ReplicaSet",
+    "StatefulSet": "StatefulSet",
+    "DaemonSet": "DaemonSet",
+    "Job": "Job",
+    "CronJob": "CronJob",
+    "Service": "Service",
+    "Ingress": "Ingress",
+    "ConfigMap": "ConfigMap",
+    "Secret": "Secret",
+    "PersistentVolumeClaim": "PersistentVolumeClaim",
+    "ServiceAccount": "ServiceAccount",
+    "Gateway": "Gateway",
+    "HTTPRoute": "HTTPRoute"
+  },
+  "edge": {
+    "OWNS": "Owns",
+    "USES_CONFIGMAP": "Uses ConfigMap",
+    "USES_SECRET": "Uses Secret",
+    "MOUNTS_VOLUME": "Mounts Volume",
+    "SELECTS": "Selects",
+    "USES_SERVICEACCOUNT": "Uses ServiceAccount",
+    "ROUTES_TO": "Routes to",
+    "ATTACHED_TO": "Attached to"
+  },
+  "level": {
+    "cluster": "Cluster",
+    "namespace": "Namespace",
+    "workload": "Workload",
+    "resource": "Resource"
+  }
+}

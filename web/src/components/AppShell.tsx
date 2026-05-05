@@ -16,16 +16,18 @@ import HubIcon from '@mui/icons-material/Hub';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import SearchIcon from '@mui/icons-material/Search';
 import { NavLink, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 const drawerWidth = 220;
 
 // Single source of truth for the four nav items in v0.1.0. Adding a
-// page means appending here AND adding a Route in App.tsx.
+// page means appending here AND adding a Route in App.tsx. The
+// `labelKey` references a key under translation:nav.
 const navItems = [
-  { to: '/resources', label: 'Resources', icon: <AccountTreeIcon /> },
-  { to: '/topology', label: 'Topology', icon: <HubIcon /> },
-  { to: '/search', label: 'Search', icon: <SearchIcon /> },
-  { to: '/docs', label: 'Docs', icon: <MenuBookIcon /> },
+  { to: '/resources', labelKey: 'nav.resources', icon: <AccountTreeIcon /> },
+  { to: '/topology', labelKey: 'nav.topology', icon: <HubIcon /> },
+  { to: '/search', labelKey: 'nav.search', icon: <SearchIcon /> },
+  { to: '/docs', labelKey: 'nav.docs', icon: <MenuBookIcon /> },
 ];
 
 interface AppShellProps {
@@ -40,6 +42,8 @@ interface AppShellProps {
 // Headlamp so the Phase 2 plugin port stays cheap.
 export function AppShell({ children, version = 'dev' }: AppShellProps) {
   const location = useLocation();
+  const { t } = useTranslation('translation');
+  const { t: tApp } = useTranslation('app');
   return (
     <Box sx={{ display: 'flex' }}>
       <AppBar
@@ -48,10 +52,10 @@ export function AppShell({ children, version = 'dev' }: AppShellProps) {
       >
         <Toolbar>
           <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 700 }}>
-            KubeAtlas
+            {tApp('name')}
           </Typography>
           <Typography variant="caption" sx={{ ml: 1.5, opacity: 0.7 }}>
-            v0.1.0-{version}
+            {tApp('version', { build: version })}
           </Typography>
         </Toolbar>
       </AppBar>
@@ -73,7 +77,7 @@ export function AppShell({ children, version = 'dev' }: AppShellProps) {
                 selected={location.pathname.startsWith(item.to)}
               >
                 <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.label} />
+                <ListItemText primary={t(item.labelKey)} />
               </ListItemButton>
             </ListItem>
           ))}

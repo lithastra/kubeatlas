@@ -1,12 +1,14 @@
 import { Stack, Typography } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 
 // Placeholder. Cytoscape topology view lands in P1-T13.
 export function TopologyPage() {
+  const { t } = useTranslation('translation');
   return (
     <Stack spacing={1}>
-      <Typography variant="h4">Topology</Typography>
+      <Typography variant="h4">{t('page.topology.title')}</Typography>
       <Typography variant="body2" color="text.secondary">
-        Cytoscape graph at cluster / namespace / workload levels — coming in P1-T13.
+        {t('page.topology.placeholder')}
       </Typography>
     </Stack>
   );
