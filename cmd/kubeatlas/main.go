@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
+	"github.com/lithastra/kubeatlas/pkg/api"
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/graph"
@@ -145,10 +147,9 @@ func runOnce(level, namespace, kind, name string) {
 	}
 }
 
-// runWatch starts a long-lived informer that streams cluster changes
-// into the in-memory store. There is no API surface yet, so the
-// process simply runs until interrupted; future phases will expose the
-// store through pkg/api.
+// runWatch starts the informer and the API server in parallel and
+// blocks until either errors or the process receives SIGINT/SIGTERM.
+// Both shut down when the parent context is cancelled.
 func runWatch() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -166,7 +167,26 @@ func runWatch() {
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),
 	)
-	if err := mgr.Start(ctx); err != nil && err != context.Canceled {
-		log.Fatalf("informer manager: %v", err)
+	srv := api.New(api.DefaultAddr, store, aggregator.NewRegistry())
+
+	// Run both components under the same cancellable context. If
+	// either returns an error (or the user hits Ctrl-C), cancel the
+	// context so the other shuts down too.
+	type result struct {
+		who string
+		err error
+	}
+	results := make(chan result, 2)
+	go func() { results <- result{"informer", mgr.Start(ctx)} }()
+	go func() { results <- result{"api", srv.Start(ctx)} }()
+
+	first := <-results
+	cancel()
+	second := <-results
+
+	for _, r := range []result{first, second} {
+		if r.err != nil && !errors.Is(r.err, context.Canceled) {
+			log.Fatalf("%s: %v", r.who, r.err)
+		}
 	}
 }
