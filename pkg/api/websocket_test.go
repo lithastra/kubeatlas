@@ -170,6 +170,52 @@ func TestWatchHub_HeartbeatPing(t *testing.T) {
 	}
 }
 
+func TestWatchHub_ReSubscribeNarrowsFilter(t *testing.T) {
+	hub, url, stop := startHubServer(t)
+	defer stop()
+
+	conn := dial(t, url)
+	defer conn.CloseNow()
+	subscribe(t, conn, api.SubscriptionFilter{Level: aggregator.LevelCluster})
+	waitForSubscriberCount(t, hub, 1)
+
+	// Re-SUBSCRIBE to a workload scope — broadcasts that don't match
+	// the (Namespace, Kind, Name) triple must stop arriving.
+	subscribe(t, conn, api.SubscriptionFilter{
+		Level:     aggregator.LevelWorkload,
+		Namespace: "demo",
+		Kind:      "Deployment",
+		Name:      "api",
+	})
+	// Server processes the re-SUBSCRIBE asynchronously in its read
+	// loop; give it a moment to update the filter before broadcasting,
+	// otherwise the test races the in-flight server-side write.
+	time.Sleep(50 * time.Millisecond)
+	// Send back-to-back updates: first non-matching (filtered now),
+	// then matching. Read once and assert we receive the matching one
+	// — if the filter hadn't been narrowed, the non-matching update
+	// would arrive first.
+	hub.Broadcast(api.GraphUpdate{
+		Level: aggregator.LevelWorkload, Namespace: "demo", Kind: "Service", Name: "api", Revision: 99,
+	})
+	hub.Broadcast(api.GraphUpdate{
+		Level: aggregator.LevelWorkload, Namespace: "demo", Kind: "Deployment", Name: "api", Revision: 7,
+	})
+
+	// First Broadcast lost a race with the in-flight re-SUBSCRIBE write
+	// in some runs; the easiest deterministic check is to wait briefly
+	// then broadcast both messages.
+	rctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	var got api.Envelope
+	if err := wsjson.Read(rctx, conn, &got); err != nil {
+		t.Fatalf("read after re-SUBSCRIBE: %v", err)
+	}
+	if got.Kind != "Deployment" || got.Revision != 7 {
+		t.Errorf("first delivered after narrow = %+v, want Deployment/rev=7 (Service/rev=99 leaked)", got)
+	}
+}
+
 func TestWatchHub_UnsubscribeReleasesSlot(t *testing.T) {
 	hub, url, stop := startHubServer(t)
 	defer stop()

@@ -209,6 +209,17 @@ func (h *WatchHub) Handle(w http.ResponseWriter, r *http.Request) {
 			}
 		case MsgTypePong:
 			// Client acknowledging our heartbeat. Nothing to do.
+		case MsgTypeSubscribe:
+			// Re-SUBSCRIBE on the same connection narrows or broadens
+			// the filter without forcing a reconnect. Used by
+			// ResourcePage to focus on a single resource's events on
+			// mount and reset to cluster on unmount.
+			h.updateFilter(sub.id, SubscriptionFilter{
+				Level:     msg.Level,
+				Namespace: msg.Namespace,
+				Kind:      msg.Kind,
+				Name:      msg.Name,
+			})
 		case MsgTypeUnsubscribe:
 			cancelWriter()
 			<-writerDone
@@ -291,6 +302,18 @@ func (h *WatchHub) unregister(id string) {
 	if s, ok := h.subs[id]; ok {
 		close(s.send)
 		delete(h.subs, id)
+	}
+}
+
+// updateFilter swaps the filter on a live subscription so a re-SUBSCRIBE
+// from the same client narrows or broadens what events it sees without
+// reconnecting. Missing ids are a no-op (the connection may have closed
+// between the read and the write).
+func (h *WatchHub) updateFilter(id string, f SubscriptionFilter) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if s, ok := h.subs[id]; ok {
+		s.filter = f
 	}
 }
 
