@@ -35,6 +35,14 @@ go.work.sum
 output/*
 !output/.gitkeep
 bin/
+# goreleaser output (repo-root only — don't catch web/dist or
+# cmd/kubeatlas/web/dist).
+/dist/
+
+# Embedded Web UI bundle: only the .gitkeep placeholder is committed;
+# real assets are dropped in by the Dockerfile / goreleaser before-hook.
+cmd/kubeatlas/web/dist/*
+!cmd/kubeatlas/web/dist/.gitkeep
 
 # Docusaurus build artifacts
 docs/.docusaurus/

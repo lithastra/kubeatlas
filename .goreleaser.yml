@@ -1,0 +1,119 @@
+version: 2
+
+project_name: kubeatlas
+
+before:
+  hooks:
+    - go mod tidy
+    # web/dist is built by the release.yml "Build web" step before
+    # goreleaser runs, then copied into cmd/kubeatlas/web/dist so the
+    # //go:embed directive in cmd/kubeatlas/embed.go picks it up. We
+    # do NOT npm-install here to avoid double-building and lockfile
+    # contention with the workflow.
+    - sh -c 'rm -rf cmd/kubeatlas/web/dist && mkdir -p cmd/kubeatlas/web/dist && cp -R web/dist/. cmd/kubeatlas/web/dist/'
+
+builds:
+  - id: kubeatlas
+    main: ./cmd/kubeatlas
+    binary: kubeatlas
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/lithastra/kubeatlas/pkg/version.Version={{.Version}}
+      - -X github.com/lithastra/kubeatlas/pkg/version.Commit={{.Commit}}
+      - -X github.com/lithastra/kubeatlas/pkg/version.Date={{.Date}}
+
+archives:
+  - id: kubeatlas
+    ids: [kubeatlas]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - docs/docs/quick-start.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+dockers:
+  - image_templates:
+      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    goarch: amd64
+    build_flag_templates:
+      - --platform=linux/amd64
+      - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.source=https://github.com/lithastra/kubeatlas
+      - --label=org.opencontainers.image.licenses=Apache-2.0
+  - image_templates:
+      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-arm64"
+    use: buildx
+    dockerfile: Dockerfile
+    goarch: arm64
+    build_flag_templates:
+      - --platform=linux/arm64
+      - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.source=https://github.com/lithastra/kubeatlas
+      - --label=org.opencontainers.image.licenses=Apache-2.0
+
+docker_manifests:
+  - name_template: "ghcr.io/lithastra/kubeatlas:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-amd64"
+      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/lithastra/kubeatlas:latest"
+    image_templates:
+      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-amd64"
+      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-arm64"
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: "Features"
+      regexp: '^.*?feat(\([[:alnum:]]+\))??!?:.+$'
+      order: 0
+    - title: "Bug Fixes"
+      regexp: '^.*?fix(\([[:alnum:]]+\))??!?:.+$'
+      order: 1
+    - title: "Refactors"
+      regexp: '^.*?refactor(\([[:alnum:]]+\))??!?:.+$'
+      order: 2
+    - title: "Documentation"
+      regexp: '^.*?docs(\([[:alnum:]]+\))??!?:.+$'
+      order: 3
+    - title: "Other"
+      order: 999
+  filters:
+    exclude:
+      - '^test:'
+      - '^chore:'
+      - '^style:'
+
+release:
+  github:
+    owner: lithastra
+    name: kubeatlas
+  draft: true
+  prerelease: auto
+  header: |
+    ## KubeAtlas {{ .Tag }}
+
+    See `docs/quick-start.md` for installation. The Helm Chart is
+    published to `oci://ghcr.io/lithastra/charts/kubeatlas` with the
+    same version tag.
+
+    Phase 1 release: no built-in authentication. Default deployment
+    is ClusterIP-only. To expose the UI via Ingress see
+    `docs/installation/security-warning.md` and the per-controller
+    guide (`ingress-nginx-f5.md` / `ingress-traefik.md` /
+    `ingress-alb.md`). KubeAtlas v0.1.0 does not ship examples for
+    the community ingress-nginx project, which is being retired in
+    March 2026.

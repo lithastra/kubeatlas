@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
@@ -33,19 +36,40 @@ type Server struct {
 	readiness *ReadinessGate
 	metrics   *metricsCounter
 
+	// webFS, when non-nil, is mounted at "/" to serve the embedded
+	// Web UI bundle. Tests leave it nil so the catch-all static
+	// route stays inactive.
+	webFS fs.FS
+
 	// httpSrv is created in Start; nil before then.
 	httpSrv *http.Server
+}
+
+// ServerOption tweaks an optional aspect of the Server. Required
+// dependencies stay positional; additive features (the embedded Web
+// UI, future hooks) ride on options so existing call sites and tests
+// don't break each time something is added.
+type ServerOption func(*Server)
+
+// WithWebFS mounts the given filesystem under "/" so the Web UI
+// bundle can be served from the same binary as the API. The handler
+// expects a Vite-shaped layout (assets/, index.html at the root).
+// Unknown paths fall back to index.html so the SPA's client-side
+// router can take over — standard pattern for hash-less routing.
+func WithWebFS(f fs.FS) ServerOption {
+	return func(s *Server) { s.webFS = f }
 }
 
 // New builds a Server. addr defaults to ":8080" if empty. The server
 // owns its WatchHub, ReadinessGate, and metrics counter; callers that
 // need to drive any of them (e.g. the informer flipping readiness)
-// reach in via Hub() / Readiness().
-func New(addr string, store graph.GraphStore, aggs *aggregator.Registry) *Server {
+// reach in via Hub() / Readiness(). Pass WithWebFS(...) to enable the
+// embedded Web UI mount.
+func New(addr string, store graph.GraphStore, aggs *aggregator.Registry, opts ...ServerOption) *Server {
 	if addr == "" {
 		addr = DefaultAddr
 	}
-	return &Server{
+	s := &Server{
 		addr:      addr,
 		store:     store,
 		aggs:      aggs,
@@ -53,6 +77,10 @@ func New(addr string, store graph.GraphStore, aggs *aggregator.Registry) *Server
 		readiness: NewReadinessGate(),
 		metrics:   newMetricsCounter(),
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Hub returns the WatchHub the server registers on
@@ -124,10 +152,57 @@ func (s *Server) Addr() string {
 // from Routes(). Routes() is the single source of truth for both
 // registration and OpenAPI emission, so the spec can't drift from
 // what the server serves.
+//
+// The static "/" mount for the embedded Web UI is added only when
+// WithWebFS gave the server a non-nil filesystem — otherwise tests
+// (which leave it nil) keep their 404-on-unknown-route behaviour.
+// Net/http 1.22 mux gives more specific patterns priority, so the
+// "/" handler doesn't shadow "/api/v1alpha1/...".
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	for _, r := range s.Routes() {
 		mux.HandleFunc(r.Method+" "+r.Pattern, r.handler)
 	}
+	if s.webFS != nil {
+		mux.Handle("GET /", s.staticHandler())
+	}
+}
+
+// staticHandler serves the embedded Web UI. It tries the requested
+// path first; on a miss it falls back to index.html so the React
+// router can resolve client-side routes like /resources/.../...
+// without each one needing a server-side mapping.
+func (s *Server) staticHandler() http.Handler {
+	sub, err := fs.Sub(s.webFS, "web/dist")
+	if err != nil {
+		// fs.Sub only fails on a malformed path; the literal above
+		// is fine, so this is unreachable. Be loud anyway.
+		slog.Error("staticHandler: fs.Sub failed", "err", err)
+		return http.NotFoundHandler()
+	}
+	fileServer := http.FileServer(http.FS(sub))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clean := strings.TrimPrefix(r.URL.Path, "/")
+		if clean == "" {
+			clean = "index.html"
+		}
+		f, err := sub.Open(clean)
+		if err == nil {
+			_ = f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// SPA fallback. If even index.html is missing the bundle
+		// wasn't built into the binary — return 404 so the failure
+		// is loud rather than mysterious.
+		idx, err := sub.Open("index.html")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer func() { _ = idx.Close() }()
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.Copy(w, idx)
+	})
 }
 
 // handleHealth is the liveness probe. Returns 200 unless the process

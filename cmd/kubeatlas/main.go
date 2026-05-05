@@ -17,18 +17,24 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/store/memory"
+	"github.com/lithastra/kubeatlas/pkg/version"
 )
 
 func main() {
 	var (
-		once      = flag.Bool("once", false, "Run a single discovery pass, write JSON+DOT, and exit (legacy CLI mode).")
-		level     = flag.String("level", "resource", "Aggregation level: resource | namespace | workload | cluster.")
-		namespace = flag.String("namespace", "", "Filter by namespace (required for namespace/workload, optional for resource).")
-		kind      = flag.String("kind", "", "Resource Kind (required for workload, and for resource when scoped to a single object).")
-		name      = flag.String("name", "", "Resource name (required for workload, and for resource when scoped to a single object).")
+		once        = flag.Bool("once", false, "Run a single discovery pass, write JSON+DOT, and exit (legacy CLI mode).")
+		level       = flag.String("level", "resource", "Aggregation level: resource | namespace | workload | cluster.")
+		namespace   = flag.String("namespace", "", "Filter by namespace (required for namespace/workload, optional for resource).")
+		kind        = flag.String("kind", "", "Resource Kind (required for workload, and for resource when scoped to a single object).")
+		name        = flag.String("name", "", "Resource name (required for workload, and for resource when scoped to a single object).")
+		showVersion = flag.Bool("version", false, "Print build metadata (version, commit, date) and exit.")
 	)
 	flag.Parse()
 
+	if *showVersion {
+		fmt.Printf("kubeatlas %s (commit %s, built %s)\n", version.Version, version.Commit, version.Date)
+		return
+	}
 	if *once {
 		runOnce(*level, *namespace, *kind, *name)
 		return
@@ -163,7 +169,7 @@ func runWatch() {
 		log.Fatalf("filter GVRs: %v", err)
 	}
 	store := memory.New()
-	srv := api.New(api.DefaultAddr, store, aggregator.NewRegistry())
+	srv := api.New(api.DefaultAddr, store, aggregator.NewRegistry(), api.WithWebFS(webFS))
 	mgr := discovery.NewInformerManager(client.Dynamic(), store,
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),
