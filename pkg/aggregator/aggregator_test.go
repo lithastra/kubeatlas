@@ -2,6 +2,7 @@ package aggregator_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -199,6 +200,144 @@ func TestNamespaceAggregator_PodEndpointsRewrittenToWorkload(t *testing.T) {
 		}
 	}
 	t.Error("expected rewritten Service-SELECTS-Deployment edge not found")
+}
+
+func TestWorkloadAggregator_RequiresFullScope(t *testing.T) {
+	store := seed(t)
+	cases := []aggregator.Scope{
+		{},
+		{Namespace: "petclinic"},
+		{Namespace: "petclinic", Kind: "Deployment"},
+	}
+	for _, sc := range cases {
+		if _, err := (aggregator.WorkloadAggregator{}).Aggregate(context.Background(), store, sc); err == nil {
+			t.Errorf("expected error for scope %+v, got nil", sc)
+		}
+	}
+}
+
+func TestWorkloadAggregator_PetClinicShape(t *testing.T) {
+	store := seed(t)
+	view, err := (aggregator.WorkloadAggregator{}).Aggregate(
+		context.Background(), store,
+		aggregator.Scope{Namespace: "petclinic", Kind: "Deployment", Name: "api"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Level != aggregator.LevelWorkload {
+		t.Errorf("Level = %q, want workload", view.Level)
+	}
+	// Expect: Deployment/api + ReplicaSet/api-rs + Pod/api-1 + Pod/api-2
+	// + ConfigMap/app-config (referenced via Deployment) = 5 nodes.
+	wantIDs := map[string]bool{
+		"petclinic/Deployment/api":       false,
+		"petclinic/ReplicaSet/api-rs":    false,
+		"petclinic/Pod/api-1":            false,
+		"petclinic/Pod/api-2":            false,
+		"petclinic/ConfigMap/app-config": false,
+	}
+	for _, n := range view.Nodes {
+		if _, ok := wantIDs[n.ID]; ok {
+			wantIDs[n.ID] = true
+		}
+		if n.Type != "resource" {
+			t.Errorf("workload-level node %q has Type=%q, want resource", n.ID, n.Type)
+		}
+	}
+	for id, seen := range wantIDs {
+		if !seen {
+			t.Errorf("missing expected node %q in workload view", id)
+		}
+	}
+}
+
+func TestWorkloadAggregator_RootMissingReturnsErrNotFound(t *testing.T) {
+	store := seed(t)
+	_, err := (aggregator.WorkloadAggregator{}).Aggregate(
+		context.Background(), store,
+		aggregator.Scope{Namespace: "petclinic", Kind: "Deployment", Name: "ghost"},
+	)
+	var nf graph.ErrNotFound
+	if err == nil || !errors.As(err, &nf) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestResourceAggregator_OneHopNeighbors(t *testing.T) {
+	store := seed(t)
+	view, err := (aggregator.ResourceAggregator{}).Aggregate(
+		context.Background(), store,
+		aggregator.Scope{Namespace: "petclinic", Kind: "Deployment", Name: "api"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// api Deployment's neighbors: ReplicaSet api-rs (incoming OWNS),
+	// ConfigMap app-config (outgoing USES_CONFIGMAP). Root + 2 = 3
+	// nodes.
+	if len(view.Nodes) != 3 {
+		t.Errorf("expected 3 nodes (root + 2 neighbors), got %d: %+v", len(view.Nodes), view.Nodes)
+	}
+	if view.Truncated {
+		t.Error("Truncated should be false for a 3-node view")
+	}
+}
+
+func TestResourceAggregator_TruncatesAt30Neighbors(t *testing.T) {
+	store := memory.New()
+	ctx := context.Background()
+	root := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "shared"}
+	if err := store.UpsertResource(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	// 50 incoming USES_CONFIGMAP edges from synthetic Deployments.
+	for i := 0; i < 50; i++ {
+		dep := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: depName(i)}
+		_ = store.UpsertResource(ctx, dep)
+		_ = store.UpsertEdge(ctx, graph.Edge{From: dep.ID(), To: root.ID(), Type: graph.EdgeTypeUsesConfigMap})
+	}
+	view, err := (aggregator.ResourceAggregator{}).Aggregate(ctx, store,
+		aggregator.Scope{Namespace: "demo", Kind: "ConfigMap", Name: "shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !view.Truncated {
+		t.Error("expected Truncated=true on >30-neighbor view")
+	}
+	// root + MaxResourceNeighbors == 31 nodes.
+	if got, want := len(view.Nodes), aggregator.MaxResourceNeighbors+1; got != want {
+		t.Errorf("expected %d nodes after truncation, got %d", want, got)
+	}
+}
+
+func TestResourceAggregator_RootMissingReturnsErrNotFound(t *testing.T) {
+	store := seed(t)
+	_, err := (aggregator.ResourceAggregator{}).Aggregate(context.Background(), store,
+		aggregator.Scope{Namespace: "petclinic", Kind: "Deployment", Name: "ghost"})
+	var nf graph.ErrNotFound
+	if err == nil || !errors.As(err, &nf) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// depName produces "dep-NNN" without using fmt, mirroring podName in
+// the memory store tests.
+func depName(i int) string {
+	const digits = "0123456789"
+	buf := []byte("dep-")
+	if i == 0 {
+		return string(append(buf, '0'))
+	}
+	var rev []byte
+	for i > 0 {
+		rev = append(rev, digits[i%10])
+		i /= 10
+	}
+	for j := len(rev) - 1; j >= 0; j-- {
+		buf = append(buf, rev[j])
+	}
+	return string(buf)
 }
 
 func TestNamespaceAggregator_EdgeCountInOut(t *testing.T) {

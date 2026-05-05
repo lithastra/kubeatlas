@@ -20,23 +20,28 @@ import (
 func main() {
 	var (
 		once      = flag.Bool("once", false, "Run a single discovery pass, write JSON+DOT, and exit (legacy CLI mode).")
-		level     = flag.String("level", "resource", "Aggregation level: resource | namespace | cluster.")
-		namespace = flag.String("namespace", "", "Filter by namespace (required for level=namespace).")
+		level     = flag.String("level", "resource", "Aggregation level: resource | namespace | workload | cluster.")
+		namespace = flag.String("namespace", "", "Filter by namespace (required for namespace/workload, optional for resource).")
+		kind      = flag.String("kind", "", "Resource Kind (required for workload, and for resource when scoped to a single object).")
+		name      = flag.String("name", "", "Resource name (required for workload, and for resource when scoped to a single object).")
 	)
 	flag.Parse()
 
 	if *once {
-		runOnce(*level, *namespace)
+		runOnce(*level, *namespace, *kind, *name)
 		return
 	}
 	runWatch()
 }
 
-// runOnce keeps the original CLI behaviour: walk every API resource,
-// extract edges, persist into the in-memory store, then write either
-// the raw graph (level=resource) or an aggregated view (level=cluster
-// or level=namespace) to stdout.
-func runOnce(level, namespace string) {
+// runOnce walks every API resource, extracts edges, persists into the
+// in-memory store, then writes one of:
+//   - raw full graph (level=resource without kind/name) — legacy default
+//   - cluster aggregation (level=cluster)
+//   - namespace aggregation (level=namespace, requires -namespace)
+//   - workload sub-graph (level=workload, requires -namespace + -kind + -name)
+//   - single-resource one-hop view (level=resource with -kind + -name + -namespace)
+func runOnce(level, namespace, kind, name string) {
 	ctx := context.Background()
 
 	client, err := discovery.NewClient()
@@ -72,6 +77,22 @@ func runOnce(level, namespace string) {
 
 	switch level {
 	case "resource":
+		// Two modes: scoped (kind+name+namespace given) → single-resource
+		// one-hop view; unscoped → legacy raw graph dump + DOT artefact.
+		if kind != "" || name != "" {
+			if namespace == "" || kind == "" || name == "" {
+				log.Fatal("-level=resource scoped mode requires -namespace, -kind, and -name")
+			}
+			view, err := (aggregator.ResourceAggregator{}).Aggregate(ctx, store,
+				aggregator.Scope{Namespace: namespace, Kind: kind, Name: name})
+			if err != nil {
+				log.Fatalf("resource aggregator: %v", err)
+			}
+			if err := enc.Encode(view); err != nil {
+				log.Fatalf("failed to encode JSON: %v", err)
+			}
+			return
+		}
 		g, err := store.Snapshot(ctx)
 		if err != nil {
 			log.Fatalf("failed to snapshot store: %v", err)
@@ -97,7 +118,8 @@ func runOnce(level, namespace string) {
 		if namespace == "" {
 			log.Fatal("-level=namespace requires -namespace=<name>")
 		}
-		view, err := (aggregator.NamespaceAggregator{}).Aggregate(ctx, store, aggregator.Scope{Namespace: namespace})
+		view, err := (aggregator.NamespaceAggregator{}).Aggregate(ctx, store,
+			aggregator.Scope{Namespace: namespace})
 		if err != nil {
 			log.Fatalf("namespace aggregator: %v", err)
 		}
@@ -105,8 +127,21 @@ func runOnce(level, namespace string) {
 			log.Fatalf("failed to encode JSON: %v", err)
 		}
 
+	case "workload":
+		if namespace == "" || kind == "" || name == "" {
+			log.Fatal("-level=workload requires -namespace, -kind, and -name")
+		}
+		view, err := (aggregator.WorkloadAggregator{}).Aggregate(ctx, store,
+			aggregator.Scope{Namespace: namespace, Kind: kind, Name: name})
+		if err != nil {
+			log.Fatalf("workload aggregator: %v", err)
+		}
+		if err := enc.Encode(view); err != nil {
+			log.Fatalf("failed to encode JSON: %v", err)
+		}
+
 	default:
-		log.Fatalf("unknown -level=%q (want resource | namespace | cluster)", level)
+		log.Fatalf("unknown -level=%q (want resource | namespace | workload | cluster)", level)
 	}
 }
 
