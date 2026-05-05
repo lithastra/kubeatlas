@@ -168,6 +168,7 @@ func runWatch() {
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),
 		discovery.WithOnSynced(srv.Readiness().MarkReady),
+		discovery.WithBroadcaster(srv.Hub().BroadcastEvent),
 	)
 
 	// Run both components under the same cancellable context. If

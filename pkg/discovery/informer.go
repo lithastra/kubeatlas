@@ -52,15 +52,31 @@ func (noopRegistry) ExtractAll(_ graph.Resource, _ []graph.Resource) []graph.Edg
 	return nil
 }
 
+// Broadcaster is the seam between the informer pipeline and the
+// WebSocket hub (pkg/api.WatchHub). After an event is committed to
+// the store, the manager calls Broadcaster so subscribed clients
+// can invalidate their views. Function-shaped (rather than an
+// interface) so concrete consumers can pass a method value
+// directly — for example, srv.Hub().BroadcastEvent.
+//
+// op is "upsert" or "delete"; the namespace/kind/name triple is what
+// workload- and resource-level subscribers filter on.
+type Broadcaster func(op, namespace, kind, name string)
+
+// noopBroadcaster discards events. Default when no broadcaster is
+// configured (e.g. -once mode).
+var noopBroadcaster Broadcaster = func(_, _, _, _ string) {}
+
 // InformerManager runs a dynamic SharedInformerFactory for the
 // configured GVRs and forwards K8s add/update/delete events into a
 // GraphStore via the configured ExtractorRegistry.
 type InformerManager struct {
-	factory   dynamicinformer.DynamicSharedInformerFactory
-	store     graph.GraphStore
-	extractor ExtractorRegistry
-	gvrs      []schema.GroupVersionResource
-	kindCache map[schema.GroupVersionResource]string
+	factory     dynamicinformer.DynamicSharedInformerFactory
+	store       graph.GraphStore
+	extractor   ExtractorRegistry
+	broadcaster Broadcaster
+	gvrs        []schema.GroupVersionResource
+	kindCache   map[schema.GroupVersionResource]string
 	// onSynced is invoked exactly once, after WaitForCacheSync returns
 	// successfully for every GVR. nil means "no callback".
 	onSynced func()
@@ -78,6 +94,14 @@ func WithGVRs(gvrs []schema.GroupVersionResource) InformerOption {
 // informer still updates resources but emits no edges.
 func WithExtractor(r ExtractorRegistry) InformerOption {
 	return func(m *InformerManager) { m.extractor = r }
+}
+
+// WithBroadcaster wires a Broadcaster (typically pkg/api.WatchHub)
+// that receives one event per K8s add/update/delete after the change
+// is committed to the store. Without this option the informer still
+// drives the store but emits no live updates.
+func WithBroadcaster(b Broadcaster) InformerOption {
+	return func(m *InformerManager) { m.broadcaster = b }
 }
 
 // WithOnSynced registers a callback the informer fires exactly once,
@@ -118,11 +142,12 @@ func factoryClient(f dynamicinformer.DynamicSharedInformerFactory) dynamic.Inter
 // client from c. Pass options to override defaults.
 func NewInformerManager(dyn dynamic.Interface, store graph.GraphStore, opts ...InformerOption) *InformerManager {
 	m := &InformerManager{
-		factory:   dynamicinformer.NewDynamicSharedInformerFactory(dyn, DefaultResyncPeriod),
-		store:     store,
-		extractor: noopRegistry{},
-		gvrs:      MinimalCoreGVRs,
-		kindCache: make(map[schema.GroupVersionResource]string),
+		factory:     dynamicinformer.NewDynamicSharedInformerFactory(dyn, DefaultResyncPeriod),
+		store:       store,
+		extractor:   noopRegistry{},
+		broadcaster: noopBroadcaster,
+		gvrs:        MinimalCoreGVRs,
+		kindCache:   make(map[schema.GroupVersionResource]string),
 	}
 	for _, o := range opts {
 		o(m)
@@ -211,6 +236,10 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 			slog.Warn("upsert edge failed", "from", e.From, "to", e.To, "err", err)
 		}
 	}
+
+	// Notify subscribed clients. Best-effort: the broadcaster is
+	// expected to never block (the hub drops on slow subscribers).
+	m.broadcaster("upsert", r.Namespace, r.Kind, r.Name)
 }
 
 // handleDelete removes the resource from the store. The store cascades
@@ -227,6 +256,7 @@ func (m *InformerManager) handleDelete(ctx context.Context, obj any) {
 	if err := m.store.DeleteResource(ctx, id); err != nil {
 		slog.Warn("delete resource failed", "id", id, "err", err)
 	}
+	m.broadcaster("delete", u.GetNamespace(), u.GetKind(), u.GetName())
 }
 
 func toUnstructured(obj any) (*unstructured.Unstructured, bool) {

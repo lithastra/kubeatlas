@@ -255,6 +255,22 @@ func (h *WatchHub) Broadcast(update GraphUpdate) {
 	}
 }
 
+// BroadcastEvent is a thin convenience over Broadcast that fits the
+// pkg/discovery.Broadcaster signature. Translates an informer event
+// into a cluster-level GraphUpdate carrying the affected resource's
+// triple. The cluster Level intentionally fans out to every
+// subscriber — filterMatches narrows by namespace/kind/name for
+// workload + resource subscribers.
+func (h *WatchHub) BroadcastEvent(_op, namespace, kind, name string) {
+	h.Broadcast(GraphUpdate{
+		Level:     aggregator.LevelCluster,
+		Namespace: namespace,
+		Kind:      kind,
+		Name:      name,
+		Revision:  h.nextID.Add(1),
+	})
+}
+
 // SubscriberCount returns the number of live subscriptions; useful for
 // tests and for /metrics later in P1-T6.
 func (h *WatchHub) SubscriberCount() int {
