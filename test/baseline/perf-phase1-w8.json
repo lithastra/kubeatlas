@@ -1,0 +1,72 @@
+{
+  "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
+  "description": "Phase 1 W8 perf baseline. The W11 task (P1-T23) replaces this with the official perf-phase1.json against a real kind cluster + PetClinic phase1 fixture. Numbers below are Go aggregator microbenchmarks (synthetic store; no apiserver round trips) plus placeholders for the L3 cluster measurements.",
+  "phase": "1-W8",
+  "captured_at": "2026-05-05",
+  "captured_on": {
+    "os": "linux",
+    "arch": "amd64",
+    "cpu": "AMD Ryzen 7 255 w/ Radeon 780M Graphics",
+    "cores": 16
+  },
+  "go_aggregator_benchmarks": {
+    "_comment": "Run via: go test -bench=. -benchmem -run=^$ ./pkg/aggregator/...",
+    "BenchmarkClusterAggregator_5Namespaces": {
+      "ns_per_op": 16870,
+      "B_per_op": 19072,
+      "allocs_per_op": 97,
+      "interpretation": "30 resources -- 17us per call"
+    },
+    "BenchmarkClusterAggregator_50Namespaces": {
+      "ns_per_op": 196651,
+      "B_per_op": 229650,
+      "allocs_per_op": 765,
+      "interpretation": "300 resources -- 197us per call"
+    },
+    "BenchmarkClusterAggregator_200Namespaces": {
+      "ns_per_op": 873493,
+      "B_per_op": 865590,
+      "allocs_per_op": 2889,
+      "interpretation": "1200 resources -- 873us per call (target: <500ms; 575x headroom)"
+    },
+    "BenchmarkNamespaceAggregator": {
+      "ns_per_op": 1250682,
+      "B_per_op": 1071433,
+      "allocs_per_op": 6851,
+      "interpretation": "200-namespace store, single-namespace zoom -- 1.25ms (target: <2s; 1600x headroom)"
+    },
+    "BenchmarkWorkloadAggregator": {
+      "ns_per_op": 4419,
+      "interpretation": "Single workload sub-graph -- 4.4us"
+    },
+    "BenchmarkResourceAggregator": {
+      "ns_per_op": 1851,
+      "interpretation": "Single resource + 1-hop -- 1.9us"
+    }
+  },
+  "l3_cluster_measurements": {
+    "_comment": "TODO(P1-T23): populate after `test/petclinic/run.sh phase1` against a real kind cluster. Until then these are placeholders.",
+    "cluster_view_p50_ms": null,
+    "cluster_view_p99_ms": null,
+    "namespace_view_p50_ms": null,
+    "namespace_view_p99_ms": null,
+    "workload_view_p50_ms": null,
+    "workload_view_p99_ms": null,
+    "resource_view_p50_ms": null,
+    "resource_view_p99_ms": null,
+    "informer_cold_start_ms": null,
+    "memory_rss_steady_mb": null,
+    "resource_count": null,
+    "edge_count": null
+  },
+  "decisions_pending_l3": [
+    "Whether to pre-emptively add an LRU cache to ClusterAggregator (Go bench says no; L3 may disagree under apiserver pressure).",
+    "Whether to lazy-load cytoscape-vendor and mui-grid chunks via dynamic import() (current eager-load total is ~470 KB gzipped)."
+  ],
+  "spec_targets": {
+    "cluster_view_p50_ms": 500,
+    "namespace_view_p50_ms": 2000,
+    "informer_cold_start_ms": 5000,
+    "topology_drag_fps": 30
+  }
+}

@@ -1,0 +1,105 @@
+# Phase 1 incremental fixture. Layered on top of base.yaml to exercise
+# the four-level aggregation + the 1000-node performance verification
+# (the stress namespace is created separately by stress-1k-configmaps.sh).
+#
+# Adds:
+#   - petclinic-staging namespace (multi-namespace filter check)
+#   - A second Deployment + Service in petclinic with a separate
+#     workload chain (so namespace-level aggregation has > 1 workload)
+#
+# Run via: test/petclinic/run.sh phase1
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petclinic-staging
+  labels:
+    app.kubernetes.io/part-of: petclinic
+    environment: staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: staging-config
+  namespace: petclinic-staging
+data:
+  banner: "STAGING"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: petclinic-staging
+  labels:
+    app: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: staging-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: petclinic-staging
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+# A second Deployment in petclinic so the workload-level view has more
+# than one workload to aggregate.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: petclinic
+  labels:
+    app: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      serviceAccountName: petclinic-sa
+      containers:
+        - name: worker
+          image: nginx:1.27-alpine
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: db-password
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: petclinic
+spec:
+  selector:
+    app: worker
+  ports:
+    - port: 80
+      targetPort: 80

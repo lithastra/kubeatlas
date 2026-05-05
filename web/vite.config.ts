@@ -22,5 +22,17 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // Split heavy graph + DataGrid bundles out of the main chunk so
+        // pages that don't render them (e.g. /resources before P1-T13's
+        // topology dependencies) don't pay the parse cost. Order
+        // matters — the first matching pattern wins.
+        manualChunks: {
+          'cytoscape-vendor': ['cytoscape', 'cytoscape-dagre'],
+          'mui-grid': ['@mui/x-data-grid'],
+        },
+      },
+    },
   },
 });
