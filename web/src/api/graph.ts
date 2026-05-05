@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { fetchJSON } from './client';
-import type { Level, View } from './types';
+import type { Level, ResourceDetailResponse, View } from './types';
 
 // Query params accepted by GET /api/v1alpha1/graph. Only `level` is
 // always required; the rest depend on which level is being requested.
@@ -43,6 +43,30 @@ export function useClusterGraph() {
 // selected for the query to fire.
 export function useNamespaceGraph(namespace: string | null) {
   return useGraph({ level: 'namespace', namespace: namespace ?? undefined });
+}
+
+// Params for GET /api/v1alpha1/resources/{ns}/{kind}/{name}.
+export interface ResourceParams {
+  namespace: string | null;
+  kind: string | null;
+  name: string | null;
+}
+
+function resourceURL(p: ResourceParams): string {
+  const ns = p.namespace || '_'; // sentinel for cluster-scoped resources
+  return `${apiBase}/resources/${encodeURIComponent(ns)}/${encodeURIComponent(p.kind ?? '')}/${encodeURIComponent(p.name ?? '')}`;
+}
+
+// useResource fetches the resource detail bundle (the resource plus
+// its incoming + outgoing edges). Fires only when kind + name are
+// both set so the hook can be called unconditionally from the page.
+export function useResource(p: ResourceParams) {
+  const enabled = Boolean(p.kind && p.name);
+  return useQuery<ResourceDetailResponse>({
+    queryKey: ['resource', p],
+    queryFn: ({ signal }) => fetchJSON<ResourceDetailResponse>(resourceURL(p), { signal }),
+    enabled,
+  });
 }
 
 function isScopeComplete(p: GraphParams): boolean {

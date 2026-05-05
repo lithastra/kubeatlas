@@ -91,5 +91,6 @@ func (ResourceAggregator) Aggregate(ctx context.Context, store graph.GraphStore,
 	view.Edges = sortEdges(edges)
 	view.Truncated = truncated
 	annotateEdgeCounts(view)
+	view.Mermaid = renderMermaid(view)
 	return view, nil
 }

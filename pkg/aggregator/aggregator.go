@@ -55,6 +55,14 @@ type View struct {
 	// neighbors; see MaxResourceNeighbors). Always false at cluster /
 	// namespace / workload levels today.
 	Truncated bool `json:"truncated,omitempty"`
+	// Mermaid is a server-generated flowchart text the client can hand
+	// straight to mermaid.render. Only populated by ResourceAggregator
+	// (and only when nodes <= MaxResourceNeighbors so Mermaid can
+	// render it without thrashing). Centralising the text generation
+	// here keeps escape rules + node-id mapping in one place; clients
+	// don't have to re-implement it for the CLI vs. UI vs. plugin
+	// surfaces. Empty for other levels.
+	Mermaid string `json:"mermaid,omitempty"`
 }
 
 // Node represents either a raw resource (Type="resource") or an

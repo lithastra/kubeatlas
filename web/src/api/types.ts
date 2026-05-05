@@ -42,6 +42,10 @@ export interface View {
   nodes: ViewNode[];
   edges: ViewEdge[];
   truncated?: boolean;
+  // Server-rendered Mermaid flowchart text. Only ResourceAggregator
+  // populates this (and only when nodes <= the renderer cap); empty
+  // for cluster / namespace / workload levels.
+  mermaid?: string;
 }
 
 export interface OwnerRef {

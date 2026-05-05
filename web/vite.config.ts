@@ -31,6 +31,7 @@ export default defineConfig({
         manualChunks: {
           'cytoscape-vendor': ['cytoscape', 'cytoscape-dagre'],
           'mui-grid': ['@mui/x-data-grid'],
+          'mermaid-vendor': ['mermaid'],
         },
       },
     },

@@ -24,6 +24,7 @@
     "cytoscape": "^3.33.3",
     "cytoscape-dagre": "^2.5.0",
     "i18next": "^23.16.8",
+    "mermaid": "^11.14.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-i18next": "^15.7.4",
