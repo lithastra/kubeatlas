@@ -55,6 +55,7 @@ export function TopologyView({ view, height = '70vh' }: TopologyViewProps) {
   return (
     <Box
       ref={containerRef}
+      data-testid="topology-canvas"
       sx={{
         width: '100%',
         height,

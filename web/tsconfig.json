@@ -29,6 +29,6 @@
     "types": ["jest", "@testing-library/jest-dom"]
   },
   "include": ["src", "tests"],
-  "exclude": ["node_modules", "dist", "build"],
+  "exclude": ["node_modules", "dist", "build", "tests/e2e"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

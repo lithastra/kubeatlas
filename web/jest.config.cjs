@@ -9,6 +9,11 @@
 const config = {
   testEnvironment: 'jsdom',
 
+  // Component tests live next to the code in src/. Anything under
+  // tests/e2e is Playwright and must not be picked up by Jest —
+  // playwright's globals throw if loaded inside a Jest worker.
+  testPathIgnorePatterns: ['/node_modules/', '/tests/e2e/'],
+
   // ts-jest with the ESM-aware transformer covers the TypeScript +
   // JSX cases the rest of the codebase uses.
   transform: {

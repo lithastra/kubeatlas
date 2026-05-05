@@ -1,0 +1,134 @@
+name: E2E
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'web/**'
+      - 'helm/**'
+      - 'test/petclinic/**'
+      - '.github/workflows/e2e.yml'
+  workflow_dispatch:
+
+# E2E spins up a full kind cluster with Envoy Gateway + Traefik +
+# the PetClinic fixture, runs the Go API server against it, and
+# drives the Vite dev server with Playwright. Slow but the only way
+# to catch wiring regressions across all five subsystems at once.
+jobs:
+  playwright:
+    name: Playwright smoke against PetClinic
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.24.0
+          node_image: kindest/node:v1.31.0
+          cluster_name: kubeatlas-e2e
+          wait: 120s
+
+      - name: Install Envoy Gateway
+        run: |
+          helm install envoy-gateway oci://docker.io/envoyproxy/gateway-helm \
+            --version v1.4.2 -n envoy-gateway-system --create-namespace
+          kubectl wait --for=condition=Available --timeout=300s \
+            -n envoy-gateway-system deploy/envoy-gateway
+
+      - name: Install Traefik
+        run: |
+          helm repo add traefik https://traefik.github.io/charts
+          helm install traefik traefik/traefik \
+            -n traefik --create-namespace --wait --timeout 5m
+
+      - name: Apply PetClinic fixture
+        run: bash test/petclinic/run.sh base
+
+      - name: Build kubeatlas binary
+        run: go build -o bin/kubeatlas ./cmd/kubeatlas
+
+      - name: Start kubeatlas API server
+        run: |
+          ./bin/kubeatlas watch --port 8080 > kubeatlas.log 2>&1 &
+          echo $! > kubeatlas.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/readyz >/dev/null 2>&1; then
+              echo "API ready"
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8080/readyz
+
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Typecheck e2e suite
+        working-directory: web
+        run: npm run typecheck:e2e
+
+      - name: Start Vite dev server
+        working-directory: web
+        env:
+          VITE_API_BASE: http://localhost:8080
+        run: |
+          npm run dev > vite.log 2>&1 &
+          echo $! > vite.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:5173 >/dev/null 2>&1; then
+              echo "Vite ready"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Run Playwright tests
+        working-directory: web
+        env:
+          E2E_BASE_URL: http://localhost:5173
+          E2E_NAMESPACE: petclinic
+          E2E_KUBECTL: '1'
+        run: npx playwright test
+
+      - name: Stop background processes
+        if: always()
+        run: |
+          [ -f web/vite.pid ]   && kill "$(cat web/vite.pid)"   || true
+          [ -f kubeatlas.pid ]  && kill "$(cat kubeatlas.pid)"  || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 7
+
+      - name: Upload server logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            kubeatlas.log
+            web/vite.log
+          retention-days: 7

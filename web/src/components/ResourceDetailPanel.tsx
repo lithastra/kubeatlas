@@ -25,7 +25,7 @@ export function ResourceDetailPanel({ resource, incoming, outgoing, mermaidText 
 
   return (
     <Stack spacing={3}>
-      <Box>
+      <Box data-testid="resource-detail-header">
         <Typography variant="h4">
           {tg(`kind.${resource.kind}`, { defaultValue: resource.kind })}/{resource.name}
         </Typography>
