@@ -75,8 +75,11 @@ const config: Config = {
           items: [
             {label: 'What is KubeAtlas', to: '/'},
             {label: 'Quick Start', to: '/quick-start'},
+            {label: 'Helm install options', to: '/installation/helm'},
             {label: 'Architecture', to: '/architecture'},
+            {label: 'API reference', to: '/api-reference'},
             {label: 'Developer Guide', to: '/developer-guide'},
+            {label: 'FAQ', to: '/faq'},
             {label: 'Roadmap', to: '/roadmap'},
           ],
         },
