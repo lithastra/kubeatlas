@@ -1,44 +1,27 @@
-# Multi-stage build. The Web UI is built in stage 1 and copied into
-# the Go module's embed location so stage 2 can compile it into the
-# binary via //go:embed all:web/dist (cmd/kubeatlas/embed.go).
+# Runtime-only image. goreleaser cross-compiles the binary natively
+# (with -tags embed_web after copying web/dist into
+# cmd/kubeatlas/web/dist via the before-hook in .goreleaser.yml) and
+# then invokes `docker buildx` against this Dockerfile in a temp
+# context that contains exactly two files: this Dockerfile and the
+# `kubeatlas` binary. Anything you reference here that isn't in that
+# pair must be declared via `extra_files` in .goreleaser.yml.
 #
-# In CI we usually pre-build web/dist at the repo root and let
-# goreleaser copy it in; this Dockerfile keeps the npm build inline so
-# `docker build .` from a clean checkout works on its own.
+# distroless/static + nonroot matches the Helm Chart's
+# runAsNonRoot=true and readOnlyRootFilesystem=true defaults, so
+# every install path has the same security posture.
 #
-# The runtime stage is distroless/static + nonroot. That matches the
-# Helm Chart's runAsNonRoot=true and readOnlyRootFilesystem=true
-# defaults — same security posture, every install path.
+# Local `docker build .` does not work with this Dockerfile by
+# design — it expects the binary to be in the build context already.
+# To produce a Docker image locally, run:
+#
+#   goreleaser release --snapshot --clean --skip=publish
+#
+# which performs the native build + docker build in one shot.
 
-# ── Stage 1: Web UI ──────────────────────────────────────────────────
-FROM node:20-alpine AS web
-WORKDIR /web
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
-COPY web/ ./
-RUN npm run build
-
-# ── Stage 2: Go binary ───────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
-ARG TARGETOS
-ARG TARGETARCH
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-# Drop the placeholder dist tree and replace with the freshly built
-# bundle so //go:embed picks up the real assets.
-RUN rm -rf cmd/kubeatlas/web/dist && mkdir -p cmd/kubeatlas/web/dist
-COPY --from=web /web/dist cmd/kubeatlas/web/dist
-# -tags embed_web flips on the //go:embed directive in
-# cmd/kubeatlas/embed_release.go. Without the tag the binary still
-# builds — it just serves the API without a Web UI bundled in.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -tags embed_web -ldflags="-s -w" -o /kubeatlas ./cmd/kubeatlas
-
-# ── Stage 3: Runtime ─────────────────────────────────────────────────
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=builder /kubeatlas /kubeatlas
+
+COPY kubeatlas /kubeatlas
+
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/kubeatlas"]
