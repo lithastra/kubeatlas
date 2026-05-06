@@ -54,8 +54,19 @@ type Client struct {
 	dynamic   dynamic.Interface
 }
 
-// NewClient builds a Client from the default kubeconfig.
-// Resolution order: $KUBECONFIG, then ~/.kube/config.
+// NewClient builds a Client from the most appropriate source for the
+// runtime environment.
+//
+// Resolution order:
+//
+//  1. $KUBECONFIG (explicit override — wins everywhere).
+//  2. In-cluster service account (when KUBERNETES_SERVICE_HOST is set,
+//     i.e. running inside a Pod).
+//  3. ~/.kube/config (default for local dev / -once mode on a laptop).
+//
+// The in-cluster step is what lets the Helm-installed Pod work: the
+// distroless image has no $HOME/.kube/config and no UserHomeDir, so
+// the previous "always read kubeconfig" path crashed on startup.
 func NewClient() (*Client, error) {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -73,15 +84,27 @@ func NewClient() (*Client, error) {
 }
 
 func loadConfig() (*rest.Config, error) {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	if kubeconfig == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("locate user home: %w", err)
-		}
-		kubeconfig = filepath.Join(home, ".kube", "config")
+	if explicit := os.Getenv("KUBECONFIG"); explicit != "" {
+		return clientcmd.BuildConfigFromFlags("", explicit)
 	}
-	return clientcmd.BuildConfigFromFlags("", kubeconfig)
+	// In-cluster: client-go sets KUBERNETES_SERVICE_HOST in every Pod.
+	// Prefer it over a stray ~/.kube/config so a developer running
+	// `kubectl exec` into the Pod can't accidentally point KubeAtlas
+	// at the wrong cluster.
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		cfg, err := rest.InClusterConfig()
+		if err == nil {
+			return cfg, nil
+		}
+		// Fall through to kubeconfig if in-cluster discovery fails for
+		// an unexpected reason (e.g. a busted SA mount); the error from
+		// kubeconfig is usually clearer than InClusterConfig's.
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("no $KUBECONFIG and no in-cluster config; locate user home failed: %w", err)
+	}
+	return clientcmd.BuildConfigFromFlags("", filepath.Join(home, ".kube", "config"))
 }
 
 // CollectAll walks every API resource the cluster exposes (namespaced
