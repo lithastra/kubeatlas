@@ -63,7 +63,11 @@ func (ClusterAggregator) Aggregate(ctx context.Context, store graph.GraphStore, 
 		in[k.to] += c
 	}
 
-	view := &View{Level: LevelCluster}
+	// Initialise to non-nil empty slices so JSON encoding emits []
+	// instead of null when there's no aggregated content. The Web UI
+	// iterates these directly, so null would throw a TypeError on the
+	// client.
+	view := &View{Level: LevelCluster, Nodes: []Node{}, Edges: []AEdge{}}
 	for _, ns := range sortedKeys(nsKinds) {
 		view.Nodes = append(view.Nodes, Node{
 			ID:              ns,

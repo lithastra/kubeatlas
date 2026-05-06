@@ -1,7 +1,15 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
-import dagre from 'cytoscape-dagre';
+// Import as namespace + unwrap defensively. In dev builds Vite hands
+// us the default export; in some production builds the same line
+// returns the namespace object, leaving `dagre` as undefined and
+// blowing up `cytoscape.use(dagre)` at registration time. The `??`
+// covers both shapes.
+import * as cytoscapeDagre from 'cytoscape-dagre';
 
 import type { View, ViewEdge, ViewNode } from '../api/types';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const dagre: cytoscape.Ext = (cytoscapeDagre as any).default ?? (cytoscapeDagre as unknown as cytoscape.Ext);
 
 // Register the dagre layout once at module import time. Subsequent
 // imports are no-ops.
@@ -121,9 +129,15 @@ const perfOptions = {
 
 // elementsFromView turns a server-side aggregated View into the
 // {nodes, edges} shape Cytoscape consumes.
+//
+// Defensive nullish coalescing: Go's json/encoding serialises an
+// empty slice as `null` unless the field was explicitly initialised
+// to a non-nil zero-length slice. Cluster-level views with no
+// cross-namespace edges hit this; without `?? []` the for-of loop
+// throws "edges is not iterable" and unmounts the page.
 export function elementsFromView(view: View): ElementDefinition[] {
   const elements: ElementDefinition[] = [];
-  for (const n of view.nodes) {
+  for (const n of view.nodes ?? []) {
     elements.push({
       group: 'nodes',
       data: {
@@ -134,7 +148,7 @@ export function elementsFromView(view: View): ElementDefinition[] {
       },
     });
   }
-  for (const e of view.edges) {
+  for (const e of view.edges ?? []) {
     elements.push({
       group: 'edges',
       data: {

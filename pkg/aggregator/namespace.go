@@ -78,7 +78,7 @@ func (NamespaceAggregator) Aggregate(ctx context.Context, store graph.GraphStore
 		}
 	}
 
-	view := &View{Level: LevelNamespace}
+	view := &View{Level: LevelNamespace, Nodes: []Node{}, Edges: []AEdge{}}
 
 	// Emit aggregated nodes for workloads. ChildrenCount for each
 	// workload counts the number of resources whose owner chain leads
