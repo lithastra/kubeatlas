@@ -13,11 +13,16 @@ For the current state, see [What is KubeAtlas](./).
 
 ## Where we are
 
+**v0.1.0 is released** (2026-05-06). Install with
+`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 0.1.0`
+— see the [Quick Start](./quick-start.md). Phase 2 is now the active
+cycle.
+
 | Phase | Status | What it delivered |
 |---|---|---|
 | **Phase 0** (Foundation) | ✅ Done | CLI binary, in-memory graph, 8 edge types, 16 watched resources, contract-tested store interface, contributor docs, CI gates. No API, no UI, no Helm Chart. |
-| **Phase 1** (MVP → v0.1.0) | 🚧 In progress | REST + WebSocket API, React/MUI Web UI with Cytoscape topology and Mermaid neighbor view, Helm Chart with secure defaults, Playwright E2E, multi-platform release. |
-| **Phase 2** (v1.0) | ⏳ Planned | Persistence, extensibility, advanced graph kinds. |
+| **Phase 1** (MVP → v0.1.0) | ✅ Released | REST + WebSocket API, React/MUI Web UI with Cytoscape topology and Mermaid neighbour view, Helm Chart with secure defaults, Playwright E2E, multi-platform release. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:0.1.0`. |
+| **Phase 2** (v1.0) | 🚧 Starting | Persistence, extensibility, advanced graph kinds. Priorities being shaped by v0.1.0 user feedback — see [How to influence the roadmap](#how-to-influence-the-roadmap). |
 | **Phase 3** (v2.0+) | 💭 Sketch | Multi-cluster, cloud integration. |
 
 ## Related tools
@@ -83,9 +88,14 @@ A short list, with the question each is best at:
 
 If you have a tool that should be on this list, [open a doc PR](https://github.com/lithastra/kubeatlas/blob/main/CONTRIBUTING.md).
 
-## Phase 1 → v0.1.0 (in progress)
+## Phase 1 → v0.1.0 (released)
 
-The first publicly-releasable build. Targeted scope:
+The first publicly-releasable build. **Shipped on 2026-05-06.**
+Install reference: see [Quick Start](./quick-start.md). Release
+notes:
+[github.com/lithastra/kubeatlas/releases/tag/v0.1.0](https://github.com/lithastra/kubeatlas/releases/tag/v0.1.0).
+
+Delivered scope:
 
 - **REST API** — `GET /api/v1alpha1/graph` at four levels
   (cluster / namespace / workload / resource), `GET /resources/{ns}/{kind}/{name}` for detail, `GET /search`, `/healthz`, `/readyz`, `/metrics`
@@ -118,9 +128,10 @@ So we ship something usable instead of trying to ship everything:
 
 These are **planned for v1.0**, not abandoned.
 
-## Phase 2 → v1.0 (planned)
+## Phase 2 → v1.0 (active)
 
-The "make it suitable for production observability" cycle. Three months of work, broadly:
+The "make it suitable for production observability" cycle. Roughly
+three months of work, broadly:
 
 | Theme | What lands |
 |---|---|

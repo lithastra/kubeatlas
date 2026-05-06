@@ -27,10 +27,15 @@ the tools above instead of replacing them.
 
 ## Project status
 
-**Pre-Alpha (Phase 0).** The CLI works on real clusters. The REST API
-and Web UI land in Phase 1 (v0.1.0). See the [Roadmap](./roadmap.md)
-for what's planned beyond that; the [Quick Start](./quick-start.md)
-walks through what runs today.
+**v0.1.0 — released 2026-05-06.** The first publicly installable
+build: REST + WebSocket API, React/MUI Web UI with Cytoscape
+topology and Mermaid neighbour view, Helm chart with hard-locked
+secure defaults, multi-arch container image. In-memory only,
+single-replica, no built-in authentication — see the
+[security warning](./installation/security-warning.md) before
+exposing the UI. The [Quick Start](./quick-start.md) walks through
+the install; the [Roadmap](./roadmap.md) covers what's coming in
+v1.0.
 
 ## Reading order
 

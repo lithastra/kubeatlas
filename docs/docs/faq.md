@@ -19,7 +19,7 @@ KubeAtlas is **only the dependency graph**. It doesn't render Pods
 as a list to manage them; it tells you what depends on what. The two
 tools coexist — install Headlamp for "show me the cluster" and
 KubeAtlas for "show me the wiring". A v1.0 Headlamp plugin is on the
-[roadmap](./roadmap.md#phase-2--v10-planned).
+[roadmap](./roadmap.md#phase-2--v10-active).
 
 ## Can I run this in production today?
 
@@ -76,9 +76,10 @@ exposing the UI.
 ## When will Tier 2 / Rego / Headlamp plugin be ready?
 
 All three are in **Phase 2 (v1.0)**. There's no committed date —
-v0.1.0 needs to ship first and get used before Phase 2 priorities
-are finalised. The order will partly depend on what early adopters
-ask for. See the [roadmap](./roadmap.md#phase-2--v10-planned).
+v0.1.0 shipped on 2026-05-06 and Phase 2 priorities are now being
+shaped by user feedback. The order will partly depend on what
+early adopters ask for. See the
+[roadmap](./roadmap.md#phase-2--v10-active).
 
 ## How do I extend it with custom edge types?
 
@@ -93,7 +94,7 @@ adding a new edge type — it's roughly:
 In v1.0 we plan to add **runtime Rego/Wasm extractors** so this no
 longer requires a fork — operators declare custom edges in policy.
 That's tracked in
-[the roadmap](./roadmap.md#phase-2--v10-planned).
+[the roadmap](./roadmap.md#phase-2--v10-active).
 
 ## Does it phone home / collect telemetry?
 
