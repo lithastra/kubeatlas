@@ -69,7 +69,7 @@ sleep 5
 
 echo "==> Snapshot before delete:"
 curl -fsS "http://localhost:8080/api/v1alpha1/resources/${NS}/Deployment/dangling-dep/outgoing" \
-  | jq '.edges | map(select(.type=="USES_CONFIGMAP"))'
+  | jq 'map(select(.type=="USES_CONFIGMAP"))'
 
 echo "==> Deleting ConfigMap dangling-cm"
 kubectl delete configmap -n "${NS}" dangling-cm
@@ -79,7 +79,7 @@ sleep 5
 
 echo "==> Snapshot after delete:"
 curl -fsS "http://localhost:8080/api/v1alpha1/resources/${NS}/Deployment/dangling-dep/outgoing" \
-  | jq '.edges | map(select(.type=="USES_CONFIGMAP"))'
+  | jq 'map(select(.type=="USES_CONFIGMAP"))'
 
 echo
 echo "Expected: the second snapshot is an empty array (edge cascaded)."
