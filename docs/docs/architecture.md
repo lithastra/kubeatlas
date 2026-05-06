@@ -5,8 +5,10 @@ title: Architecture
 
 # Architecture
 
-This page summarises the design that the Phase 0 codebase implements.
-The REST API and Web UI sketched at the bottom land in Phase 1.
+This page summarises the design as it stands in v0.1.0. Components
+that are deferred to v1.0 (Tier 2 storage, Rego/Wasm extractors,
+multi-cluster, etc.) are called out inline and tracked on the
+[Roadmap](./roadmap.md).
 
 ## Six design principles
 
@@ -111,19 +113,21 @@ Pre-aggregation produces ready-to-render summaries:
 This shape lets the Web UI render a useful overview without ever
 materialising the full graph in the browser.
 
-## What lands in Phase 1 (preview)
+## What v0.1.0 ships on top of the engine
 
 - **`pkg/api`** — REST endpoints for graph queries (`GET
   /api/v1alpha1/graph` at four levels: cluster / namespace /
   workload / resource), a single-resource detail endpoint, search,
-  health/readiness/metrics, and a WebSocket watch endpoint
+  health / readiness / metrics, and a WebSocket watch endpoint
   (`/api/v1alpha1/watch`). All served by the same binary.
 - **`web/`** — React 19 + TypeScript + MUI v5 Web UI,
   technology-stack-aligned with Headlamp so a v1.0 Headlamp plugin
   is a port rather than a rewrite. Cytoscape topology view at the
-  cluster, namespace, and workload levels; Mermaid neighbor view
+  cluster, namespace, and workload levels; Mermaid neighbour view
   at the single-resource level; a DataGrid resource list with
-  namespace filtering.
+  namespace filtering. Bundled into the Go binary via `//go:embed`
+  so the Helm-installed Pod serves the UI on the same port as the
+  API.
 - **`helm/`** — installable chart with secure defaults baked in:
   ClusterIP-only Service, Ingress disabled by default, a Helm
   `values.schema.json` gate that requires explicit
@@ -132,11 +136,11 @@ materialising the full graph in the browser.
   that runs as non-root with a read-only root filesystem.
 - **Distribution** — multi-arch container image on
   `ghcr.io/lithastra/kubeatlas`, four-platform binaries, Helm Chart
-  published as an OCI artifact.
+  published as an OCI artifact at
+  `oci://ghcr.io/lithastra/charts/kubeatlas`.
 
-For the full Phase 1 plan plus what's deliberately out of scope for
-v0.1.0, see the [Roadmap](./roadmap.md).
+For what's deliberately out of scope for v0.1.0 and what's planned
+for v1.0, see the [Roadmap](./roadmap.md).
 
-The Phase 0 code paths above stay frozen during Phase 1: only new
-methods, new files, and new tests are added. No PoC-era field is
-renamed and no signature is changed.
+The Phase 0 engine stays frozen across v0.x: only additive changes.
+No PoC-era field is renamed and no signature is changed.
