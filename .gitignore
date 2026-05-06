@@ -39,10 +39,11 @@ bin/
 # cmd/kubeatlas/web/dist).
 /dist/
 
-# Embedded Web UI bundle: only the .gitkeep placeholder is committed;
-# real assets are dropped in by the Dockerfile / goreleaser before-hook.
-cmd/kubeatlas/web/dist/*
-!cmd/kubeatlas/web/dist/.gitkeep
+# Embedded Web UI bundle. The directory is populated only at release
+# time (Dockerfile / goreleaser before-hook) when building with
+# -tags embed_web. Default builds skip the embed entirely, so nothing
+# from this tree should be tracked.
+cmd/kubeatlas/web/dist/
 
 # Docusaurus build artifacts
 docs/.docusaurus/

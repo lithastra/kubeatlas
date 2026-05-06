@@ -28,10 +28,13 @@ RUN go mod download
 COPY . .
 # Drop the placeholder dist tree and replace with the freshly built
 # bundle so //go:embed picks up the real assets.
-RUN rm -rf cmd/kubeatlas/web/dist
+RUN rm -rf cmd/kubeatlas/web/dist && mkdir -p cmd/kubeatlas/web/dist
 COPY --from=web /web/dist cmd/kubeatlas/web/dist
+# -tags embed_web flips on the //go:embed directive in
+# cmd/kubeatlas/embed_release.go. Without the tag the binary still
+# builds — it just serves the API without a Web UI bundled in.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags="-s -w" -o /kubeatlas ./cmd/kubeatlas
+    go build -tags embed_web -ldflags="-s -w" -o /kubeatlas ./cmd/kubeatlas
 
 # ── Stage 3: Runtime ─────────────────────────────────────────────────
 FROM gcr.io/distroless/static-debian12:nonroot

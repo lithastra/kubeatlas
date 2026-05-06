@@ -20,6 +20,13 @@ builds:
       - CGO_ENABLED=0
     goos: [linux, darwin]
     goarch: [amd64, arm64]
+    # embed_web turns on the //go:embed directive in
+    # cmd/kubeatlas/embed_release.go; the before-hook above has
+    # already copied web/dist into cmd/kubeatlas/web/dist by this
+    # point. Default builds omit the tag to keep `go test` and CI
+    # lint working without a frontend bundle.
+    tags:
+      - embed_web
     ldflags:
       - -s -w
       - -X github.com/lithastra/kubeatlas/pkg/version.Version={{.Version}}
