@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -76,7 +77,15 @@ type InformerManager struct {
 	extractor   ExtractorRegistry
 	broadcaster Broadcaster
 	gvrs        []schema.GroupVersionResource
+
+	// kindCacheMu guards kindCache. Each watched GVR runs its own
+	// processorListener goroutine; every event upserts the GVR's
+	// resolved Kind into the cache, so without a lock the runtime
+	// catches "concurrent map writes" the moment two GVRs fire at
+	// the same time.
+	kindCacheMu sync.RWMutex
 	kindCache   map[schema.GroupVersionResource]string
+
 	// onSynced is invoked exactly once, after WaitForCacheSync returns
 	// successfully for every GVR. nil means "no callback".
 	onSynced func()
@@ -273,13 +282,31 @@ func toUnstructured(obj any) (*unstructured.Unstructured, bool) {
 // kindFor returns the Kind for a GVR. The dynamic informer hands us
 // objects whose GetKind() may be empty, so we cache the resolved Kind
 // from the first object we see for that GVR.
+//
+// Called from every informer event handler. N informer goroutines
+// run concurrently (one per GVR), so map access has to be locked —
+// see kindCacheMu on the struct.
 func (m *InformerManager) kindFor(gvr schema.GroupVersionResource, u *unstructured.Unstructured) string {
 	if k := u.GetKind(); k != "" {
+		// Fast path: do a lock-free RLock check so the steady-state
+		// case (every event has Kind set, cache already populated)
+		// avoids contending the write lock.
+		m.kindCacheMu.RLock()
+		cached, ok := m.kindCache[gvr]
+		m.kindCacheMu.RUnlock()
+		if ok && cached == k {
+			return k
+		}
+		m.kindCacheMu.Lock()
 		m.kindCache[gvr] = k
+		m.kindCacheMu.Unlock()
 		return k
 	}
-	if k, ok := m.kindCache[gvr]; ok {
-		return k
+	m.kindCacheMu.RLock()
+	cached, ok := m.kindCache[gvr]
+	m.kindCacheMu.RUnlock()
+	if ok {
+		return cached
 	}
 	// Fallback: derive from the resource name. Strip plural "s" or "es".
 	// Good enough for the common cases that hit this branch (rare).

@@ -82,7 +82,7 @@ func (WorkloadAggregator) Aggregate(ctx context.Context, store graph.GraphStore,
 	}
 
 	// Materialise nodes from the included id set.
-	view := &View{Level: LevelWorkload}
+	view := &View{Level: LevelWorkload, Nodes: []Node{}, Edges: []AEdge{}}
 	ids := make([]string, 0, len(included))
 	for id := range included {
 		ids = append(ids, id)

@@ -57,7 +57,7 @@ func (ResourceAggregator) Aggregate(ctx context.Context, store graph.GraphStore,
 	}
 	sort.Strings(neighborIDs)
 
-	view := &View{Level: LevelResource}
+	view := &View{Level: LevelResource, Nodes: []Node{}, Edges: []AEdge{}}
 	view.Nodes = append(view.Nodes, resourceNode(root))
 
 	truncated := false
