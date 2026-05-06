@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Two jobs: goreleaser builds the binaries + multi-arch images and
+# creates a draft GitHub Release; helm-push packages the chart and
+# pushes it to the OCI registry. Both run only on tag pushes (or
+# manual dispatch). The Release stays as a draft until a human
+# clicks Publish — see the project's release process.
+#
+# The workflow assumes the repo's "Read and write permissions" for
+# GITHUB_TOKEN is enabled in Settings → Actions → General.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser:
+    name: goreleaser (binaries + images + draft release)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # create the GitHub Release
+      packages: write    # push images to ghcr.io
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web bundle
+        # Goreleaser's before-hook copies web/dist into
+        # cmd/kubeatlas/web/dist so //go:embed picks it up. We must
+        # build the bundle here first because goreleaser doesn't
+        # touch npm.
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU (for arm64 cross-build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload dist as workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  helm-push:
+    name: Push Helm Chart to ghcr.io OCI
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.20.0
+
+      - name: Login to GHCR for Helm
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      - name: Package and push chart
+        env:
+          GIT_REF: ${{ github.ref }}
+        run: |
+          # Strip the leading 'refs/tags/v' from the tag so the chart
+          # version is a clean semver like 0.1.0.
+          VERSION="${GIT_REF#refs/tags/v}"
+          if [ "$VERSION" = "$GIT_REF" ]; then
+            echo "::error::release.yml ran outside a tag context; refusing to push." >&2
+            exit 1
+          fi
+          helm package helm/kubeatlas --version "$VERSION" --app-version "$VERSION"
+          helm push "kubeatlas-${VERSION}.tgz" oci://ghcr.io/lithastra/charts
