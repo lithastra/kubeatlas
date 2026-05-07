@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -18,10 +19,12 @@ import (
 // AGEHandle is the value returned by StartPostgresWithAGE. ConnStr is
 // the external connection string (sslmode=disable, suitable for pgx
 // or psql); Container is exposed so tests may run psql via Exec
-// without pulling in a Go pg driver — pgx lands in P2-T2.
+// without pulling in a Go pg driver — pgx lands in P2-T2. startup is
+// the wall time the bootstrap took; used by callers to log timings.
 type AGEHandle struct {
 	Container *postgres.PostgresContainer
 	ConnStr   string
+	startup   time.Duration
 }
 
 // StartPostgresWithAGE boots a single-use Postgres container preloaded
@@ -39,10 +42,29 @@ type AGEHandle struct {
 // tags as release_PG<major>_<age-version>; the "PG14_latest" form
 // the guide draft references does not exist on Docker Hub. PG16 +
 // AGE 1.6 is the newest stable combination as of v1.0 GA.
-func StartPostgresWithAGE(t *testing.T) AGEHandle {
+func StartPostgresWithAGE(t testing.TB) AGEHandle {
 	t.Helper()
+	h, err := bootstrapPostgresWithAGE(context.Background())
+	if err != nil {
+		t.Fatalf("StartPostgresWithAGE: %v", err)
+	}
+	// Register cleanup so the container survives test panics and is
+	// torn down even if a later step fatals.
+	t.Cleanup(func() {
+		if err := h.Container.Terminate(context.Background()); err != nil {
+			t.Logf("StartPostgresWithAGE: terminate: %v", err)
+		}
+	})
+	t.Logf("StartPostgresWithAGE ready in %s", h.startup.Round(time.Millisecond))
+	return h
+}
 
-	ctx := context.Background()
+// bootstrapPostgresWithAGE owns the container start and AGE extension
+// install but does NOT register t.Cleanup. Callers responsible for
+// teardown — used by TestMain to share a single container across
+// benchmark scaling passes (each b.N call would otherwise tear the
+// container down via t.Cleanup before the next call connects).
+func bootstrapPostgresWithAGE(ctx context.Context) (AGEHandle, error) {
 	start := time.Now()
 
 	container, err := postgres.Run(ctx,
@@ -60,29 +82,21 @@ func StartPostgresWithAGE(t *testing.T) AGEHandle {
 		),
 	)
 	if err != nil {
-		t.Fatalf("StartPostgresWithAGE: run container: %v", err)
+		return AGEHandle{}, fmt.Errorf("run container: %w", err)
 	}
 
-	// Register cleanup before any further calls so that a failure
-	// below still tears the container down.
-	t.Cleanup(func() {
-		if err := container.Terminate(context.Background()); err != nil {
-			t.Logf("StartPostgresWithAGE: terminate: %v", err)
-		}
-	})
-
 	if err := execPSQL(ctx, container, "CREATE EXTENSION IF NOT EXISTS age"); err != nil {
-		t.Fatalf("StartPostgresWithAGE: create AGE extension: %v", err)
+		_ = container.Terminate(context.Background())
+		return AGEHandle{}, fmt.Errorf("create AGE extension: %w", err)
 	}
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		t.Fatalf("StartPostgresWithAGE: connection string: %v", err)
+		_ = container.Terminate(context.Background())
+		return AGEHandle{}, fmt.Errorf("connection string: %w", err)
 	}
 
-	t.Logf("StartPostgresWithAGE ready in %s", time.Since(start).Round(time.Millisecond))
-
-	return AGEHandle{Container: container, ConnStr: connStr}
+	return AGEHandle{Container: container, ConnStr: connStr, startup: time.Since(start)}, nil
 }
 
 // execPSQL runs sql in the container's bundled psql against the
