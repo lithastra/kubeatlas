@@ -73,38 +73,15 @@ func (s *Store) Close() {
 	}
 }
 
-// Init creates the resources and edges tables plus their supporting
-// indexes if they are not already present. It is idempotent and safe
-// to call on every startup.
+// Init brings the database schema up to currentSchemaVersion by
+// running every migration under migrate/ that has not been applied
+// yet. It is idempotent and safe to call on every startup.
 //
-// In P2-T3 this is replaced by a versioned migration framework; for
-// P2-T2 we keep DDL inline so the skeleton stays self-contained.
+// As of P2-T3 this delegates to the versioned migration framework
+// in schema.go; the inline DDL the P2-T2 skeleton shipped now lives
+// in migrate/001_initial.sql alongside the AGE bootstrap.
 func (s *Store) Init(ctx context.Context) error {
-	const ddl = `
-		CREATE TABLE IF NOT EXISTS resources (
-			id   TEXT PRIMARY KEY,
-			data JSONB NOT NULL
-		);
-		CREATE INDEX IF NOT EXISTS idx_resources_kind
-			ON resources ((data->>'kind'));
-		CREATE INDEX IF NOT EXISTS idx_resources_namespace
-			ON resources ((data->>'namespace'));
-		CREATE INDEX IF NOT EXISTS idx_resources_labels
-			ON resources USING gin ((data->'labels'));
-
-		CREATE TABLE IF NOT EXISTS edges (
-			from_id TEXT NOT NULL,
-			to_id   TEXT NOT NULL,
-			type    TEXT NOT NULL,
-			PRIMARY KEY (from_id, to_id, type)
-		);
-		CREATE INDEX IF NOT EXISTS idx_edges_to   ON edges (to_id);
-		CREATE INDEX IF NOT EXISTS idx_edges_from ON edges (from_id);
-	`
-	if _, err := s.pool.Exec(ctx, ddl); err != nil {
-		return fmt.Errorf("postgres.Init: ddl: %w", err)
-	}
-	return nil
+	return s.migrate(ctx)
 }
 
 // UpsertResource inserts or replaces the resource at r.ID(). The full
