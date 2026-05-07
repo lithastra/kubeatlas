@@ -113,25 +113,57 @@ readinessProbe:
 # Default-off so a `helm install kubeatlas oci://...` with no flags
 # still gives the zero-config Tier 1 experience the README promises
 # (guide §2.3, anti-pattern #10). Setting persistence.enabled=true
-# without filling in connection details is rejected by
-# values.schema.json — no half-configured Tier 2 deployments.
+# without picking exactly one of {embedded, connection} is rejected
+# by values.schema.json — no half-configured Tier 2 deployments.
 #
-# P2-T6 (next) adds an opt-in CloudNativePG sub-chart so users can
-# do `--set persistence.embedded.enabled=true` for one-line install.
-# Until then, Tier 2 expects a BYO Postgres reachable from the Pod.
+# Two production paths:
+#
+#   1. Embedded (one-line install): persistence.embedded.enabled=true
+#      pulls in the CloudNativePG sub-chart, provisions a single-
+#      replica PG cluster running lithastra/postgres-age, and wires
+#      KubeAtlas to it via Pod env. Best for evaluation and small
+#      single-cluster ops.
+#   2. BYO Postgres: persistence.connection.* points at an existing
+#      AGE-capable Postgres. RDS / Cloud SQL are NOT supported —
+#      they reject shared_preload_libraries=age. Self-hosted PG +
+#      AGE 1.6.0 (or newer) is the supported BYO target.
 persistence:
   enabled: false
+
+  embedded:
+    # When true, the chart renders a CloudNativePG Cluster CRD plus
+    # the templates that wire KubeAtlas to it. Requires the cnpg
+    # sub-chart (declared in Chart.yaml under "condition" so it is
+    # only fetched when this flag is true).
+    enabled: false
+    # Storage size for the embedded PG PVC. The Cluster CRD's
+    # default StorageClass is used unless overridden.
+    storageSize: 5Gi
+    storageClassName: ""
+    # Image pin matches images/postgres-age/Dockerfile and the test
+    # bootstrap; bumping AGE / PG means changing all three together.
+    image: ghcr.io/lithastra/postgres-age:16-1.6.0
+    # Cluster name suffix; final name is "<release>-<suffix>".
+    clusterNameSuffix: pg
+
   connection:
-    # Hostname of the Postgres+AGE server. Required when
-    # persistence.enabled=true. Empty in the default values so the
-    # schema's "if enabled then host required" rule fires loud.
+    # Hostname of the BYO Postgres+AGE server. Mutually exclusive
+    # with persistence.embedded.enabled — schema rejects setting
+    # both. Required when persistence.enabled=true and embedded is
+    # off.
     host: ""
     port: 5432
     database: kubeatlas
     user: kubeatlas
-    # password is rendered as a plain env var in P2-T5; P2-T6 will
-    # switch this to a Kubernetes Secret reference.
+    # Plaintext password. Production deployments should set
+    # passwordSecretRef instead, which takes precedence and pulls
+    # the value from a Kubernetes Secret at Pod start. Embedded
+    # mode ignores both and uses the CNPG-managed app secret
+    # automatically.
     password: ""
+    passwordSecretRef:
+      name: ""
+      key: password
     sslMode: disable
 
 nodeSelector: {}

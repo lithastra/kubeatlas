@@ -5,6 +5,16 @@ type: application
 version: 0.1.0
 appVersion: "0.1.0"
 kubeVersion: ">=1.26.0-0"
+# Optional CloudNativePG dependency. The conditional means
+# `helm dependency update` only fetches it when the user opts in
+# via persistence.embedded.enabled=true; default installs are
+# unaffected and continue to ship a single-chart .tgz (guide §2.3,
+# anti-pattern #10: Tier 2 is opt-in).
+dependencies:
+  - name: cloudnative-pg
+    version: "0.22.x"
+    repository: "https://cloudnative-pg.io/charts"
+    condition: persistence.embedded.enabled
 keywords:
   - kubernetes
   - dependency-graph

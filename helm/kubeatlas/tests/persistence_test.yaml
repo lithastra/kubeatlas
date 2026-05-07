@@ -1,0 +1,134 @@
+suite: persistence (Tier 2)
+templates:
+  - deployment.yaml
+  - postgres-cluster.yaml
+tests:
+  - it: persistence off (default) renders no postgres-cluster
+    template: postgres-cluster.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: BYO mode does not render postgres-cluster
+    template: postgres-cluster.yaml
+    set:
+      persistence.enabled: true
+      persistence.connection.host: pg.example
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: embedded mode renders a CNPG Cluster with shared_preload_libraries=age
+    template: postgres-cluster.yaml
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Cluster
+      - equal:
+          path: apiVersion
+          value: postgresql.cnpg.io/v1
+      - equal:
+          path: spec.postgresql.parameters.shared_preload_libraries
+          value: age
+      - equal:
+          path: spec.imageName
+          value: ghcr.io/lithastra/postgres-age:16-1.6.0
+      - contains:
+          path: spec.bootstrap.initdb.postInitApplicationSQL
+          content: CREATE EXTENSION IF NOT EXISTS age
+
+  - it: embedded mode injects wait-for-pg init container
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-pg
+      - contains:
+          path: spec.template.spec.initContainers[0].env
+          content:
+            name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: RELEASE-NAME-kubeatlas-pg-app
+                key: password
+
+  - it: embedded mode points main container PGHOST at the CNPG -rw service
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGHOST
+            value: RELEASE-NAME-kubeatlas-pg-rw
+
+  - it: BYO mode injects wait-for-pg init container against external host
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.connection.host: pg.example
+      persistence.connection.password: hunter2
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-pg
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGHOST
+            value: pg.example
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGPASSWORD
+            value: hunter2
+
+  - it: BYO mode with passwordSecretRef pulls password via valueFrom
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.connection.host: pg.example
+      persistence.connection.passwordSecretRef.name: my-pg-creds
+      persistence.connection.passwordSecretRef.key: password
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: my-pg-creds
+                key: password
+
+  - it: persistence enabled with neither embedded nor connection.host is rejected
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "minLength|host"
+
+  - it: persistence enabled with both embedded and connection.host is rejected
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      persistence.connection.host: ext.example
+    asserts:
+      - failedTemplate:
+          errorPattern: "maxLength|host"
+
+  - it: persistence off does not render an init container
+    template: deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.initContainers

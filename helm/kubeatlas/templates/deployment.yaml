@@ -22,6 +22,32 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.persistence.enabled }}
+      # wait-for-pg blocks the main container until Postgres is
+      # accepting connections (guide P2-T6: pg_isready loop in
+      # init container, NOT in the kubeatlas main process). The
+      # postgres-age image bundles pg_isready, so we reuse it here
+      # rather than pulling a second client image.
+      initContainers:
+        - name: wait-for-pg
+          image: {{ .Values.persistence.embedded.image | quote }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              i=0
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; do
+                i=$((i+1))
+                if [ "$i" -ge 60 ]; then
+                  echo "wait-for-pg: timeout after 60s" >&2
+                  exit 1
+                fi
+                sleep 1
+              done
+          env:
+            {{- include "kubeatlas.pgEnv" . | nindent 12 }}
+      {{- end }}
       containers:
         - name: kubeatlas
           image: {{ include "kubeatlas.image" . }}
@@ -34,14 +60,14 @@ spec:
           env:
             - name: KUBEATLAS_BACKEND
               value: "postgres"
+            {{- include "kubeatlas.pgEnv" . | nindent 12 }}
+            # PGCONN uses K8s env-var dependency expansion: $(PGPASSWORD)
+            # is substituted at container start with whatever the
+            # PGPASSWORD env var holds — including values pulled from
+            # a Secret via secretKeyRef. This keeps secret material
+            # out of the rendered Deployment manifest.
             - name: PGCONN
-              value: {{ printf "postgres://%s:%s@%s:%d/%s?sslmode=%s"
-                          .Values.persistence.connection.user
-                          .Values.persistence.connection.password
-                          .Values.persistence.connection.host
-                          (int .Values.persistence.connection.port)
-                          .Values.persistence.connection.database
-                          .Values.persistence.connection.sslMode | quote }}
+              value: "postgres://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/$(PGDATABASE)?sslmode=$(PGSSLMODE)"
           {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
