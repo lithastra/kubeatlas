@@ -61,14 +61,112 @@ func sharedBenchStore(b *testing.B) *Store {
 	return benchStore
 }
 
-// BenchmarkUpsert1000Resources is the P2-T2 acceptance benchmark:
-// each iteration upserts 1000 unique resources into a freshly-
-// truncated store, so ns/op reports the time to load a small
-// cluster's worth of resources end-to-end (marshal -> SQL -> COMMIT).
+// BenchmarkListOutgoing_AGE_vs_SQL is the P2-T4 acceptance bench:
+// build a 100-vertex / 500-edge graph and measure ListOutgoing on a
+// hot vertex via the AGE Cypher path vs the legacy SQL path. Goal:
+// AGE >= 2x faster than SQL.
 //
-// Guide budget: `go test -bench=BenchmarkUpsert1000Resources` under
-// 5s wall on testcontainers PG. The shared TestMain container makes
-// this hold even when Go auto-scales b.N across multiple passes.
+// The graph is a "hub-and-spoke" — one root vertex with 99 OWNS
+// edges to leaves, plus 401 random edges among the leaves to bring
+// total edges to 500. ListOutgoing on the root touches 99 edges,
+// which is where AGE's index-friendly graph storage outperforms
+// jsonb-row scanning.
+func BenchmarkListOutgoing_AGE_vs_SQL(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping testcontainers benchmark in -short mode")
+	}
+
+	store := sharedBenchStore(b)
+	ctx := context.Background()
+
+	// Reset the store and build the fixture once (outside the
+	// timed loop). All sub-benchmarks share this graph.
+	if err := store.truncateAll(ctx); err != nil {
+		b.Fatalf("truncateAll: %v", err)
+	}
+
+	root := graph.Resource{Kind: "Deployment", Namespace: "perf", Name: "root"}
+	if err := store.UpsertResource(ctx, root); err != nil {
+		b.Fatalf("UpsertResource root: %v", err)
+	}
+	leaves := make([]graph.Resource, 99)
+	for i := range leaves {
+		leaves[i] = graph.Resource{
+			Kind:      "ConfigMap",
+			Namespace: "perf",
+			Name:      fmt.Sprintf("cm-%02d", i),
+		}
+		if err := store.UpsertResource(ctx, leaves[i]); err != nil {
+			b.Fatalf("UpsertResource leaf %d: %v", i, err)
+		}
+		// 99 edges from root to leaves.
+		if err := store.UpsertEdge(ctx, graph.Edge{
+			From: root.ID(), To: leaves[i].ID(), Type: graph.EdgeTypeOwns,
+		}); err != nil {
+			b.Fatalf("UpsertEdge root->leaf %d: %v", i, err)
+		}
+	}
+	// Pad to 500 edges via a deterministic chain among leaves.
+	for i := 0; i < 401; i++ {
+		from := leaves[i%99]
+		to := leaves[(i+1)%99]
+		if err := store.UpsertEdge(ctx, graph.Edge{
+			From: from.ID(), To: to.ID(), Type: graph.EdgeType("USES_CONFIGMAP"),
+		}); err != nil {
+			b.Fatalf("UpsertEdge filler %d: %v", i, err)
+		}
+	}
+
+	rootID := root.ID()
+
+	b.Run("AGE", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			out, err := store.listOutgoingFromAGE(ctx, rootID)
+			if err != nil {
+				b.Fatalf("AGE: %v", err)
+			}
+			if len(out) != 99 {
+				b.Fatalf("AGE: got %d edges, want 99", len(out))
+			}
+		}
+	})
+	// SQL path is what ListOutgoing actually uses in production —
+	// see ListOutgoing in store.go for why we did not switch it to
+	// AGE. The AGE sub-bench above stays as the perf-comparison
+	// baseline so a future workload that flips the equation is
+	// caught on regression.
+	b.Run("SQL", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			out, err := store.ListOutgoing(ctx, rootID)
+			if err != nil {
+				b.Fatalf("SQL: %v", err)
+			}
+			if len(out) != 99 {
+				b.Fatalf("SQL: got %d edges, want 99", len(out))
+			}
+		}
+	})
+}
+
+// BenchmarkUpsert1000Resources is the P2-T2 acceptance benchmark
+// extended into P2-T4 to cover double-write (PG row + AGE vertex):
+// each iteration upserts 1000 unique resources into a freshly-
+// truncated store, so ns/op reports the end-to-end load latency.
+//
+// History:
+//   - P2-T2 (PG-only): ~344us/upsert, ~344ms/iteration.
+//   - P2-T4 (PG+AGE):  ~2.2ms/upsert, ~2.2s/iteration. The 6x cost
+//     is the AGE MERGE round-trip plus the per-call LOAD/SET LOCAL
+//     prelude in withAGETx; the alternative was AGE inconsistency,
+//     which makes TraverseOutgoing's results stale.
+//
+// Wall-time budget: `make bench-postgres` runs -benchtime=1x to
+// stay under 5s on a warm-cache CI runner; defaults run more
+// iterations and exceed that budget.
 func BenchmarkUpsert1000Resources(b *testing.B) {
 	if testing.Short() {
 		b.Skip("skipping testcontainers benchmark in -short mode")

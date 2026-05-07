@@ -5,7 +5,7 @@
 #   - Targets shell out to the standard toolchains (go, helm, npm)
 #     rather than reinventing them; CI runs the same commands.
 
-.PHONY: help test test-postgres test-short bench-postgres verify-no-cgo
+.PHONY: help test test-postgres test-short bench-postgres bench-cypher verify-no-cgo
 
 help:
 	@awk -F':.*##' '/^[a-zA-Z_-]+:.*##/ {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -19,8 +19,11 @@ test-short: ## Run Go tests skipping testcontainers (no Docker required).
 test-postgres: ## Run only the Postgres+AGE testcontainers tests.
 	go test -race -run '^Test' ./pkg/store/postgres/...
 
-bench-postgres: ## Run the P2-T2 acceptance benchmark (deterministic, < 5s wall).
-	go test -bench=BenchmarkUpsert1000Resources -benchtime=2x -run=^$$ ./pkg/store/postgres/...
+bench-postgres: ## Run the Upsert + AGE-vs-SQL benchmarks (deterministic, < 5s wall).
+	go test -bench=BenchmarkUpsert1000Resources -benchtime=1x -run=^$$ ./pkg/store/postgres/...
+
+bench-cypher: ## Run the AGE-vs-SQL ListOutgoing comparison (200 iterations).
+	go test -bench=BenchmarkListOutgoing_AGE_vs_SQL -benchtime=200x -run=^$$ ./pkg/store/postgres/...
 
 # verify-no-cgo enforces invariant 2.2 (Phase 2 guide): the production
 # build must always link CGO_ENABLED=0, and no Wasm runtime may sneak

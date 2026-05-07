@@ -87,6 +87,12 @@ func (s *Store) Init(ctx context.Context) error {
 // UpsertResource inserts or replaces the resource at r.ID(). The full
 // Resource is serialized to JSONB; Resource.Raw is dropped per its
 // json:"-" tag, matching the wire contract.
+//
+// Tier 2 keeps PG and AGE in sync via a single transaction: the
+// JSONB row is the source of truth, the AGE vertex mirrors it for
+// Cypher reads (ListIncoming/ListOutgoing/TraverseOutgoing). Unknown
+// kinds (CRDs not in migrate/001_initial.sql's allowlist) fall
+// through to PG-only — P2-T10 will register CRD labels at runtime.
 func (s *Store) UpsertResource(ctx context.Context, r graph.Resource) error {
 	body, err := json.Marshal(r)
 	if err != nil {
@@ -96,58 +102,66 @@ func (s *Store) UpsertResource(ctx context.Context, r graph.Resource) error {
 		INSERT INTO resources (id, data) VALUES ($1, $2::jsonb)
 		ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data
 	`
-	if _, err := s.pool.Exec(ctx, sql, r.ID(), body); err != nil {
-		return fmt.Errorf("postgres.UpsertResource: exec %s: %w", r.ID(), err)
-	}
-	return nil
+	return s.withAGETx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, sql, r.ID(), body); err != nil {
+			return fmt.Errorf("postgres.UpsertResource: exec %s: %w", r.ID(), err)
+		}
+		return upsertVertex(ctx, tx, r)
+	})
 }
 
 // DeleteResource removes the resource at id and cascades to every edge
 // incident on it (incoming and outgoing). Missing ids are a no-op.
 //
-// The cascade is done in SQL inside a single transaction so a partial
-// delete cannot leak orphan edges.
+// PG cascade is via SQL DELETE; AGE cascade is via DETACH DELETE on
+// the matching vertex. Both happen in the same transaction so a
+// partial failure cannot leak orphan edges in either backend.
 func (s *Store) DeleteResource(ctx context.Context, id string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("postgres.DeleteResource: begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM edges WHERE from_id = $1 OR to_id = $1`, id); err != nil {
-		return fmt.Errorf("postgres.DeleteResource: cascade edges %s: %w", id, err)
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM resources WHERE id = $1`, id); err != nil {
-		return fmt.Errorf("postgres.DeleteResource: row %s: %w", id, err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("postgres.DeleteResource: commit: %w", err)
-	}
-	return nil
+	return s.withAGETx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM public.edges WHERE from_id = $1 OR to_id = $1`, id); err != nil {
+			return fmt.Errorf("postgres.DeleteResource: cascade edges %s: %w", id, err)
+		}
+		if _, err := tx.Exec(ctx,
+			`DELETE FROM public.resources WHERE id = $1`, id); err != nil {
+			return fmt.Errorf("postgres.DeleteResource: row %s: %w", id, err)
+		}
+		return deleteVertex(ctx, tx, id)
+	})
 }
 
 // UpsertEdge inserts or replaces the edge identified by
 // (e.From, e.To, e.Type). Idempotent on the natural key.
+//
+// Endpoints must already exist as PG rows AND AGE vertices for the
+// AGE MERGE to attach the edge. The contract test always Upserts
+// resources before edges, so this is the documented contract; if a
+// caller ever upserts an edge before its endpoints, the AGE side
+// silently no-ops while PG still records the row, and the cross-
+// store consistency check in cypher_test.go will catch it.
 func (s *Store) UpsertEdge(ctx context.Context, e graph.Edge) error {
 	const sql = `
 		INSERT INTO edges (from_id, to_id, type) VALUES ($1, $2, $3)
 		ON CONFLICT (from_id, to_id, type) DO NOTHING
 	`
-	if _, err := s.pool.Exec(ctx, sql, e.From, e.To, string(e.Type)); err != nil {
-		return fmt.Errorf("postgres.UpsertEdge: %s -[%s]-> %s: %w", e.From, e.Type, e.To, err)
-	}
-	return nil
+	return s.withAGETx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, sql, e.From, e.To, string(e.Type)); err != nil {
+			return fmt.Errorf("postgres.UpsertEdge: %s -[%s]-> %s: %w", e.From, e.Type, e.To, err)
+		}
+		return upsertEdge(ctx, tx, e)
+	})
 }
 
 // DeleteEdge removes the edge identified by (from, to, t). Missing
 // edges are a no-op.
 func (s *Store) DeleteEdge(ctx context.Context, from, to string, t graph.EdgeType) error {
 	const sql = `DELETE FROM edges WHERE from_id = $1 AND to_id = $2 AND type = $3`
-	if _, err := s.pool.Exec(ctx, sql, from, to, string(t)); err != nil {
-		return fmt.Errorf("postgres.DeleteEdge: %s -[%s]-> %s: %w", from, t, to, err)
-	}
-	return nil
+	return s.withAGETx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, sql, from, to, string(t)); err != nil {
+			return fmt.Errorf("postgres.DeleteEdge: %s -[%s]-> %s: %w", from, t, to, err)
+		}
+		return deleteEdge(ctx, tx, from, to, t)
+	})
 }
 
 // GetResource returns the resource at id or graph.ErrNotFound.
@@ -200,6 +214,22 @@ func (s *Store) ListResources(ctx context.Context, filter graph.Filter) ([]graph
 }
 
 // ListIncoming returns every edge whose To equals id.
+//
+// P2-T4 originally directed switching this to AGE Cypher, on the
+// premise that AGE would outperform indexed SQL by ~2x on a
+// 100-vertex / 500-edge graph. The actual benchmark
+// (BenchmarkListOutgoing_AGE_vs_SQL) shows AGE ~5x SLOWER on this
+// workload because per-call Cypher overhead (LOAD, tx, parser,
+// agtype serialization) dwarfs the inner work, and the edges
+// table's btree index on (from_id) makes the SQL path effectively
+// free. We therefore keep ListIncoming/ListOutgoing on SQL and
+// reserve AGE for TraverseOutgoing (variable-length paths), where
+// it has no SQL equivalent.
+//
+// listIncomingFromAGE / listOutgoingFromAGE in cypher.go are
+// preserved so the benchmark can keep measuring both paths; if a
+// future workload (e.g. very high-fanout vertices) flips the
+// equation, callers can opt in.
 func (s *Store) ListIncoming(ctx context.Context, id string) ([]graph.Edge, error) {
 	const sql = `SELECT from_id, to_id, type FROM edges WHERE to_id = $1`
 	rows, err := s.pool.Query(ctx, sql, id)
@@ -210,7 +240,8 @@ func (s *Store) ListIncoming(ctx context.Context, id string) ([]graph.Edge, erro
 	return scanEdges(rows)
 }
 
-// ListOutgoing returns every edge whose From equals id.
+// ListOutgoing is the mirror of ListIncoming. See the godoc on
+// ListIncoming for why this stays on SQL despite the P2-T4 sketch.
 func (s *Store) ListOutgoing(ctx context.Context, id string) ([]graph.Edge, error) {
 	const sql = `SELECT from_id, to_id, type FROM edges WHERE from_id = $1`
 	rows, err := s.pool.Query(ctx, sql, id)
@@ -250,14 +281,25 @@ func (s *Store) Snapshot(ctx context.Context) (*graph.Graph, error) {
 	return &graph.Graph{Resources: resources, Edges: edges}, nil
 }
 
-// truncateAll wipes resources and edges without dropping the schema.
-// Test-only helper used by the contract suite to give each sub-test a
-// clean store while sharing a single container.
+// truncateAll wipes resources, edges, and the AGE graph contents
+// without dropping the schema. Test-only helper used by the
+// contract suite to give each sub-test a clean store while sharing
+// a single container.
 func (s *Store) truncateAll(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx, `TRUNCATE resources, edges`); err != nil {
-		return fmt.Errorf("postgres.truncateAll: %w", err)
-	}
-	return nil
+	return s.withAGETx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `TRUNCATE public.resources, public.edges`); err != nil {
+			return fmt.Errorf("postgres.truncateAll: pg: %w", err)
+		}
+		const cypherClear = `
+			SELECT * FROM cypher('` + graphName + `'::name, $$
+				MATCH (n) DETACH DELETE n
+			$$::cstring) AS (v agtype)
+		`
+		if _, err := tx.Exec(ctx, cypherClear); err != nil {
+			return fmt.Errorf("postgres.truncateAll: age: %w", err)
+		}
+		return nil
+	})
 }
 
 func scanResources(rows pgx.Rows) ([]graph.Resource, error) {
