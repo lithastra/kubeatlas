@@ -1,9 +1,22 @@
-// Package postgres will provide the Tier 2 implementation of the
-// graph.GraphStore interface backed by PostgreSQL with the Apache AGE
-// extension for native graph queries.
+// Copyright 2026 The KubeAtlas Authors
+// SPDX-License-Identifier: Apache-2.0
+
+// Package postgres is the Tier 2 implementation of graph.GraphStore
+// backed by PostgreSQL. It is opt-in (Helm persistence.enabled=true);
+// the default deployment continues to use the in-memory store in
+// pkg/store/memory.
 //
-// This package is a placeholder during Phase 0 / Phase 1. It is
-// enabled in v1.0 to support multi-replica deployments and
-// persistent graph history. Until then the Tier 1 in-memory store
-// in pkg/store/memory is the only available backend.
+// Phase 2 ships the Tier 2 backend in two halves:
+//
+//   - P2-T2 (this skeleton) stores resources and edges in plain
+//     PostgreSQL tables: resources(id, data jsonb), edges(from_id,
+//     to_id, type). All GraphStore methods use ordinary SQL; this is
+//     the correctness baseline that lets us layer AGE on top.
+//   - P2-T3 adds Apache AGE: graph creation, vertex/edge labels, the
+//     migration framework, and the openCypher path used by traversal
+//     queries (BlastRadius, etc.).
+//
+// CGO INVARIANT (guide §2.2): this package depends on jackc/pgx/v5,
+// which is pure Go. CGO_ENABLED=0 must always build. Do not introduce
+// lib/pq or any cgo-linked driver.
 package postgres
