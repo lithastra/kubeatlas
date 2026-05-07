@@ -16,9 +16,30 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/graph"
-	"github.com/lithastra/kubeatlas/pkg/store/memory"
+	"github.com/lithastra/kubeatlas/pkg/store"
+	"github.com/lithastra/kubeatlas/pkg/store/postgres"
 	"github.com/lithastra/kubeatlas/pkg/version"
 )
+
+// loadStoreConfig builds a store.Config from the process environment.
+// The Helm chart sets KUBEATLAS_BACKEND when persistence.enabled is
+// true; the Tier 1 default (empty / "memory") preserves the
+// zero-config promise (guide §2.3, anti-pattern #10).
+//
+// Recognized env vars:
+//
+//	KUBEATLAS_BACKEND  "memory" (default) | "postgres"
+//	PGCONN             full DSN, e.g. postgres://user:pass@host:5432/db?sslmode=disable
+//
+// Future Phase 2 work (P2-T6 CNPG integration) will refine PGCONN
+// into individual fields sourced from a Kubernetes Secret.
+func loadStoreConfig() store.Config {
+	cfg := store.Config{Backend: store.Backend(os.Getenv("KUBEATLAS_BACKEND"))}
+	if cfg.Backend == store.BackendPostgres {
+		cfg.Postgres = postgres.Config{DSN: os.Getenv("PGCONN")}
+	}
+	return cfg
+}
 
 func main() {
 	var (
@@ -61,9 +82,12 @@ func runOnce(level, namespace, kind, name string) {
 		log.Fatalf("failed to collect resources: %v", err)
 	}
 
-	store := memory.New()
+	graphStore, err := store.New(ctx, loadStoreConfig())
+	if err != nil {
+		log.Fatalf("failed to construct graph store: %v", err)
+	}
 	for _, r := range resources {
-		if err := store.UpsertResource(ctx, r); err != nil {
+		if err := graphStore.UpsertResource(ctx, r); err != nil {
 			log.Fatalf("failed to upsert resource %s: %v", r.ID(), err)
 		}
 	}
@@ -74,7 +98,7 @@ func runOnce(level, namespace, kind, name string) {
 	reg := extractor.Default()
 	for _, r := range resources {
 		for _, e := range reg.ExtractAll(r, resources) {
-			if err := store.UpsertEdge(ctx, e); err != nil {
+			if err := graphStore.UpsertEdge(ctx, e); err != nil {
 				log.Fatalf("failed to upsert edge %s -> %s: %v", e.From, e.To, err)
 			}
 		}
@@ -91,7 +115,7 @@ func runOnce(level, namespace, kind, name string) {
 			if namespace == "" || kind == "" || name == "" {
 				log.Fatal("-level=resource scoped mode requires -namespace, -kind, and -name")
 			}
-			view, err := (aggregator.ResourceAggregator{}).Aggregate(ctx, store,
+			view, err := (aggregator.ResourceAggregator{}).Aggregate(ctx, graphStore,
 				aggregator.Scope{Namespace: namespace, Kind: kind, Name: name})
 			if err != nil {
 				log.Fatalf("resource aggregator: %v", err)
@@ -101,7 +125,7 @@ func runOnce(level, namespace, kind, name string) {
 			}
 			return
 		}
-		g, err := store.Snapshot(ctx)
+		g, err := graphStore.Snapshot(ctx)
 		if err != nil {
 			log.Fatalf("failed to snapshot store: %v", err)
 		}
@@ -114,7 +138,7 @@ func runOnce(level, namespace, kind, name string) {
 		fmt.Fprintln(os.Stderr, "Run: dot -Tsvg output/kubeatlas.dot -o output/kubeatlas.svg")
 
 	case "cluster":
-		view, err := (aggregator.ClusterAggregator{}).Aggregate(ctx, store, aggregator.Scope{})
+		view, err := (aggregator.ClusterAggregator{}).Aggregate(ctx, graphStore, aggregator.Scope{})
 		if err != nil {
 			log.Fatalf("cluster aggregator: %v", err)
 		}
@@ -126,7 +150,7 @@ func runOnce(level, namespace, kind, name string) {
 		if namespace == "" {
 			log.Fatal("-level=namespace requires -namespace=<name>")
 		}
-		view, err := (aggregator.NamespaceAggregator{}).Aggregate(ctx, store,
+		view, err := (aggregator.NamespaceAggregator{}).Aggregate(ctx, graphStore,
 			aggregator.Scope{Namespace: namespace})
 		if err != nil {
 			log.Fatalf("namespace aggregator: %v", err)
@@ -139,7 +163,7 @@ func runOnce(level, namespace, kind, name string) {
 		if namespace == "" || kind == "" || name == "" {
 			log.Fatal("-level=workload requires -namespace, -kind, and -name")
 		}
-		view, err := (aggregator.WorkloadAggregator{}).Aggregate(ctx, store,
+		view, err := (aggregator.WorkloadAggregator{}).Aggregate(ctx, graphStore,
 			aggregator.Scope{Namespace: namespace, Kind: kind, Name: name})
 		if err != nil {
 			log.Fatalf("workload aggregator: %v", err)
@@ -168,9 +192,12 @@ func runWatch() {
 	if err != nil {
 		log.Fatalf("filter GVRs: %v", err)
 	}
-	store := memory.New()
-	srv := api.New(api.DefaultAddr, store, aggregator.NewRegistry(), api.WithWebFS(webFS))
-	mgr := discovery.NewInformerManager(client.Dynamic(), store,
+	graphStore, err := store.New(ctx, loadStoreConfig())
+	if err != nil {
+		log.Fatalf("failed to construct graph store: %v", err)
+	}
+	srv := api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(), api.WithWebFS(webFS))
+	mgr := discovery.NewInformerManager(client.Dynamic(), graphStore,
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),
 		discovery.WithOnSynced(srv.Readiness().MarkReady),
