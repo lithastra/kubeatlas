@@ -30,6 +30,19 @@ spec:
             - name: http
               containerPort: {{ .Values.service.containerPort }}
               protocol: TCP
+          {{- if .Values.persistence.enabled }}
+          env:
+            - name: KUBEATLAS_BACKEND
+              value: "postgres"
+            - name: PGCONN
+              value: {{ printf "postgres://%s:%s@%s:%d/%s?sslmode=%s"
+                          .Values.persistence.connection.user
+                          .Values.persistence.connection.password
+                          .Values.persistence.connection.host
+                          (int .Values.persistence.connection.port)
+                          .Values.persistence.connection.database
+                          .Values.persistence.connection.sslMode | quote }}
+          {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

@@ -19,13 +19,45 @@ tests:
       - failedTemplate:
           errorPattern: "service\\.type does not match"
 
-  - it: persistence.enabled=true is rejected
+  - it: persistence.enabled=true without connection.host is rejected
     template: deployment.yaml
     set:
       persistence.enabled: true
     asserts:
       - failedTemplate:
-          errorPattern: "persistence\\.enabled does not match"
+          errorPattern: "host"
+
+  - it: persistence.enabled=true with connection.host passes the schema
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.connection.host: pg.example
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: persistence off (default) injects no PGCONN env
+    template: deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: persistence on injects KUBEATLAS_BACKEND and PGCONN env
+    template: deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.connection.host: pg.example
+      persistence.connection.password: hunter2
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_BACKEND
+            value: postgres
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGCONN
+            value: postgres://kubeatlas:hunter2@pg.example:5432/kubeatlas?sslmode=disable
 
   - it: weakening readOnlyRootFilesystem is rejected
     template: deployment.yaml

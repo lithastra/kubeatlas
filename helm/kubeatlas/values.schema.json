@@ -119,11 +119,38 @@
     "readinessProbe": { "type": "object" },
     "persistence": {
       "type": "object",
-      "description": "Persistence (Tier 2 / PostgreSQL + Apache AGE) lands in v1.0. v0.1.0 forces it disabled.",
+      "description": "Persistence (Tier 2 / PostgreSQL + Apache AGE). Default-off so zero-config installs stay on Tier 1; flipping enabled=true requires a non-empty connection.host (or, from P2-T6, embedded.enabled=true).",
       "properties": {
-        "enabled": { "type": "boolean", "const": false }
+        "enabled": { "type": "boolean" },
+        "connection": {
+          "type": "object",
+          "properties": {
+            "host":     { "type": "string" },
+            "port":     { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "database": { "type": "string", "minLength": 1 },
+            "user":     { "type": "string", "minLength": 1 },
+            "password": { "type": "string" },
+            "sslMode": {
+              "type": "string",
+              "enum": ["disable", "require", "verify-ca", "verify-full"]
+            }
+          }
+        }
       },
-      "required": ["enabled"]
+      "required": ["enabled"],
+      "if": { "properties": { "enabled": { "const": true } } },
+      "then": {
+        "properties": {
+          "connection": {
+            "type": "object",
+            "properties": {
+              "host": { "type": "string", "minLength": 1 }
+            },
+            "required": ["host"]
+          }
+        },
+        "required": ["connection"]
+      }
     },
     "nodeSelector": { "type": "object" },
     "tolerations": { "type": "array" },
