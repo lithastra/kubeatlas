@@ -119,9 +119,22 @@
     "readinessProbe": { "type": "object" },
     "persistence": {
       "type": "object",
-      "description": "Persistence (Tier 2 / PostgreSQL + Apache AGE). Default-off so zero-config installs stay on Tier 1; flipping enabled=true requires a non-empty connection.host (or, from P2-T6, embedded.enabled=true).",
+      "description": "Persistence (Tier 2 / PostgreSQL + Apache AGE). Default-off so zero-config installs stay on Tier 1. When enabled, exactly one of {embedded.enabled=true, connection.host non-empty} must be set: schema rejects both unset (half-configured) and both set (ambiguous wiring).",
       "properties": {
         "enabled": { "type": "boolean" },
+        "embedded": {
+          "type": "object",
+          "properties": {
+            "enabled":          { "type": "boolean" },
+            "storageSize":      { "type": "string", "minLength": 1 },
+            "storageClassName": { "type": "string" },
+            "image":            { "type": "string", "minLength": 1 },
+            "clusterNameSuffix": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            }
+          }
+        },
         "connection": {
           "type": "object",
           "properties": {
@@ -130,6 +143,13 @@
             "database": { "type": "string", "minLength": 1 },
             "user":     { "type": "string", "minLength": 1 },
             "password": { "type": "string" },
+            "passwordSecretRef": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "key":  { "type": "string", "minLength": 1 }
+              }
+            },
             "sslMode": {
               "type": "string",
               "enum": ["disable", "require", "verify-ca", "verify-full"]
@@ -138,19 +158,54 @@
         }
       },
       "required": ["enabled"],
-      "if": { "properties": { "enabled": { "const": true } } },
-      "then": {
-        "properties": {
-          "connection": {
-            "type": "object",
+      "allOf": [
+        {
+          "comment": "When persistence is enabled, embedded.enabled=true and connection.host non-empty are mutually exclusive. Schema rejects setting both.",
+          "if": {
             "properties": {
-              "host": { "type": "string", "minLength": 1 }
+              "enabled": { "const": true },
+              "embedded": {
+                "properties": { "enabled": { "const": true } },
+                "required": ["enabled"]
+              }
             },
-            "required": ["host"]
+            "required": ["enabled", "embedded"]
+          },
+          "then": {
+            "properties": {
+              "connection": {
+                "properties": {
+                  "host": { "type": "string", "maxLength": 0 }
+                }
+              }
+            }
           }
         },
-        "required": ["connection"]
-      }
+        {
+          "comment": "When persistence is enabled and embedded is off, connection.host must be non-empty.",
+          "if": {
+            "properties": {
+              "enabled": { "const": true },
+              "embedded": {
+                "properties": { "enabled": { "const": false } }
+              }
+            },
+            "required": ["enabled"]
+          },
+          "then": {
+            "properties": {
+              "connection": {
+                "type": "object",
+                "properties": {
+                  "host": { "type": "string", "minLength": 1 }
+                },
+                "required": ["host"]
+              }
+            },
+            "required": ["connection"]
+          }
+        }
+      ]
     },
     "nodeSelector": { "type": "object" },
     "tolerations": { "type": "array" },

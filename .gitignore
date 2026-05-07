@@ -20,6 +20,11 @@ profile.cov
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# Helm sub-chart tarballs are fetched on demand from Chart.lock; do
+# not commit them. Chart.lock itself IS committed so installs stay
+# reproducible without hitting chart repos on every PR.
+helm/*/charts/
+
 # Go workspace file
 go.work
 go.work.sum

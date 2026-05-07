@@ -1,0 +1,40 @@
+{{- if and .Values.persistence.enabled .Values.persistence.embedded.enabled }}
+{{- $clusterName := printf "%s-%s" (include "kubeatlas.fullname" .) .Values.persistence.embedded.clusterNameSuffix -}}
+# CloudNativePG Cluster CRD provisioned by the kubeatlas chart when
+# persistence.embedded.enabled=true. The cnpg sub-chart (declared in
+# Chart.yaml under "condition") installs the operator that
+# reconciles this resource into a real Postgres StatefulSet.
+#
+# shared_preload_libraries=age is mandatory: AGE's LOAD 'age' fails
+# unless the library is loaded at server start, and CNPG resets
+# postgresql.conf on every reconcile. Anything we set here that the
+# upstream image already configures is redundant but harmless;
+# CNPG's runtime conf wins, so we restate it.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ $clusterName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeatlas.labels" . | nindent 4 }}
+spec:
+  instances: 1
+  imageName: {{ .Values.persistence.embedded.image | quote }}
+  postgresql:
+    parameters:
+      shared_preload_libraries: "age"
+  bootstrap:
+    initdb:
+      database: {{ .Values.persistence.connection.database | quote }}
+      owner: {{ .Values.persistence.connection.user | quote }}
+      # Run AGE bootstrap on the freshly-created database so callers
+      # can issue LOAD 'age' from the first session. CNPG executes
+      # postInitApplicationSQL as the database owner.
+      postInitApplicationSQL:
+        - "CREATE EXTENSION IF NOT EXISTS age"
+  storage:
+    size: {{ .Values.persistence.embedded.storageSize | quote }}
+    {{- with .Values.persistence.embedded.storageClassName }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+{{- end }}

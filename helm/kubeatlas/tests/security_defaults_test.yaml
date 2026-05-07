@@ -53,11 +53,15 @@ tests:
           content:
             name: KUBEATLAS_BACKEND
             value: postgres
+      # PGCONN uses K8s env-var dependency expansion ($(VAR) →
+      # value of VAR at container start). The literal Deployment
+      # manifest carries the unexpanded template; the kubelet
+      # substitutes at Pod creation.
       - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: PGCONN
-            value: postgres://kubeatlas:hunter2@pg.example:5432/kubeatlas?sslmode=disable
+            value: postgres://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/$(PGDATABASE)?sslmode=$(PGSSLMODE)
 
   - it: weakening readOnlyRootFilesystem is rejected
     template: deployment.yaml
