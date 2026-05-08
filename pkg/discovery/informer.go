@@ -226,7 +226,7 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		slog.Warn("informer received non-unstructured object", "type", fmt.Sprintf("%T", obj))
 		return
 	}
-	r := unstructuredToResource(u, m.kindFor(gvr, u))
+	r := UnstructuredToResource(u, m.kindFor(gvr, u))
 	if err := m.store.UpsertResource(ctx, r); err != nil {
 		slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
 		return
@@ -326,10 +326,10 @@ func defaultKindFromResource(r string) string {
 	}
 }
 
-// unstructuredToResource builds a graph.Resource from a K8s object,
+// UnstructuredToResource builds a graph.Resource from a K8s object,
 // populating all the W2-introduced metadata fields plus the Raw
 // unstructured object that extractors use to read spec-level fields.
-func unstructuredToResource(u *unstructured.Unstructured, kind string) graph.Resource {
+func UnstructuredToResource(u *unstructured.Unstructured, kind string) graph.Resource {
 	r := graph.Resource{
 		Kind:            kind,
 		Name:            u.GetName(),
