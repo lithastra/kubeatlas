@@ -1,0 +1,12 @@
+name: sample
+version: 0.1.0
+rego_api: v1
+kubeatlas: ">= 1.0.0"
+description: "Sample rule pack used by P2-T8 loader tests."
+modules:
+  - name: derive
+    file: derive.rego
+    entrypoint: data.kubeatlas.sample.derive
+    match:
+      group: example.com
+      kind: Foo

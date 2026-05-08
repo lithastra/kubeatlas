@@ -1,0 +1,12 @@
+name: future-kubeatlas
+version: 0.1.0
+rego_api: v1
+kubeatlas: ">= 99.0.0"
+description: "Forced kubeatlas constraint that no shipping binary satisfies."
+modules:
+  - name: derive
+    file: derive.rego
+    entrypoint: data.kubeatlas.future.derive
+    match:
+      group: example.com
+      kind: Foo

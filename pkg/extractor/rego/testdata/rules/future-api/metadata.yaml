@@ -1,0 +1,12 @@
+name: future-api
+version: 0.1.0
+rego_api: v2
+kubeatlas: ">= 1.0.0"
+description: "Forced rego_api=v2; loader must reject."
+modules:
+  - name: derive
+    file: derive.rego
+    entrypoint: data.kubeatlas.future.derive
+    match:
+      group: example.com
+      kind: Foo
