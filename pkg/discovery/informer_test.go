@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -197,17 +198,21 @@ func waitForGone(ctx context.Context, s graph.GraphStore, id string) error {
 	return errors.New("timed out waiting for delete of " + id)
 }
 
-// recordingExtractor counts how many times ExtractAll has been invoked.
+// recordingExtractor counts how many times ExtractAll has been
+// invoked. Atomic counter because ExtractAll runs on informer
+// goroutines while calls() runs on the test goroutine — the original
+// `int` ran into the race detector once envtest stopped being a
+// best-effort skip on every dev box.
 type recordingExtractor struct {
-	count int
+	count atomic.Int64
 }
 
 func (r *recordingExtractor) ExtractAll(_ graph.Resource, _ []graph.Resource) []graph.Edge {
-	r.count++
+	r.count.Add(1)
 	return nil
 }
 
-func (r *recordingExtractor) calls() int { return r.count }
+func (r *recordingExtractor) calls() int { return int(r.count.Load()) }
 
 // Compile-time assurance the unstructured import is referenced (used
 // indirectly by the dynamic client surface).
