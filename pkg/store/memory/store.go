@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
@@ -161,6 +162,71 @@ func (s *Store) Snapshot(_ context.Context) (*graph.Graph, error) {
 		}
 	}
 	return g, nil
+}
+
+// Traverse walks the in-memory adjacency maps in BFS order and
+// returns every distinct resource reachable from startID within
+// opts.MaxDepth hops in the requested direction. The starting node
+// is not included, and unresolved IDs (edges whose endpoint never
+// got an UpsertResource) are silently skipped.
+func (s *Store) Traverse(_ context.Context, startID string, opts graph.TraverseOptions) ([]graph.Resource, error) {
+	depth := opts.MaxDepth
+	if depth <= 0 {
+		depth = 5
+	}
+	if depth > 10 {
+		depth = 10
+	}
+	if opts.Direction != graph.DirectionIncoming && opts.Direction != graph.DirectionOutgoing {
+		return nil, fmt.Errorf("Traverse: invalid direction %q", opts.Direction)
+	}
+
+	allowed := edgeTypeSet(opts.EdgeTypes)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	visited := map[string]bool{startID: true}
+	frontier := []string{startID}
+	var out []graph.Resource
+
+	for hop := 0; hop < depth && len(frontier) > 0; hop++ {
+		var next []string
+		for _, cur := range frontier {
+			var peers map[edgeKey]graph.Edge
+			if opts.Direction == graph.DirectionIncoming {
+				peers = s.incoming[cur]
+			} else {
+				peers = s.outgoing[cur]
+			}
+			for k := range peers {
+				if allowed != nil && !allowed[k.typ] {
+					continue
+				}
+				if visited[k.other] {
+					continue
+				}
+				visited[k.other] = true
+				if r, ok := s.resources[k.other]; ok {
+					out = append(out, r)
+				}
+				next = append(next, k.other)
+			}
+		}
+		frontier = next
+	}
+	return out, nil
+}
+
+func edgeTypeSet(ts []graph.EdgeType) map[graph.EdgeType]bool {
+	if len(ts) == 0 {
+		return nil
+	}
+	m := make(map[graph.EdgeType]bool, len(ts))
+	for _, t := range ts {
+		m[t] = true
+	}
+	return m
 }
 
 func collect(peers map[edgeKey]graph.Edge) []graph.Edge {

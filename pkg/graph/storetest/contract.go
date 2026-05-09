@@ -250,6 +250,108 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
+	t.Run("traverse outgoing returns reachable nodes excluding source", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		// A -> B -> C -> D, plus A -> E
+		a := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "a"}
+		b := graph.Resource{Kind: "ReplicaSet", Namespace: "demo", Name: "b"}
+		c := graph.Resource{Kind: "Pod", Namespace: "demo", Name: "c"}
+		d := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "d"}
+		e := graph.Resource{Kind: "Service", Namespace: "demo", Name: "e"}
+		for _, r := range []graph.Resource{a, b, c, d, e} {
+			_ = s.UpsertResource(ctx, r)
+		}
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: b.ID(), To: c.ID(), Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: c.ID(), To: d.ID(), Type: graph.EdgeTypeUsesConfigMap})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: e.ID(), Type: graph.EdgeTypeSelects})
+
+		got, err := s.Traverse(ctx, a.ID(), graph.TraverseOptions{
+			Direction: graph.DirectionOutgoing,
+			MaxDepth:  5,
+		})
+		if err != nil {
+			t.Fatalf("Traverse: %v", err)
+		}
+		if len(got) != 4 {
+			t.Errorf("outgoing from a: got %d resources, want 4", len(got))
+		}
+		names := make(map[string]bool, len(got))
+		for _, r := range got {
+			names[r.Name] = true
+		}
+		for _, want := range []string{"b", "c", "d", "e"} {
+			if !names[want] {
+				t.Errorf("traverse outgoing missing %q (got %v)", want, names)
+			}
+		}
+		if names["a"] {
+			t.Errorf("traverse must exclude the source node, got %v", names)
+		}
+	})
+
+	t.Run("traverse incoming powers blast-radius semantics", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		// A -> B -> C -> D: walking incoming from D yields {C, B, A}.
+		a := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "a"}
+		b := graph.Resource{Kind: "ReplicaSet", Namespace: "demo", Name: "b"}
+		c := graph.Resource{Kind: "Pod", Namespace: "demo", Name: "c"}
+		d := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "d"}
+		for _, r := range []graph.Resource{a, b, c, d} {
+			_ = s.UpsertResource(ctx, r)
+		}
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: b.ID(), To: c.ID(), Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: c.ID(), To: d.ID(), Type: graph.EdgeTypeUsesConfigMap})
+
+		got, err := s.Traverse(ctx, d.ID(), graph.TraverseOptions{
+			Direction: graph.DirectionIncoming,
+			MaxDepth:  5,
+		})
+		if err != nil {
+			t.Fatalf("Traverse: %v", err)
+		}
+		if len(got) != 3 {
+			t.Errorf("incoming from d: got %d resources, want 3 (a,b,c)", len(got))
+		}
+	})
+
+	t.Run("traverse respects edge type filter", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		a := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "a"}
+		b := graph.Resource{Kind: "Pod", Namespace: "demo", Name: "b"}
+		c := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "c"}
+		for _, r := range []graph.Resource{a, b, c} {
+			_ = s.UpsertResource(ctx, r)
+		}
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: c.ID(), Type: graph.EdgeTypeUsesConfigMap})
+
+		owns, err := s.Traverse(ctx, a.ID(), graph.TraverseOptions{
+			Direction: graph.DirectionOutgoing,
+			MaxDepth:  3,
+			EdgeTypes: []graph.EdgeType{graph.EdgeTypeOwns},
+		})
+		if err != nil {
+			t.Fatalf("Traverse OWNS: %v", err)
+		}
+		if len(owns) != 1 || owns[0].Name != "b" {
+			t.Errorf("OWNS-only traverse: got %+v, want [b]", owns)
+		}
+	})
+
+	t.Run("traverse rejects invalid direction", func(t *testing.T) {
+		s := factory(t)
+		_ = s.UpsertResource(context.Background(), graph.Resource{Kind: "Pod", Namespace: "demo", Name: "x"})
+		_, err := s.Traverse(context.Background(), "demo/Pod/x", graph.TraverseOptions{MaxDepth: 5})
+		if err == nil {
+			t.Error("expected error on empty direction, got nil")
+		}
+	})
+
 	t.Run("list incoming and outgoing on isolated node", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
