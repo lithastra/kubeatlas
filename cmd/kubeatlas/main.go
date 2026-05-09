@@ -180,10 +180,16 @@ func loadStoreConfig() store.Config {
 
 func main() {
 	// Subcommand dispatch — "rules-test" runs the offline rule pack
-	// evaluator without touching kubeconfig or the API server. Lives
-	// before flag.Parse so the subcommand can carry its own flag set.
-	if len(os.Args) > 1 && os.Args[1] == "rules-test" {
-		os.Exit(runRulesTest(os.Args[2:]))
+	// evaluator without touching kubeconfig or the API server, and
+	// "export" emits the cluster graph as DOT. Both live before
+	// flag.Parse so each subcommand can carry its own flag set.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "rules-test":
+			os.Exit(runRulesTest(os.Args[2:]))
+		case "export":
+			os.Exit(runExport(os.Args[2:]))
+		}
 	}
 
 	var rulePacks rulePackFlag
