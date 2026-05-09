@@ -2,7 +2,14 @@ name: openshift
 version: 0.1.0
 rego_api: v1
 kubeatlas: ">= 1.0.0"
-description: "OpenShift platform CRDs (Route, DeploymentConfig, BuildConfig, ImageStream, SCC). Auto-loaded when route.openshift.io is detected."
+description: |
+  OpenShift platform CRDs: Route, DeploymentConfig, BuildConfig,
+  ImageStream, SecurityContextConstraints. The same content is
+  embedded in the kubeatlas binary so the engine auto-loads this
+  pack when the OpenShift API-group detector sees
+  route.openshift.io.
+maintainers:
+  - "@kubeatlas-maintainers"
 modules:
   - name: route
     file: route.rego
@@ -10,3 +17,27 @@ modules:
     match:
       group: route.openshift.io
       kind: Route
+  - name: deployment-config
+    file: deployment-config.rego
+    entrypoint: data.kubeatlas.rules.openshift.deployment_config.derive
+    match:
+      group: apps.openshift.io
+      kind: DeploymentConfig
+  - name: build-config
+    file: build-config.rego
+    entrypoint: data.kubeatlas.rules.openshift.build_config.derive
+    match:
+      group: build.openshift.io
+      kind: BuildConfig
+  - name: image-stream
+    file: image-stream.rego
+    entrypoint: data.kubeatlas.rules.openshift.image_stream.derive
+    match:
+      group: image.openshift.io
+      kind: ImageStream
+  - name: scc
+    file: scc.rego
+    entrypoint: data.kubeatlas.rules.openshift.scc.derive
+    match:
+      group: security.openshift.io
+      kind: SecurityContextConstraints
