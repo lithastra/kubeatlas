@@ -58,12 +58,14 @@ spec:
               protocol: TCP
           env:
             # rulePacks.openshift selects the OpenShift detector
-            # mode (auto | true | false). The kubeatlas binary
-            # reads it at startup; an empty value would also fall
-            # back to "auto" but rendering the literal keeps the
-            # operator's intent visible in `kubectl describe`.
+            # mode (auto | true | false). Accepts string OR bool
+            # (Helm's --set parses bare true/false as bool unless
+            # --set-string is used). printf "%v" renders both
+            # uniformly, and we cannot use sprig's `default` here
+            # because it treats bool `false` as empty and would
+            # silently substitute "auto".
             - name: KUBEATLAS_RULEPACK_OPENSHIFT
-              value: {{ .Values.rulePacks.openshift | default "auto" | quote }}
+              value: {{ printf "%v" .Values.rulePacks.openshift | quote }}
           {{- if .Values.persistence.enabled }}
             - name: KUBEATLAS_BACKEND
               value: "postgres"

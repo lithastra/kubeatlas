@@ -1,0 +1,114 @@
+name: E2E Tier 2 (kind)
+
+# Phase 2 acceptance: stand up a kind cluster with CNPG, install
+# kubeatlas in Tier 2 mode (embedded Postgres + AGE) with the
+# OpenShift rule pack force-loaded, then run test/verify/phase2.sh.
+#
+# The workflow uses no untrusted GitHub event inputs in run: blocks;
+# the only env vars it sets are constants we control (KUBEATLAS_*).
+# Runs on demand and on every PR that touches the wired-together
+# subsystems. Skips paths-untouched PRs because the workflow is slow
+# (~10 min) compared to the rest of CI.
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'pkg/crd/**'
+      - 'pkg/extractor/rego/**'
+      - 'pkg/store/postgres/**'
+      - 'pkg/api/metrics.go'
+      - 'pkg/api/server.go'
+      - 'pkg/api/handlers.go'
+      - 'helm/**'
+      - 'test/verify/phase2.sh'
+      - 'images/postgres-age/**'
+      - '.github/workflows/e2e-kind-tier2.yml'
+  workflow_dispatch:
+
+jobs:
+  e2e-kind-tier2:
+    name: kind + CNPG + kubeatlas Tier 2
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.24.0
+          node_image: kindest/node:v1.31.0
+          cluster_name: kubeatlas-tier2
+          wait: 120s
+
+      - name: Resolve Helm sub-chart deps (CNPG)
+        # CNPG sub-chart in Chart.yaml is the install path Helm uses
+        # when persistence.embedded.enabled=true. Pull it via
+        # `helm dependency update` so the .tgz lands in charts/
+        # before `helm install`.
+        run: helm dependency update helm/kubeatlas
+
+      - name: Build kubeatlas binary (CGO_ENABLED=0)
+        run: |
+          mkdir -p web/dist
+          # Empty index.html keeps the embed_web build tag happy on
+          # this Tier 2 verifier path; the e2e-kind PR-gating job
+          # already exercises the real Web UI bundle.
+          echo '<html><body>tier2 placeholder</body></html>' > web/dist/index.html
+          CGO_ENABLED=0 go build \
+            -tags embed_web \
+            -o bin/kubeatlas ./cmd/kubeatlas
+
+      - name: Build kubeatlas runtime image
+        run: |
+          # Dockerfile expects the binary to already be in the build
+          # context — see the comment at the top of Dockerfile.
+          mkdir -p .docker-context
+          cp Dockerfile .docker-context/
+          cp bin/kubeatlas .docker-context/
+          docker build -t kubeatlas:tier2-test .docker-context
+
+      - name: Load image into kind
+        run: kind load docker-image kubeatlas:tier2-test --name kubeatlas-tier2
+
+      - name: Helm install kubeatlas with Tier 2 + OpenShift force-load
+        run: |
+          helm install kubeatlas helm/kubeatlas \
+            --namespace kubeatlas --create-namespace \
+            --set image.repository=kubeatlas \
+            --set image.tag=tier2-test \
+            --set image.pullPolicy=Never \
+            --set persistence.enabled=true \
+            --set persistence.embedded.enabled=true \
+            --set persistence.embedded.storageSize=2Gi \
+            --set rulePacks.openshift=true \
+            --wait --timeout 8m
+
+      - name: kubectl describe + recent logs (debug aid on failure)
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pod -n kubeatlas -l app.kubernetes.io/name=kubeatlas || true
+          kubectl logs -n kubeatlas deploy/kubeatlas --tail=200 || true
+
+      - name: Run verify/phase2.sh
+        env:
+          KUBEATLAS_NAMESPACE: kubeatlas
+          KUBEATLAS_RELEASE: kubeatlas
+        run: bash test/verify/phase2.sh
+
+      - name: Upload kubeatlas logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeatlas-tier2-logs
+          path: |
+            /tmp/kubeatlas-*.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -222,8 +222,11 @@
       "description": "Phase 2 rego engine rule pack toggles. Each entry governs a single embedded pack; OCI extras land in P2-T13.",
       "properties": {
         "openshift": {
-          "type": "string",
-          "enum": ["auto", "true", "false"]
+          "description": "Detector mode. Accepts the string \"auto\"/\"true\"/\"false\" or a bare boolean (Helm's --set parses true/false as bool unless --set-string is used). Templates coerce both forms to the right env value.",
+          "oneOf": [
+            { "type": "string", "enum": ["auto", "true", "false"] },
+            { "type": "boolean" }
+          ]
         }
       }
     },

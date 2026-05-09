@@ -84,26 +84,38 @@ func edgeLabelKnown(t graph.EdgeType) bool {
 	return ok
 }
 
-// withAGETx acquires a pooled connection, ensures AGE is loaded, and
-// runs fn inside a transaction with search_path scoped via SET LOCAL
-// to ag_catalog. The tx commits on nil return; any error or panic
-// rolls back. Use this for every AGE-touching operation.
+// withAGETx acquires a pooled connection and runs fn inside a
+// transaction with search_path scoped via SET LOCAL to ag_catalog.
+// The tx commits on nil return; any error or panic rolls back. Use
+// this for every AGE-touching operation.
 //
-// LOAD 'age' is session-scoped and idempotent, so leaking it back
-// onto the pooled connection is harmless. SET LOCAL search_path is
-// tx-scoped, so the connection returns to the pool with default
-// routing — see guide §P2-T3 for the search_path leak that motivated
-// this pattern.
+// We deliberately do NOT issue LOAD 'age' here. AGE's age.control
+// declares module_pathname=$libdir/age, so the first call to any
+// ag_catalog.* function in a session triggers PG's auto-load of the
+// shared library — no superuser, no LOAD, no shared_preload_libraries
+// entry required. This matters under CloudNativePG, which silently
+// filters non-allowlisted libraries out of shared_preload_libraries
+// AND blocks LOAD for non-superuser sessions: explicit LOAD here
+// failed with "access to library 'age' is not allowed" while the
+// auto-load path goes through cleanly. The relevant
+// preconditions —
+//
+//	1. CREATE EXTENSION age has run on the database
+//	2. age.control + age.so are present in PG's lib dirs
+//
+// — are met by either postInitApplicationSQL (embedded CNPG mode,
+// see helm/kubeatlas/templates/postgres-cluster.yaml) or by the
+// operator's setup steps for BYO Postgres (docs/installation/persistence.md).
+//
+// SET LOCAL search_path is tx-scoped, so the connection returns to
+// the pool with default routing — see guide §P2-T3 for the
+// search_path leak that motivated this pattern.
 func (s *Store) withAGETx(ctx context.Context, fn func(pgx.Tx) error) error {
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("withAGETx: acquire: %w", err)
 	}
 	defer conn.Release()
-
-	if _, err := conn.Exec(ctx, `LOAD 'age'`); err != nil {
-		return fmt.Errorf("withAGETx: load age: %w", err)
-	}
 
 	tx, err := conn.Begin(ctx)
 	if err != nil {
