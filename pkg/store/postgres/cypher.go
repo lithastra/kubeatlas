@@ -465,6 +465,82 @@ func (s *Store) TraverseOutgoing(ctx context.Context, startID string, opts Trave
 	return out, nil
 }
 
+// Traverse implements graph.GraphStore.Traverse on the AGE backend.
+// Both directions reuse the same Cypher template; only the
+// relationship arrow flips. Depth bounds and edge-label
+// validation match TraverseOutgoing exactly so the two paths can't
+// drift.
+func (s *Store) Traverse(ctx context.Context, startID string, opts graph.TraverseOptions) ([]graph.Resource, error) {
+	if opts.Direction != graph.DirectionIncoming && opts.Direction != graph.DirectionOutgoing {
+		return nil, fmt.Errorf("Traverse: invalid direction %q", opts.Direction)
+	}
+	depth := opts.MaxDepth
+	if depth <= 0 {
+		depth = 5
+	}
+	if depth > 10 {
+		depth = 10
+	}
+
+	relInner := "*1.." + itoaSafe(depth)
+	if len(opts.EdgeTypes) > 0 {
+		var parts []string
+		for _, t := range opts.EdgeTypes {
+			if !edgeLabelKnown(t) {
+				return nil, fmt.Errorf("Traverse: unknown edge type %q", t)
+			}
+			parts = append(parts, string(t))
+		}
+		relInner = ":" + strings.Join(parts, "|") + "*1.." + itoaSafe(depth)
+	}
+
+	var pathPattern string
+	if opts.Direction == graph.DirectionOutgoing {
+		pathPattern = "(start {id: $startID})-[" + relInner + "]->(n)"
+	} else {
+		pathPattern = "(start {id: $startID})<-[" + relInner + "]-(n)"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id_v::text, kind_v::text, ns_v::text, name_v::text
+		FROM cypher('%s'::name, $$
+			MATCH %s
+			RETURN DISTINCT n.id, n.kind, n.namespace, n.name
+		$$::cstring, $1) AS (id_v agtype, kind_v agtype, ns_v agtype, name_v agtype)
+	`, graphName, pathPattern)
+
+	params, err := buildAGEParams(map[string]any{"startID": startID})
+	if err != nil {
+		return nil, err
+	}
+
+	var out []graph.Resource
+	err = s.withAGETx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, query, params)
+		if err != nil {
+			return fmt.Errorf("traverse query: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, kind, ns, name string
+			if err := rows.Scan(&id, &kind, &ns, &name); err != nil {
+				return fmt.Errorf("traverse scan: %w", err)
+			}
+			_ = id
+			out = append(out, graph.Resource{
+				Kind:      agtypeStrip(kind),
+				Namespace: agtypeStrip(ns),
+				Name:      agtypeStrip(name),
+			})
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // itoaSafe formats a small positive int into a Cypher path-pattern
 // integer literal. We bound depth to [1, 10] in TraverseOutgoing so
 // strconv would be overkill — keep this allocation-free.

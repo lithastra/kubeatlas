@@ -25,6 +25,43 @@ type GraphStore interface {
 	// Snapshot returns a consistent point-in-time view of the entire
 	// graph. Used by the CLI -once mode and by the REST API.
 	Snapshot(ctx context.Context) (*Graph, error)
+
+	// Traverse walks the graph from startID in the given direction
+	// and returns every distinct resource reachable within
+	// opts.MaxDepth hops. The starting node itself is not included.
+	// Direction is mandatory — callers express "blast radius"
+	// (DirectionIncoming) and "what does this depend on"
+	// (DirectionOutgoing) explicitly rather than relying on a
+	// per-method default.
+	Traverse(ctx context.Context, startID string, opts TraverseOptions) ([]Resource, error)
+}
+
+// Direction names a graph traversal direction. Anti-pattern from
+// P2-T15: "do not encode reverse semantics in a comment". Each call
+// site must pick one.
+type Direction string
+
+const (
+	// DirectionIncoming follows incoming edges (sources -> startID).
+	// BlastRadius uses this — "what depends on me?".
+	DirectionIncoming Direction = "incoming"
+	// DirectionOutgoing follows outgoing edges (startID -> targets).
+	// "What do I depend on?".
+	DirectionOutgoing Direction = "outgoing"
+)
+
+// TraverseOptions configures GraphStore.Traverse.
+//
+// MaxDepth caps path length; values <= 0 default to 5 (covers ~99%
+// of K8s dependency chains; deeper graphs are almost always cyclic
+// and should be flagged separately). Implementations clamp at 10
+// to keep query plans tractable.
+//
+// EdgeTypes is an optional allowlist of edge labels. Empty = any.
+type TraverseOptions struct {
+	Direction Direction
+	MaxDepth  int
+	EdgeTypes []EdgeType
 }
 
 // Filter narrows down ListResources results. Empty fields mean "any".

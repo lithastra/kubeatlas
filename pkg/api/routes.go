@@ -176,5 +176,23 @@ func (s *Server) Routes() []RouteInfo {
 			Response: ResponseSpec{Description: "Subject list", SchemaRef: "RBACSubjects"},
 			handler:  s.handleRBACClusterRoleSubjects,
 		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1alpha1/blast-radius/{namespace}/{kind}/{name}",
+			Summary:     "Transitive set of resources affected by changes to this resource",
+			Description: "Returns every resource reachable by walking incoming edges from the target — i.e. everything that would be impacted if this resource were deleted or broken. Use the underscore '_' as namespace for cluster-scoped resources. P2-T15 (F-110).",
+			PathParams: []ParamSpec{
+				{Name: "namespace", Required: true, Description: "Namespace (use '_' for cluster-scoped)", Type: "string"},
+				{Name: "kind", Required: true, Type: "string"},
+				{Name: "name", Required: true, Type: "string"},
+			},
+			QueryParams: []ParamSpec{
+				{Name: "max_depth", Description: "Path-length cap; default 5, hard max 10", Type: "integer"},
+				{Name: "edge_types", Description: "Comma-separated edge labels to follow; empty = any", Type: "string"},
+				{Name: "include_source", Description: "Include the start resource in the result set; default false", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Affected resources", SchemaRef: "BlastRadiusResponse"},
+			handler:  s.handleBlastRadius,
+		},
 	}
 }

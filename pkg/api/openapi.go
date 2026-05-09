@@ -352,6 +352,16 @@ func openAPIComponents() map[string]any {
 				},
 				"required": []any{"role", "bindings"},
 			},
+			"BlastRadiusResponse": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"source":   map[string]any{"$ref": "#/components/schemas/Resource"},
+					"affected": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Resource"}},
+					"count":    map[string]any{"type": "integer"},
+					"maxDepth": map[string]any{"type": "integer"},
+				},
+				"required": []any{"source", "affected", "count", "maxDepth"},
+			},
 		},
 	}
 }
