@@ -1,0 +1,48 @@
+{
+  "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
+  "description": "v1.0.0 perf baseline (P2-T23). Placeholder values pending the first real-cluster bench run on representative hardware. Replace with output from `KUBEATLAS_TIER=tier1 bash test/perf/bench-v1.sh` followed by the same with tier2; the script merges both tier blocks into this file.",
+  "phase": "2-v1.0.0",
+  "captured_at": "PENDING",
+  "captured_on": {
+    "os": "PENDING",
+    "arch": "PENDING",
+    "kernel": "PENDING"
+  },
+  "fixture": {
+    "namespace": "stress-test-5k",
+    "samples_per_endpoint": 100,
+    "configmaps": 5000,
+    "deployments": 1000,
+    "services": 200
+  },
+  "spec_targets": {
+    "cluster_view_p50_ms": 1000,
+    "cluster_view_p95_ms": 1500,
+    "blast_radius_p95_ms": 500,
+    "namespace_view_p50_ms": 2000
+  },
+  "tier1": {
+    "cluster_view_p50_ms": 0,
+    "cluster_view_p95_ms": 0,
+    "cluster_view_p99_ms": 0,
+    "namespace_view_p50_ms": 0,
+    "namespace_view_p95_ms": 0,
+    "namespace_view_p99_ms": 0,
+    "blast_radius_p50_ms": 0,
+    "blast_radius_p95_ms": 0,
+    "blast_radius_p99_ms": 0,
+    "namespace_count": 0
+  },
+  "tier2": {
+    "cluster_view_p50_ms": 0,
+    "cluster_view_p95_ms": 0,
+    "cluster_view_p99_ms": 0,
+    "namespace_view_p50_ms": 0,
+    "namespace_view_p95_ms": 0,
+    "namespace_view_p99_ms": 0,
+    "blast_radius_p50_ms": 0,
+    "blast_radius_p95_ms": 0,
+    "blast_radius_p99_ms": 0,
+    "namespace_count": 0
+  }
+}
