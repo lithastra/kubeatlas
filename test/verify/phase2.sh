@@ -18,9 +18,9 @@
 #      logs), confirm Certificate kind appears in the resources API
 #      after a CR is created.
 #
-# M5 / M6 assertions (RBAC, blast radius, orphans, cycles, cert-manager
-# rule pack edges) live in a future part of this script — see
-# P2-T16 + P2-T26.
+# M5 assertions land in part 2 below: RBAC graph, blast radius, and
+# (when KUBEATLAS_CHECK_CERT_MANAGER_RULES=1) the cert-manager rule
+# pack STORES_IN edge. M6 (orphans + cycles) lives in P2-T26.
 #
 # Required tools on PATH: kubectl, helm, jq, curl.
 # The script assumes:
@@ -52,6 +52,11 @@ CRD_PICKUP_BUDGET_SECONDS="${KUBEATLAS_CRD_PICKUP_BUDGET:-60}"
 # integration with CNPG's restricted_load_libraries is still being
 # pinned down (tracked under a follow-up issue).
 SKIP_TIER2="${KUBEATLAS_SKIP_TIER2:-0}"
+# KUBEATLAS_CHECK_CERT_MANAGER_RULES=1 enables the optional Part 2C
+# assertion that the cert-manager rule pack landed STORES_IN edges
+# on the Certificate. Off by default until the OCI artifact ships.
+CHECK_CERT_MANAGER_RULES="${KUBEATLAS_CHECK_CERT_MANAGER_RULES:-0}"
+M5_NS="${KUBEATLAS_M5_NS:-petclinic-m5}"
 
 # ----- helpers -------------------------------------------------------
 
@@ -284,10 +289,160 @@ done
   || fail "Certificate cert-test/phase2-cert never appeared in /api/v1alpha1/resources/{ns}/{kind}/{name}"
 pass "Certificate visible via kubeatlas API"
 
+# ----- Part 2A (M5): RBAC graph -------------------------------------
+#
+# Seeds a SA + Role + RoleBinding fixture, waits for the informer to
+# pick all three up, then walks the BINDS_SUBJECT / BINDS_ROLE chain
+# back through the new RBAC API. Validates that the extractor pair
+# emits the right edges and that the API surfaces the role's rules.
+
+step "rbac: seed ServiceAccount + Role + RoleBinding fixture"
+kubectl create namespace "${M5_NS}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+cat <<EOF | kubectl apply -f - >/dev/null
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api-sa
+  namespace: ${M5_NS}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: api-cm-reader
+  namespace: ${M5_NS}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: api-cm-reader
+  namespace: ${M5_NS}
+subjects:
+  - kind: ServiceAccount
+    name: api-sa
+    namespace: ${M5_NS}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: api-cm-reader
+EOF
+pass "RBAC fixture applied in ${M5_NS}"
+
+step "rbac: BINDS_SUBJECT + BINDS_ROLE land for api-sa"
+deadline=$((SECONDS + 60))
+saw_perms=0
+perms_body=""
+while (( SECONDS < deadline )); do
+  perms_body=$(kubeatlas_curl "/api/v1alpha1/rbac/serviceaccount/${M5_NS}/api-sa/permissions" 2>/dev/null || echo '{}')
+  if jq -e '.bindings | length >= 1 and any(.[]; .role.name == "api-cm-reader")' <<<"${perms_body}" >/dev/null 2>&1; then
+    saw_perms=1
+    break
+  fi
+  sleep 2
+done
+(( saw_perms == 1 )) || fail "rbac permissions for ${M5_NS}/api-sa never showed api-cm-reader binding (last body: ${perms_body})"
+# Inner sanity: the rule must mention configmaps.
+if ! jq -e '[.bindings[].rules[]?.resources[]] | index("configmaps")' <<<"${perms_body}" >/dev/null 2>&1; then
+  fail "permissions response missing the configmaps verb (body: ${perms_body})"
+fi
+pass "api-sa permissions resolve to api-cm-reader / configmaps"
+
+step "rbac: role -> subjects walk returns api-sa"
+subjects_body=$(kubeatlas_curl "/api/v1alpha1/rbac/role/${M5_NS}/api-cm-reader/subjects")
+if ! jq -e '[.bindings[].subjects[]?.name] | index("api-sa")' <<<"${subjects_body}" >/dev/null 2>&1; then
+  fail "role subjects walk missing api-sa (body: ${subjects_body})"
+fi
+pass "role subjects walk lists api-sa"
+
+# ----- Part 2B (M5): blast radius ------------------------------------
+#
+# Adds a Deployment that mounts a ConfigMap, then queries the
+# blast-radius endpoint on the ConfigMap. The Deployment + its
+# downstream ReplicaSet must show up — confirming the
+# DirectionIncoming traversal works end-to-end against the live
+# graph.
+
+step "blast-radius: seed Deployment that consumes a ConfigMap"
+cat <<EOF | kubectl apply -f - >/dev/null
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: ${M5_NS}
+data:
+  greeting: hello
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: ${M5_NS}
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: api } }
+  template:
+    metadata: { labels: { app: api } }
+    spec:
+      serviceAccountName: api-sa
+      containers:
+        - name: app
+          image: registry.k8s.io/pause:3.10
+          envFrom:
+            - configMapRef: { name: app-config }
+EOF
+pass "blast-radius fixture applied in ${M5_NS}"
+
+step "blast-radius: walk incoming from app-config reaches api Deployment"
+deadline=$((SECONDS + 90))
+saw_blast=0
+blast_body=""
+while (( SECONDS < deadline )); do
+  blast_body=$(kubeatlas_curl "/api/v1alpha1/blast-radius/${M5_NS}/ConfigMap/app-config" 2>/dev/null || echo '{}')
+  # Tier 2 traversal can return only the immediate consumers (the
+  # Deployment) or also the cascaded ReplicaSet / Pod once
+  # extractors converge. Either reaching api is enough — that's the
+  # operationally interesting answer.
+  if jq -e '[.affected[] | select(.kind == "Deployment" and .name == "api")] | length >= 1' <<<"${blast_body}" >/dev/null 2>&1; then
+    saw_blast=1
+    break
+  fi
+  sleep 3
+done
+(( saw_blast == 1 )) || fail "blast-radius from app-config never reached api Deployment (last body: ${blast_body})"
+blast_count=$(jq -r '.count' <<<"${blast_body}")
+pass "blast-radius affected count = ${blast_count} (includes api Deployment)"
+
+# ----- Part 2C (M5, optional): cert-manager rule pack edges ----------
+
+if [[ "${CHECK_CERT_MANAGER_RULES}" == "1" ]]; then
+  step "cert-manager rules: STORES_IN edge from Certificate to Secret"
+  deadline=$((SECONDS + 60))
+  saw_stores_in=0
+  outgoing_body=""
+  while (( SECONDS < deadline )); do
+    outgoing_body=$(kubeatlas_curl '/api/v1alpha1/resources/cert-test/Certificate/phase2-cert/outgoing' 2>/dev/null || echo '[]')
+    if jq -e '[.[] | select(.type == "STORES_IN")] | length >= 1' <<<"${outgoing_body}" >/dev/null 2>&1; then
+      saw_stores_in=1
+      break
+    fi
+    sleep 2
+  done
+  (( saw_stores_in == 1 )) \
+    || fail "cert-manager STORES_IN edge never appeared on phase2-cert (rule pack not loaded?)"
+  pass "STORES_IN edge present on phase2-cert"
+else
+  yellow "▶ cert-manager rules: SKIPPED (set KUBEATLAS_CHECK_CERT_MANAGER_RULES=1 to enable)"
+fi
+
 # ----- summary -------------------------------------------------------
 
 green ""
-green "phase2.sh M4 part 1 — all assertions green"
+green "phase2.sh M4+M5 — all assertions green"
 green "  rego engine modules loaded: ${loaded}"
 green "  Pod restart budget: ${restart_elapsed}s / ${RESTART_BUDGET_SECONDS}s"
 green "  resources before/after restart: ${pre_resources} / ${post_resources}"
+green "  rbac permissions: api-sa -> api-cm-reader (${M5_NS})"
+green "  blast-radius affected count from app-config: ${blast_count}"
