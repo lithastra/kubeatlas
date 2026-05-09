@@ -11,13 +11,33 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
-// ResourceDetailResponse is the body of GET /resources/{ns}/{kind}/{name}.
-// Resource is the K8s metadata + Raw spec from the store; Incoming and
-// Outgoing are the edges incident on this resource.
+// ResourceDetailResponse is the v1alpha1 body of
+// GET /resources/{ns}/{kind}/{name}. Resource is the K8s metadata +
+// Raw spec from the store; Incoming and Outgoing are the edges
+// incident on this resource.
+//
+// This shape is FROZEN. api-compat-check enforces that no field
+// is removed or renamed — the v1 surface gets enrichment fields
+// via the sibling ResourceDetailResponseV1 type below.
 type ResourceDetailResponse struct {
 	Resource graph.Resource `json:"resource"`
 	Incoming []graph.Edge   `json:"incoming"`
 	Outgoing []graph.Edge   `json:"outgoing"`
+}
+
+// ResourceDetailResponseV1 is the GA superset returned by the
+// v1 endpoint. The first three fields are byte-identical to
+// ResourceDetailResponse so v1alpha1 consumers that drift to v1
+// see exactly the same data; the rest are graph-analysis
+// enrichments (P2-T15 / T17 / T18) folded into the resource
+// detail bundle so the UI can render badges without round-trips.
+type ResourceDetailResponseV1 struct {
+	Resource         graph.Resource `json:"resource"`
+	Incoming         []graph.Edge   `json:"incoming"`
+	Outgoing         []graph.Edge   `json:"outgoing"`
+	BlastRadiusCount int            `json:"blastRadiusCount"`
+	IsOrphan         bool           `json:"isOrphan"`
+	InCycle          bool           `json:"inCycle"`
 }
 
 // SearchResponse is the body of GET /search?q=...
@@ -88,9 +108,10 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
-// handleResource serves GET /resources/{namespace}/{kind}/{name}.
-// The detail bundles the resource itself with its incoming + outgoing
-// edges so the UI's resource page can render in one round-trip.
+// handleResource serves GET /resources/{namespace}/{kind}/{name}
+// on both API versions. The store query path is identical for
+// both; only the response DTO differs (v1 adds graph-analysis
+// enrichment fields).
 func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	ns, kind, name, ok := pathParts(r)
 	if !ok {
@@ -111,6 +132,10 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 	out, err := s.store.ListOutgoing(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
+		return
+	}
+	if apiVersionFor(r) == APIVersionV1 {
+		writeJSON(w, http.StatusOK, s.buildResourceDetailV1(r, res, in, out))
 		return
 	}
 	writeJSON(w, http.StatusOK, ResourceDetailResponse{
