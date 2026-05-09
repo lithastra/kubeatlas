@@ -1,0 +1,1441 @@
+{
+  "components": {
+    "schemas": {
+      "BlastRadiusResponse": {
+        "properties": {
+          "affected": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "maxDepth": {
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/Resource"
+          }
+        },
+        "required": [
+          "source",
+          "affected",
+          "count",
+          "maxDepth"
+        ],
+        "type": "object"
+      },
+      "CycleReport": {
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "members"
+        ],
+        "type": "object"
+      },
+      "CyclesResponse": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "cycles": {
+            "items": {
+              "$ref": "#/components/schemas/CycleReport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "cycles",
+          "count"
+        ],
+        "type": "object"
+      },
+      "Edge": {
+        "properties": {
+          "from": {
+            "description": "Source resource id (namespace/kind/name).",
+            "type": "string"
+          },
+          "to": {
+            "description": "Target resource id.",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "OWNS",
+              "USES_CONFIGMAP",
+              "USES_SECRET",
+              "MOUNTS_VOLUME",
+              "SELECTS",
+              "USES_SERVICEACCOUNT",
+              "ROUTES_TO",
+              "ATTACHED_TO"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "type"
+        ],
+        "type": "object"
+      },
+      "EdgeList": {
+        "items": {
+          "$ref": "#/components/schemas/Edge"
+        },
+        "type": "array"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "code": {
+            "enum": [
+              "not_found",
+              "invalid_argument",
+              "internal"
+            ],
+            "type": "string"
+          },
+          "error": {
+            "description": "Human-readable error message.",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Optional correlation id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ],
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "example": "ok",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "OpenAPI": {
+        "description": "OpenAPI 3.0 document. Self-describing; clients should consume the spec directly rather than this schema entry.",
+        "type": "object"
+      },
+      "OrphanReport": {
+        "properties": {
+          "reason": {
+            "enum": [
+              "orphan",
+              "standalone_pod"
+            ],
+            "type": "string"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/Resource"
+          }
+        },
+        "required": [
+          "resource",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "OrphansResponse": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "reports": {
+            "items": {
+              "$ref": "#/components/schemas/OrphanReport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "reports",
+          "count"
+        ],
+        "type": "object"
+      },
+      "OwnerRef": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "uid"
+        ],
+        "type": "object"
+      },
+      "RBACBinding": {
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/RBACSubjectRef"
+          },
+          "role": {
+            "$ref": "#/components/schemas/RBACSubjectRef"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RBACRule"
+            },
+            "type": "array"
+          },
+          "subjects": {
+            "items": {
+              "$ref": "#/components/schemas/RBACSubjectRef"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "binding"
+        ],
+        "type": "object"
+      },
+      "RBACPermissions": {
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/RBACBinding"
+            },
+            "type": "array"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/RBACSubjectRef"
+          }
+        },
+        "required": [
+          "subject",
+          "bindings"
+        ],
+        "type": "object"
+      },
+      "RBACRule": {
+        "properties": {
+          "apiGroups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "resourceNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "verbs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RBACSubjectRef": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ],
+        "type": "object"
+      },
+      "RBACSubjects": {
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/RBACBinding"
+            },
+            "type": "array"
+          },
+          "role": {
+            "$ref": "#/components/schemas/RBACSubjectRef"
+          }
+        },
+        "required": [
+          "role",
+          "bindings"
+        ],
+        "type": "object"
+      },
+      "Resource": {
+        "properties": {
+          "annotations": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "groupVersion": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "ownerReferences": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerRef"
+            },
+            "type": "array"
+          },
+          "resourceVersion": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "namespace"
+        ],
+        "type": "object"
+      },
+      "ResourceDetailResponse": {
+        "properties": {
+          "incoming": {
+            "$ref": "#/components/schemas/EdgeList"
+          },
+          "outgoing": {
+            "$ref": "#/components/schemas/EdgeList"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/Resource"
+          }
+        },
+        "required": [
+          "resource",
+          "incoming",
+          "outgoing"
+        ],
+        "type": "object"
+      },
+      "SearchResponse": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "matches",
+          "total",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "View": {
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/ViewEdge"
+            },
+            "type": "array"
+          },
+          "level": {
+            "enum": [
+              "cluster",
+              "namespace",
+              "workload",
+              "resource"
+            ],
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/ViewNode"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "level",
+          "nodes",
+          "edges"
+        ],
+        "type": "object"
+      },
+      "ViewEdge": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "count"
+        ],
+        "type": "object"
+      },
+      "ViewNode": {
+        "properties": {
+          "children_count": {
+            "type": "integer"
+          },
+          "children_summary": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "edge_count_in": {
+            "type": "integer"
+          },
+          "edge_count_out": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "cluster",
+              "namespace",
+              "workload",
+              "resource"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "aggregated",
+              "resource"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "edge_count_in",
+          "edge_count_out"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "url": "https://github.com/lithastra/kubeatlas"
+    },
+    "license": {
+      "name": "Apache-2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "summary": "Kubernetes resource dependency graph",
+    "title": "KubeAtlas API",
+    "version": "v1alpha1"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/api/v1alpha1/blast-radius/{namespace}/{kind}/{name}": {
+      "get": {
+        "description": "Returns every resource reachable by walking incoming edges from the target — i.e. everything that would be impacted if this resource were deleted or broken. Use the underscore '_' as namespace for cluster-scoped resources. P2-T15 (F-110).",
+        "operationId": "get_api_v1alpha1_blast-radius_namespace_kind_name",
+        "parameters": [
+          {
+            "description": "Namespace (use '_' for cluster-scoped)",
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Path-length cap; default 5, hard max 10",
+            "in": "query",
+            "name": "max_depth",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Comma-separated edge labels to follow; empty = any",
+            "in": "query",
+            "name": "edge_types",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include the start resource in the result set; default false",
+            "in": "query",
+            "name": "include_source",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlastRadiusResponse"
+                }
+              }
+            },
+            "description": "Affected resources"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Transitive set of resources affected by changes to this resource"
+      }
+    },
+    "/api/v1alpha1/cycles": {
+      "get": {
+        "description": "Returns every SCC of two or more resources. In a healthy cluster the list is empty; non-empty results indicate cyclic dependencies (e.g. ConfigMaps that reference each other). P2-T18 (F-112 part 2).",
+        "operationId": "get_api_v1alpha1_cycles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CyclesResponse"
+                }
+              }
+            },
+            "description": "Cycle reports"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Strongly connected components of size \u003e= 2"
+      }
+    },
+    "/api/v1alpha1/graph": {
+      "get": {
+        "description": "Returns an aggregated View at one of four levels: cluster, namespace, workload, resource. Workload and resource scopes require namespace+kind+name; namespace requires namespace.",
+        "operationId": "get_api_v1alpha1_graph",
+        "parameters": [
+          {
+            "description": "Aggregation level",
+            "in": "query",
+            "name": "level",
+            "required": true,
+            "schema": {
+              "enum": [
+                "cluster",
+                "namespace",
+                "workload",
+                "resource"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Namespace; required for namespace/workload/resource",
+            "in": "query",
+            "name": "namespace",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource Kind; required for workload/resource",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource name; required for workload/resource",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/View"
+                }
+              }
+            },
+            "description": "Aggregated graph view"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Graph at a given level"
+      }
+    },
+    "/api/v1alpha1/openapi.json": {
+      "get": {
+        "description": "Hand-written, generated from the live route table. Used by the docs site and by external tooling.",
+        "operationId": "get_api_v1alpha1_openapi_json",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAPI"
+                }
+              }
+            },
+            "description": "OpenAPI 3.0 document"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "OpenAPI 3.0 spec for this API"
+      }
+    },
+    "/api/v1alpha1/orphans": {
+      "get": {
+        "description": "Returns every resource that is either a non-top-level kind with zero incoming edges (an orphan) or a Pod without an OwnerReference (a standalone Pod). Optional query param `namespace` narrows the scope. P2-T17 (F-112 part 1).",
+        "operationId": "get_api_v1alpha1_orphans",
+        "parameters": [
+          {
+            "description": "Restrict the sweep to one namespace",
+            "in": "query",
+            "name": "namespace",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrphansResponse"
+                }
+              }
+            },
+            "description": "Orphan reports"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "List resources with no upstream owner"
+      }
+    },
+    "/api/v1alpha1/rbac/clusterrole/{name}/subjects": {
+      "get": {
+        "description": "Same shape as the namespaced /role variant but for cluster-scoped ClusterRoles. Required as a separate route because net/http's mux folds repeated slashes, so a {namespace}-empty path 404s.",
+        "operationId": "get_api_v1alpha1_rbac_clusterrole_name_subjects",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RBACSubjects"
+                }
+              }
+            },
+            "description": "Subject list"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "RBAC: subjects bound to a ClusterRole"
+      }
+    },
+    "/api/v1alpha1/rbac/role/{namespace}/{name}/subjects": {
+      "get": {
+        "description": "Walks BINDS_ROLE incoming edges on the (namespaced) Role back through RoleBinding / ClusterRoleBinding to the subjects each binding lists. For ClusterRole use /clusterrole/{name}/subjects instead.",
+        "operationId": "get_api_v1alpha1_rbac_role_namespace_name_subjects",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RBACSubjects"
+                }
+              }
+            },
+            "description": "Subject list"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "RBAC: subjects bound to a Role"
+      }
+    },
+    "/api/v1alpha1/rbac/serviceaccount/{namespace}/{name}/permissions": {
+      "get": {
+        "description": "Walks BINDS_SUBJECT incoming edges on the SA back through RoleBinding / ClusterRoleBinding to the bound Role / ClusterRole and returns the rule rules block of each. Phase 2 P2-T14.",
+        "operationId": "get_api_v1alpha1_rbac_serviceaccount_namespace_name_permissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RBACPermissions"
+                }
+              }
+            },
+            "description": "Permissions summary"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "RBAC: roles bound to a ServiceAccount"
+      }
+    },
+    "/api/v1alpha1/resources/{namespace}/{kind}/{name}": {
+      "get": {
+        "description": "Returns the resource plus its incoming and outgoing edges in one round-trip. Use the underscore '_' as the namespace for cluster-scoped resources.",
+        "operationId": "get_api_v1alpha1_resources_namespace_kind_name",
+        "parameters": [
+          {
+            "description": "Namespace (use '_' for cluster-scoped)",
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource Kind",
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resource name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceDetailResponse"
+                }
+              }
+            },
+            "description": "Resource detail bundle"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Single-resource detail with edges"
+      }
+    },
+    "/api/v1alpha1/resources/{namespace}/{kind}/{name}/incoming": {
+      "get": {
+        "description": "Returns every edge whose To field equals this resource's id.",
+        "operationId": "get_api_v1alpha1_resources_namespace_kind_name_incoming",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeList"
+                }
+              }
+            },
+            "description": "Edge list"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Incoming edges for a resource"
+      }
+    },
+    "/api/v1alpha1/resources/{namespace}/{kind}/{name}/outgoing": {
+      "get": {
+        "description": "Returns every edge whose From field equals this resource's id.",
+        "operationId": "get_api_v1alpha1_resources_namespace_kind_name_outgoing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeList"
+                }
+              }
+            },
+            "description": "Edge list"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Outgoing edges for a resource"
+      }
+    },
+    "/api/v1alpha1/search": {
+      "get": {
+        "description": "Linear case-insensitive scan over kind / name / namespace / labels. Phase 2 (v1.0) replaces this with an inverted index.",
+        "operationId": "get_api_v1alpha1_search",
+        "parameters": [
+          {
+            "description": "Search term (case-insensitive)",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Max matches to return (default 50, max 200)",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Search results"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Substring search across resources"
+      }
+    },
+    "/api/v1alpha1/watch": {
+      "get": {
+        "description": "Upgrades to WebSocket. Client first sends a SUBSCRIBE envelope; the server then streams GRAPH_UPDATE envelopes plus PING heartbeats every 30 seconds. See the protocol notes in the spec's `x-websocket` extension.",
+        "operationId": "get_api_v1alpha1_watch",
+        "responses": {
+          "101": {
+            "description": "Upgrade to WebSocket (returns 101 Switching Protocols on the wire)"
+          }
+        },
+        "summary": "WebSocket watch stream"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "description": "Returns 200 OK while the process can serve HTTP. Never gates on cluster state.",
+        "operationId": "get_healthz",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Process is alive"
+          }
+        },
+        "summary": "Liveness probe"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Hand-rolled exposition covering goroutine count, informer sync state, and request counts by method/status.",
+        "operationId": "get_metrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus text exposition"
+          }
+        },
+        "summary": "Prometheus metrics"
+      }
+    },
+    "/readyz": {
+      "get": {
+        "description": "Returns 200 once the informer cache has completed initial sync; 503 until then.",
+        "operationId": "get_readyz",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Process is ready to serve traffic"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Service not ready (informer cache still syncing)"
+          }
+        },
+        "summary": "Readiness probe"
+      }
+    }
+  }
+}

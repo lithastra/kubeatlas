@@ -181,7 +181,16 @@ func (s *Server) Addr() string {
 // "/" handler doesn't shadow "/api/v1alpha1/...".
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	for _, r := range s.Routes() {
+		// Routes() lists patterns in v1alpha1 form (the original
+		// Phase 1 surface). Register each /api/v1alpha1/... entry
+		// under /api/v1/... too so v1 GA serves byte-identical
+		// behaviour with version-aware serialisation. Unversioned
+		// routes (/healthz, /readyz, /metrics) hit the
+		// versionedPattern early-return and bind exactly once.
 		mux.HandleFunc(r.Method+" "+r.Pattern, r.handler)
+		if v1 := versionedPattern(r.Pattern, APIVersionV1); v1 != r.Pattern {
+			mux.HandleFunc(r.Method+" "+v1, r.handler)
+		}
 	}
 	if s.webFS != nil {
 		mux.Handle("GET /", s.staticHandler())

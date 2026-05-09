@@ -1,0 +1,52 @@
+name: API compat check (v1alpha1 frozen surface)
+
+# P2-T22: enforces that the v1alpha1 OpenAPI surface only ever
+# grows. Removing a path, removing a field, changing a type, or
+# demoting a required field fails the job.
+#
+# Baseline lives in api/openapi-v1alpha1.json. The dumper writes
+# the build's current spec to a tempfile; api-compat-check diffs
+# the two. No untrusted github.* context values are interpolated
+# into run: blocks.
+on:
+  pull_request:
+    paths:
+      - 'pkg/api/**'
+      - 'cmd/kubeatlas/**'
+      - 'api/openapi-v1alpha1.json'
+      - 'tools/api-compat-check/**'
+      - '.github/workflows/api-compat.yml'
+  workflow_dispatch:
+
+jobs:
+  compat:
+    name: v1alpha1 frozen surface
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Dump current v1alpha1 spec
+        run: |
+          mkdir -p /tmp/api
+          go run ./tools/api-compat-check/dump > /tmp/api/openapi-v1alpha1.current.json
+
+      - name: Run api-compat-check
+        run: |
+          go run ./tools/api-compat-check \
+            --baseline=api/openapi-v1alpha1.json \
+            --current=/tmp/api/openapi-v1alpha1.current.json
+
+      - name: Hint on failure
+        if: failure()
+        run: |
+          echo "::error::v1alpha1 surface regressed."
+          echo "If the change is intentional and additive (a brand-new optional field, a new endpoint, a new schema), regenerate the baseline:"
+          echo "  go run ./tools/api-compat-check/dump > api/openapi-v1alpha1.json"
+          echo "Removing or renaming any v1alpha1 field, or changing a type, is NOT allowed in Phase 2."
