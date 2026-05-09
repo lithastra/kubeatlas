@@ -352,6 +352,21 @@ func openAPIComponents() map[string]any {
 				},
 				"required": []any{"role", "bindings"},
 			},
+			"CycleReport": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"members": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Resource"}},
+				},
+				"required": []any{"members"},
+			},
+			"CyclesResponse": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"cycles": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/CycleReport"}},
+					"count":  map[string]any{"type": "integer"},
+				},
+				"required": []any{"cycles", "count"},
+			},
 			"OrphanReport": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
