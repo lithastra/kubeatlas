@@ -3,6 +3,37 @@ templates:
   - deployment.yaml
   - postgres-cluster.yaml
 tests:
+  - it: rulePacks.extras renders the KUBEATLAS_RULE_PACKS env var
+    template: deployment.yaml
+    set:
+      rulePacks.extras:
+        - oci://ghcr.io/x/foo:0.1.0
+        - oci://ghcr.io/x/bar:0.2.0
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULE_PACKS
+            value: oci://ghcr.io/x/foo:0.1.0,oci://ghcr.io/x/bar:0.2.0
+
+  - it: rulePacks.extras default (empty) does not inject the env var
+    template: deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULE_PACKS
+          any: true
+
+  - it: rulePacks.extras with :latest tag is rejected by schema
+    template: deployment.yaml
+    set:
+      rulePacks.extras:
+        - oci://ghcr.io/x/foo:latest
+    asserts:
+      - failedTemplate:
+          errorPattern: "extras|latest"
+
   - it: persistence off (default) renders no postgres-cluster
     template: postgres-cluster.yaml
     asserts:

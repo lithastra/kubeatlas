@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"log/slog"
@@ -29,13 +30,14 @@ import (
 
 // buildRegoEngine constructs the rego engine + supporting router /
 // cache / metrics and loads the rule packs we ship at compile time
-// (currently just the embedded OpenShift pack, gated by the
-// rulePacks.openshift mode resolver). Caller (runWatch) wires the
-// returned engine into pkg/crd.Discovery.
+// (the embedded OpenShift pack via the rulePacks.openshift mode
+// resolver) plus any extras the operator passed in via --rule-pack
+// flags or the comma-separated KUBEATLAS_RULE_PACKS env var (Helm
+// chart writes the latter from rulePacks.extras).
 //
 // Pack-load failures are logged at warn and the offending pack is
 // skipped — anti-pattern #35: one bad pack must not kill boot.
-func buildRegoEngine(ctx context.Context, disc kdiscoveryClient) (*rego.Engine, error) {
+func buildRegoEngine(ctx context.Context, disc kdiscoveryClient, extras []string) (*rego.Engine, error) {
 	metrics := rego.NewMetrics()
 	cache, err := rego.NewCache(0, metrics)
 	if err != nil {
@@ -70,6 +72,23 @@ func buildRegoEngine(ctx context.Context, disc kdiscoveryClient) (*rego.Engine, 
 		slog.Info("openshift rule pack disabled by config", "mode", mode)
 	}
 
+	for _, ref := range extras {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		pack, err := loadExtraPack(ctx, ref)
+		if err != nil {
+			slog.Warn("extra rule pack failed to load; skipping",
+				"ref", ref, "err", err)
+			continue
+		}
+		packs = append(packs, pack)
+		slog.Info("Loaded extra rule pack",
+			"ref", ref, "name", pack.Name, "version", pack.Version,
+			"modules", len(pack.Modules))
+	}
+
 	router := rego.FromRulePacks(packs...)
 	engine := rego.New(
 		rego.WithRouter(router),
@@ -84,6 +103,54 @@ func buildRegoEngine(ctx context.Context, disc kdiscoveryClient) (*rego.Engine, 
 	}
 	return engine, nil
 }
+
+// loadExtraPack picks the right loader for a --rule-pack value.
+// "oci://...:tag" or "<host>/<repo>:tag" go through the OCI puller;
+// anything else is treated as a directory path. Future schemes
+// (file://, https:// for an unsigned tarball) plug in here.
+func loadExtraPack(ctx context.Context, ref string) (*rego.RulePack, error) {
+	switch {
+	case strings.HasPrefix(ref, "oci://"):
+		return rego.LoadRulePackFromOCI(ctx, ref)
+	case strings.Contains(ref, ":") && strings.Contains(ref, "/"):
+		// Bare registry/repo:tag form, e.g.
+		// ghcr.io/lithastra/rules/openshift:0.1.0. Heuristic
+		// distinguishes it from a Windows-style path because we
+		// run linux/darwin only.
+		return rego.LoadRulePackFromOCI(ctx, ref)
+	default:
+		return rego.LoadRulePackFromDir(ref)
+	}
+}
+
+// rulePackRefs assembles the operator's rule-pack refs from both
+// the repeated --rule-pack flag and the KUBEATLAS_RULE_PACKS env
+// var (comma-separated). Both are unioned; duplicates are kept
+// because dedup is the operator's responsibility, not ours.
+func rulePackRefs(flagValues []string) []string {
+	var out []string
+	for _, v := range flagValues {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	if envVal := os.Getenv("KUBEATLAS_RULE_PACKS"); envVal != "" {
+		for _, p := range strings.Split(envVal, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
+// rulePackFlag implements flag.Value so --rule-pack can be passed
+// repeatedly: each invocation appends.
+type rulePackFlag []string
+
+func (r *rulePackFlag) String() string     { return strings.Join(*r, ",") }
+func (r *rulePackFlag) Set(s string) error { *r = append(*r, s); return nil }
 
 // kdiscoveryClient is the slice of k8s.io/client-go/discovery the
 // rego bootstrap needs. Aliasing the upstream interface keeps
@@ -112,6 +179,14 @@ func loadStoreConfig() store.Config {
 }
 
 func main() {
+	// Subcommand dispatch — "rules-test" runs the offline rule pack
+	// evaluator without touching kubeconfig or the API server. Lives
+	// before flag.Parse so the subcommand can carry its own flag set.
+	if len(os.Args) > 1 && os.Args[1] == "rules-test" {
+		os.Exit(runRulesTest(os.Args[2:]))
+	}
+
+	var rulePacks rulePackFlag
 	var (
 		once        = flag.Bool("once", false, "Run a single discovery pass, write JSON+DOT, and exit (legacy CLI mode).")
 		level       = flag.String("level", "resource", "Aggregation level: resource | namespace | workload | cluster.")
@@ -120,6 +195,10 @@ func main() {
 		name        = flag.String("name", "", "Resource name (required for workload, and for resource when scoped to a single object).")
 		showVersion = flag.Bool("version", false, "Print build metadata (version, commit, date) and exit.")
 	)
+	flag.Var(&rulePacks, "rule-pack",
+		"Extra rule pack to load (OCI ref like oci://ghcr.io/lithastra/rules/<pack>:<version> "+
+			"or local directory). Repeatable; merged with the comma-separated "+
+			"KUBEATLAS_RULE_PACKS env var the Helm chart writes.")
 	flag.Parse()
 
 	if *showVersion {
@@ -130,7 +209,7 @@ func main() {
 		runOnce(*level, *namespace, *kind, *name)
 		return
 	}
-	runWatch()
+	runWatch(rulePackRefs(rulePacks))
 }
 
 // runOnce walks every API resource, extracts edges, persists into the
@@ -250,7 +329,7 @@ func runOnce(level, namespace, kind, name string) {
 // runWatch starts the informer and the API server in parallel and
 // blocks until either errors or the process receives SIGINT/SIGTERM.
 // Both shut down when the parent context is cancelled.
-func runWatch() {
+func runWatch(rulePackExtras []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -274,7 +353,7 @@ func runWatch() {
 	// race on the same resource — InformerManager covers the GVRs
 	// in CoreGVRs, crd.Discovery covers everything else through the
 	// dynamic CRD informer.
-	regoEngine, err := buildRegoEngine(ctx, disc)
+	regoEngine, err := buildRegoEngine(ctx, disc, rulePackExtras)
 	if err != nil {
 		log.Fatalf("build rego engine: %v", err)
 	}

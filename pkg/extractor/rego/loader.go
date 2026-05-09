@@ -38,6 +38,37 @@ func EmbeddedOpenShift() (*RulePack, error) {
 	return LoadRulePackFromFS(embeddedFS, "embedded/openshift")
 }
 
+// LoadRulePackFromOCI pulls a rule pack OCI artifact, extracts it
+// to a temp directory, and reuses LoadRulePackFromDir so the
+// validation path is identical to the on-disk loader. Returns the
+// pack ready for RegisterTo; the temp directory is cleaned up
+// automatically — RulePack.Source bytes are already in memory.
+//
+// ref accepts both the bare repository:tag form
+// ("ghcr.io/lithastra/rules/openshift:0.1.0") and the oci:// scheme
+// form ("oci://ghcr.io/...:tag") that operator-friendly Helm
+// values prefer.
+//
+// Cosign signature verification is intentionally NOT done here —
+// P2-T22 will add `--verify-signature` plumbing once the release
+// pipeline starts signing artifacts. We accept the design risk
+// that an attacker who controls the registry can ship a malicious
+// pack today; rule-pack interface guards (rego_api / kubeatlas
+// constraint) plus the engine's timeout + recover sandbox limit
+// blast radius.
+func LoadRulePackFromOCI(ctx context.Context, ref string) (*RulePack, error) {
+	tmpDir, err := os.MkdirTemp("", "kubeatlas-rulepack-*")
+	if err != nil {
+		return nil, fmt.Errorf("LoadRulePackFromOCI: tempdir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := pullOCIArtifact(ctx, ref, tmpDir); err != nil {
+		return nil, fmt.Errorf("LoadRulePackFromOCI %s: %w", ref, err)
+	}
+	return LoadRulePackFromDir(tmpDir)
+}
+
 // supportedRegoAPI is the rule-pack interface version this engine
 // understands. Bumping it = breaking change for every published
 // rule pack (guide §2.5: rego_api is a contract, v1 stays for at
