@@ -352,6 +352,22 @@ func openAPIComponents() map[string]any {
 				},
 				"required": []any{"role", "bindings"},
 			},
+			"OrphanReport": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"resource": map[string]any{"$ref": "#/components/schemas/Resource"},
+					"reason":   map[string]any{"type": "string", "enum": []any{"orphan", "standalone_pod"}},
+				},
+				"required": []any{"resource", "reason"},
+			},
+			"OrphansResponse": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"reports": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/OrphanReport"}},
+					"count":   map[string]any{"type": "integer"},
+				},
+				"required": []any{"reports", "count"},
+			},
 			"BlastRadiusResponse": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
