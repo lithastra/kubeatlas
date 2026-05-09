@@ -42,7 +42,14 @@ CREATE INDEX IF NOT EXISTS idx_edges_from ON edges (from_id);
 -- ---------------------------------------------------------------
 
 CREATE EXTENSION IF NOT EXISTS age;
-LOAD 'age';
+-- We deliberately do NOT issue LOAD 'age' here. age.control's
+-- module_pathname makes PG auto-load the .so on the first
+-- ag_catalog.* function call (create_graph below). LOAD requires
+-- superuser unless the library is in shared_preload_libraries, and
+-- CloudNativePG silently filters non-allowlisted libraries out of
+-- that list, so the explicit LOAD path fails with "access to
+-- library 'age' is not allowed". Auto-load is unaffected.
+--
 -- SET LOCAL keeps search_path scoped to this transaction. Without
 -- LOCAL the change persists on the pooled connection and silently
 -- routes later queries (e.g. SELECT MAX(version) FROM

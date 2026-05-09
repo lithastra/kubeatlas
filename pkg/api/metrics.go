@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 )
 
 // metricsCounter tracks HTTP request counts by (method, status). It's
@@ -53,7 +55,7 @@ func (m *metricsCounter) snapshot() map[counterKey]uint64 {
 //
 // Write errors are ignored: a hung-up scraper isn't something /metrics
 // can do anything useful about.
-func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter) {
+func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int) {
 	p := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) }
 
 	p("# HELP kubeatlas_goroutines Number of currently running goroutines.\n")
@@ -88,5 +90,30 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter) 
 			p("kubeatlas_api_requests_total{method=%q,status=%q} %d\n",
 				k.method, strconv.Itoa(k.status), snap[k])
 		}
+	}
+
+	// Phase 2 rego engine block — emitted only when main.go wired a
+	// metrics provider via WithRegoMetrics. The /metrics scrape
+	// stays Phase-1-shaped on a build that never spawned an engine
+	// (e.g. -once mode, tests).
+	if regoModules != nil {
+		p("# HELP kubeatlas_rego_modules_loaded Number of compiled Rego modules currently registered in the engine.\n")
+		p("# TYPE kubeatlas_rego_modules_loaded gauge\n")
+		p("kubeatlas_rego_modules_loaded %d\n", regoModules())
+	}
+	if regoMetrics != nil {
+		s := regoMetrics.Snapshot()
+		p("# HELP kubeatlas_rego_cache_hits_total Cached rego evaluations served without re-running OPA.\n")
+		p("# TYPE kubeatlas_rego_cache_hits_total counter\n")
+		p("kubeatlas_rego_cache_hits_total %d\n", s.CacheHits)
+		p("# HELP kubeatlas_rego_cache_misses_total Rego evaluations that fell through to OPA.\n")
+		p("# TYPE kubeatlas_rego_cache_misses_total counter\n")
+		p("kubeatlas_rego_cache_misses_total %d\n", s.CacheMisses)
+		p("# HELP kubeatlas_rego_eval_timeout_total Rego evaluations aborted by the per-call timeout.\n")
+		p("# TYPE kubeatlas_rego_eval_timeout_total counter\n")
+		p("kubeatlas_rego_eval_timeout_total %d\n", s.EvalTimeouts)
+		p("# HELP kubeatlas_rego_eval_panic_total Rego evaluations whose underlying OPA call panicked.\n")
+		p("# TYPE kubeatlas_rego_eval_panic_total counter\n")
+		p("kubeatlas_rego_eval_panic_total %d\n", s.EvalPanics)
 	}
 }

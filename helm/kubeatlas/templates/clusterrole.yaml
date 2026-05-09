@@ -46,4 +46,23 @@ rules:
       - gateways
       - httproutes
     verbs: ["get", "list", "watch"]
+  # apiextensions.k8s.io — Phase 2 P2-T10 dynamic CRD discovery.
+  # Watching CRDs themselves lets pkg/crd.Discovery (un)register
+  # per-CRD informers as new operators land at runtime. We also need
+  # list/watch on every CRD-defined resource the chart targets, which
+  # we deliberately do NOT enumerate here: the dynamic informer needs
+  # cluster-wide read across user-installed CRDs (cert-manager,
+  # OpenShift, Argo, etc) and listing them upfront in the chart would
+  # mean a Helm upgrade for every new operator. The wildcard rule
+  # below stays read-only and matches the §2.3 invariant — verbs are
+  # still get/list/watch only.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  # Read-only access to every namespaced resource that lands as a CR.
+  # Required for pkg/crd.Discovery's per-CRD dynamic informers; safe
+  # because verbs are read-only.
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
 {{- end }}

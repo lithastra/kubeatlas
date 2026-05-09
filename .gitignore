@@ -25,6 +25,12 @@ profile.cov
 # reproducible without hitting chart repos on every PR.
 helm/*/charts/
 
+# Local docker build context — Dockerfile expects the binary to be
+# already in the build directory (.docker-context/), populated by
+# CI / dev scripts. Both files are reproducible from `go build` +
+# `cp Dockerfile`, so they don't belong in git.
+.docker-context/
+
 # Go workspace file
 go.work
 go.work.sum

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
+	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
@@ -36,6 +37,14 @@ type Server struct {
 	readiness *ReadinessGate
 	metrics   *metricsCounter
 
+	// regoMetrics + regoModuleCount are the Phase 2 hooks for the
+	// rego engine's atomic counters and live module count. main.go
+	// wires them through WithRegoMetrics so /metrics surfaces
+	// engine state (cache hits/misses/timeouts/panics + loaded
+	// module gauge).
+	regoMetrics     *rego.Metrics
+	regoModuleCount func() int
+
 	// webFS, when non-nil, is mounted at "/" to serve the embedded
 	// Web UI bundle. Tests leave it nil so the catch-all static
 	// route stays inactive.
@@ -44,6 +53,7 @@ type Server struct {
 	// httpSrv is created in Start; nil before then.
 	httpSrv *http.Server
 }
+
 
 // ServerOption tweaks an optional aspect of the Server. Required
 // dependencies stay positional; additive features (the embedded Web
@@ -58,6 +68,17 @@ type ServerOption func(*Server)
 // router can take over — standard pattern for hash-less routing.
 func WithWebFS(f fs.FS) ServerOption {
 	return func(s *Server) { s.webFS = f }
+}
+
+// WithRegoMetrics wires the rego engine's metrics + module-count
+// callable into /metrics rendering. nil callables turn off the
+// corresponding lines (Phase 1 behavior preserved when no engine is
+// wired).
+func WithRegoMetrics(m *rego.Metrics, moduleCount func() int) ServerOption {
+	return func(s *Server) {
+		s.regoMetrics = m
+		s.regoModuleCount = moduleCount
+	}
 }
 
 // New builds a Server. addr defaults to ":8080" if empty. The server

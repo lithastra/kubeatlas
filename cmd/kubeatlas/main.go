@@ -279,7 +279,10 @@ func runWatch() {
 		log.Fatalf("build rego engine: %v", err)
 	}
 
-	srv := api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(), api.WithWebFS(webFS))
+	srv := api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(),
+		api.WithWebFS(webFS),
+		api.WithRegoMetrics(regoEngine.Metrics(), regoEngine.ModuleCount),
+	)
 	mgr := discovery.NewInformerManager(client.Dynamic(), graphStore,
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),

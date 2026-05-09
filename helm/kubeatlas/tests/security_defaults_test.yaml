@@ -123,7 +123,29 @@ tests:
       rulePacks.openshift: "yes-please"
     asserts:
       - failedTemplate:
-          errorPattern: "rulePacks/openshift|enum"
+          errorPattern: "rulePacks/openshift|enum|oneOf"
+
+  - it: rulePacks.openshift bare boolean true is accepted (Helm --set ergonomics)
+    template: deployment.yaml
+    set:
+      rulePacks.openshift: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULEPACK_OPENSHIFT
+            value: "true"
+
+  - it: rulePacks.openshift bare boolean false is accepted (sprig default trap avoided)
+    template: deployment.yaml
+    set:
+      rulePacks.openshift: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULEPACK_OPENSHIFT
+            value: "false"
 
   - it: ingress.enabled=true with acknowledgement passes the schema
     template: deployment.yaml

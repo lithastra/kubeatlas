@@ -7,9 +7,15 @@
 #
 # shared_preload_libraries=age is mandatory: AGE's LOAD 'age' fails
 # unless the library is loaded at server start, and CNPG resets
-# postgresql.conf on every reconcile. Anything we set here that the
-# upstream image already configures is redundant but harmless;
-# CNPG's runtime conf wins, so we restate it.
+# postgresql.conf on every reconcile.
+#
+# CNPG treats shared_preload_libraries as a fixed parameter: setting
+# it under spec.postgresql.parameters trips the cluster_webhook with
+# "Can't set fixed configuration parameter". The supported path is
+# the dedicated top-level field spec.postgresql.shared_preload_libraries
+# (a list); CNPG appends entries to the operator-managed list while
+# guaranteeing its own preloads (pgaudit, pg_stat_statements) are
+# kept first. See cloudnative-pg/postgresql_conf docs.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -21,17 +27,42 @@ spec:
   instances: 1
   imageName: {{ .Values.persistence.embedded.image | quote }}
   postgresql:
-    parameters:
-      shared_preload_libraries: "age"
+    shared_preload_libraries:
+      - age
   bootstrap:
     initdb:
       database: {{ .Values.persistence.connection.database | quote }}
       owner: {{ .Values.persistence.connection.user | quote }}
-      # Run AGE bootstrap on the freshly-created database so callers
-      # can issue LOAD 'age' from the first session. CNPG executes
-      # postInitApplicationSQL as the database owner.
+      # postInitApplicationSQL runs as the postgres superuser inside
+      # the application database (despite the field name suggesting
+      # the application role) — the only window in which we can both
+      # CREATE EXTENSION (which itself requires superuser) AND grant
+      # the app role (`kubeatlas`, configured via
+      # persistence.connection.user) the privileges it needs to call
+      # ag_catalog.* functions at runtime. Without these GRANTs the
+      # app role hits "permission denied for schema ag_catalog" the
+      # first time it tries to MERGE or MATCH.
+      #
+      # The peer field postInitSQL targets the postgres database
+      # instead, which is the wrong scope — installing AGE there
+      # would not satisfy the app's CREATE EXTENSION IF NOT EXISTS
+      # idempotency check against the kubeatlas database.
+      #
+      # The matching set of grants for BYO Postgres installs is
+      # documented in docs/docs/installation/persistence.md; an
+      # operator runs it once after `CREATE EXTENSION age`.
       postInitApplicationSQL:
         - "CREATE EXTENSION IF NOT EXISTS age"
+        - {{ printf "GRANT USAGE ON SCHEMA ag_catalog TO %s"
+              .Values.persistence.connection.user | quote }}
+        - {{ printf "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ag_catalog TO %s"
+              .Values.persistence.connection.user | quote }}
+        - {{ printf "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ag_catalog TO %s"
+              .Values.persistence.connection.user | quote }}
+        - {{ printf "ALTER DEFAULT PRIVILEGES IN SCHEMA ag_catalog GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %s"
+              .Values.persistence.connection.user | quote }}
+        - {{ printf "ALTER DEFAULT PRIVILEGES IN SCHEMA ag_catalog GRANT EXECUTE ON FUNCTIONS TO %s"
+              .Values.persistence.connection.user | quote }}
   storage:
     size: {{ .Values.persistence.embedded.storageSize | quote }}
     {{- with .Values.persistence.embedded.storageClassName }}

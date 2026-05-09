@@ -243,6 +243,15 @@ func (e *Engine) Loaded() []ModuleMeta {
 	return out
 }
 
+// ModuleCount returns the number of currently-loaded modules. Cheap
+// hot-path for /metrics gauges so the api package does not need to
+// allocate a slice on every Prometheus scrape.
+func (e *Engine) ModuleCount() int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return len(e.modules)
+}
+
 // EvaluateForResource is the resource-level entry point the informer
 // pipeline calls after the built-in extractor finishes. The
 // pipeline is:

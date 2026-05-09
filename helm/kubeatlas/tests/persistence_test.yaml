@@ -31,12 +31,12 @@ tests:
       - equal:
           path: apiVersion
           value: postgresql.cnpg.io/v1
-      - equal:
-          path: spec.postgresql.parameters.shared_preload_libraries
-          value: age
+      - contains:
+          path: spec.postgresql.shared_preload_libraries
+          content: age
       - equal:
           path: spec.imageName
-          value: ghcr.io/lithastra/postgres-age:16-1.6.0
+          value: ghcr.io/lithastra/postgres-age:16.6
       - contains:
           path: spec.bootstrap.initdb.postInitApplicationSQL
           content: CREATE EXTENSION IF NOT EXISTS age

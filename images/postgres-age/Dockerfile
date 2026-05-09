@@ -2,37 +2,69 @@
 #
 # lithastra/postgres-age — KubeAtlas Tier 2 Postgres image.
 #
-# Thin re-tag over apache/age. We do not build AGE from source: the
-# upstream image already ships the .so for the supported PG major,
-# and re-tagging under lithastra/ pins the digest to something we
-# control (so a tag-mutation upstream cannot silently change the
-# bytes a v1.0 GA install pulls).
+# Layered on top of the CloudNativePG operator's Postgres image so
+# CNPG's bootstrap tooling (barman, pgaudit) is intact, with Apache
+# AGE compiled FROM SOURCE against this image's PG headers + glibc.
 #
-# Pin matches pkg/store/postgres/testhelper_test.go and
-# helm/kubeatlas/values.yaml's persistence.embedded.image default —
-# all three move together when we bump AGE / PG.
+# Why source build vs COPY of upstream apache/age binaries: the
+# upstream image runs Debian Trixie (glibc 2.38), CNPG's image runs
+# Bullseye (glibc 2.31), so .so symbols don't resolve at runtime
+# ("libc.so.6: version `GLIBC_2.38' not found"). Recompiling against
+# 2.31 produces a binary CNPG can actually load.
 #
-# Multi-arch (linux/amd64 + linux/arm64) build at release time:
+# Build (multi-arch via buildx at release time):
 #
 #   docker buildx build \
 #     --platform linux/amd64,linux/arm64 \
-#     -t ghcr.io/lithastra/postgres-age:16-1.6.0 \
+#     -t ghcr.io/lithastra/postgres-age:16.6 \
 #     --push \
 #     images/postgres-age
 #
-# CGO INVARIANT (guide §2.2): this image is reachable only as a
-# runtime dependency of Tier 2 deployments; nothing in the kubeatlas
-# Go binary links against it, so the no-cgo property is unaffected.
+# Local one-shot for verify/phase2.sh (~5-10 min first time):
+#
+#   docker build -t local-postgres-age:16.6 images/postgres-age
 
-FROM apache/age:release_PG16_1.6.0
+ARG CNPG_IMAGE=ghcr.io/cloudnative-pg/postgresql:16.6
+ARG AGE_VERSION=PG16/v1.6.0-rc0
 
-# AGE needs shared_preload_libraries=age for LOAD 'age' to succeed
-# in every session. The upstream image already configures this in
-# its entrypoint, but CloudNativePG overrides postgresql.conf via
-# the Cluster CRD's postgresql.parameters block, so the chart sets
-# shared_preload_libraries there too — see
-# helm/kubeatlas/templates/postgres-cluster.yaml.
+# ---- stage 1: build AGE from source against CNPG's PG + glibc -----
+FROM ${CNPG_IMAGE} AS build
+
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      bison \
+      flex \
+      git \
+      ca-certificates \
+      postgresql-server-dev-16 \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG AGE_VERSION
+RUN git clone --depth 1 --branch ${AGE_VERSION} https://github.com/apache/age.git /tmp/age \
+    && cd /tmp/age \
+    && make PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config \
+    && make install PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config
+
+# ---- stage 2: clean CNPG image + the freshly-compiled AGE -------
+FROM ${CNPG_IMAGE}
+
+USER root
+
+# AGE's `make install` writes the .so to PG's pkglibdir and the
+# extension SQL/control files to PG's extension dir. Pull only those
+# artifacts forward; build-essential and the cloned source stay in
+# stage 1.
+COPY --from=build /usr/lib/postgresql/16/lib/age.so \
+                  /usr/lib/postgresql/16/lib/
+COPY --from=build /usr/share/postgresql/16/extension/age.control \
+                  /usr/share/postgresql/16/extension/
+COPY --from=build /usr/share/postgresql/16/extension/age--*.sql \
+                  /usr/share/postgresql/16/extension/
+
+USER postgres
 
 LABEL org.opencontainers.image.source="https://github.com/lithastra/kubeatlas"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
-LABEL org.opencontainers.image.description="PostgreSQL 16 + Apache AGE 1.6.0 for KubeAtlas Tier 2"
+LABEL org.opencontainers.image.description="CloudNativePG-compatible Postgres 16 with Apache AGE compiled from source against matching glibc"

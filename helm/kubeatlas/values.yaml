@@ -142,7 +142,21 @@ persistence:
     storageClassName: ""
     # Image pin matches images/postgres-age/Dockerfile and the test
     # bootstrap; bumping AGE / PG means changing all three together.
-    image: ghcr.io/lithastra/postgres-age:16-1.6.0
+    #
+    # CNPG's spec.imageName webhook validates that the tag parses as
+    # a Postgres version (e.g. "16" / "16.6"). Apache AGE publishes
+    # tags as "release_PG16_1.6.0" which the webhook rejects, so the
+    # canonical path is to publish ghcr.io/lithastra/postgres-age
+    # with a PG-version-shaped tag once the release pipeline lands.
+    # Until then operators can re-tag locally:
+    #
+    #   docker tag apache/age:release_PG16_1.6.0 local-postgres-age:16.6
+    #   helm install ... --set persistence.embedded.image=local-postgres-age:16.6
+    #
+    # The default below points at the lithastra/ image; flipping it
+    # back to apache/age will trip the webhook unless the user
+    # disables imageName validation (not recommended).
+    image: ghcr.io/lithastra/postgres-age:16.6
     # Cluster name suffix; final name is "<release>-<suffix>".
     clusterNameSuffix: pg
 
