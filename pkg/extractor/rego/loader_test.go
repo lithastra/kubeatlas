@@ -276,3 +276,48 @@ func TestCheckKubeAtlasConstraint_BadConstraintSyntax(t *testing.T) {
 		t.Fatal("expected constraint syntax error, got nil")
 	}
 }
+
+// TestEmbeddedOpenShift loads the binary-baked OpenShift pack,
+// registers it into a fresh engine, and runs Route → Service
+// derivation to assert the rule produces the documented edge.
+func TestEmbeddedOpenShift(t *testing.T) {
+	pack, err := EmbeddedOpenShift()
+	if err != nil {
+		t.Fatalf("EmbeddedOpenShift: %v", err)
+	}
+	if pack.Name != "openshift" || pack.Version != "0.1.0" {
+		t.Errorf("pack = %+v, want openshift v0.1.0", pack)
+	}
+	if pack.RegoAPI != "v1" {
+		t.Errorf("rego_api = %q, want v1", pack.RegoAPI)
+	}
+	if len(pack.Modules) == 0 {
+		t.Fatal("expected at least one module")
+	}
+
+	e := newSilentEngine(t)
+	if err := pack.RegisterTo(context.Background(), e); err != nil {
+		t.Fatalf("RegisterTo: %v", err)
+	}
+
+	rs, err := e.Evaluate(context.Background(), "openshift/route", map[string]any{
+		"kind":       "Route",
+		"apiVersion": "route.openshift.io/v1",
+		"metadata":   map[string]any{"namespace": "demo", "name": "front"},
+		"spec":       map[string]any{"to": map[string]any{"kind": "Service", "name": "front-svc"}},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate route: %v", err)
+	}
+	if len(rs) == 0 || len(rs[0].Expressions) == 0 {
+		t.Fatal("empty result set from openshift/route")
+	}
+	edges, ok := rs[0].Expressions[0].Value.([]any)
+	if !ok || len(edges) != 1 {
+		t.Fatalf("expected exactly one ROUTES_TO edge, got %v", rs[0].Expressions[0].Value)
+	}
+	edge := edges[0].(map[string]any)
+	if edge["type"] != "ROUTES_TO" {
+		t.Errorf("edge.type = %v, want ROUTES_TO", edge["type"])
+	}
+}

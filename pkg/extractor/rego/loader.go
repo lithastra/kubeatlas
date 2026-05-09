@@ -5,9 +5,12 @@ package rego
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +19,24 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/version"
 )
+
+//go:embed embedded/openshift/*.rego embedded/openshift/*.yaml
+var embeddedFS embed.FS
+
+// EmbeddedOpenShift returns the rule pack baked into the kubeatlas
+// binary at build time. This is what the OpenShift API-group
+// detector loads when it sees route.openshift.io (guide §2.4 + the
+// "OpenShift is a first-class platform support" promise from §1.3).
+//
+// Embedding (vs an OCI fetch) is intentional: source distribution
+// keeps the binary self-contained, makes the bytes auditable in
+// kubeatlas's own git history, and dodges the "CI network down at
+// release time" failure mode (anti-pattern #21). The lithastra/
+// kubeatlas-rules repo ships the same files for community contrib;
+// release tooling syncs the two paths.
+func EmbeddedOpenShift() (*RulePack, error) {
+	return LoadRulePackFromFS(embeddedFS, "embedded/openshift")
+}
 
 // supportedRegoAPI is the rule-pack interface version this engine
 // understands. Bumping it = breaking change for every published
@@ -84,13 +105,24 @@ type metadataDoc struct {
 
 // LoadRulePackFromDir reads metadata.yaml + every referenced .rego
 // file from dir, validates rego_api and the kubeatlas constraint,
-// and returns a RulePack ready for RegisterTo. A failed load returns
-// nil + a wrapped error; the caller (rule-pack registry) is expected
-// to log a warn and skip the pack rather than crash (guide §2.4 +
-// anti-pattern #35).
+// and returns a RulePack ready for RegisterTo. Thin wrapper over
+// LoadRulePackFromFS that adapts the on-disk filesystem to fs.FS.
 func LoadRulePackFromDir(dir string) (*RulePack, error) {
-	metaPath := filepath.Join(dir, "metadata.yaml")
-	body, err := os.ReadFile(metaPath)
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: resolve abs: %w", dir, err)
+	}
+	return LoadRulePackFromFS(os.DirFS(abs), ".")
+}
+
+// LoadRulePackFromFS is the FS-driven core. Used by LoadRulePackFromDir
+// for filesystem packs and by EmbeddedOpenShift for the binary-baked
+// pack. Path joins use io/fs's path package so embed.FS slashes
+// stay consistent across operating systems (anti-pattern: using
+// filepath.Join here would break the embed lookup on Windows hosts).
+func LoadRulePackFromFS(fsys fs.FS, dir string) (*RulePack, error) {
+	metaPath := path.Join(dir, "metadata.yaml")
+	body, err := fs.ReadFile(fsys, metaPath)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", metaPath, err)
 	}
@@ -119,8 +151,8 @@ func LoadRulePackFromDir(dir string) (*RulePack, error) {
 				metaPath, i,
 			)
 		}
-		srcPath := filepath.Join(dir, m.File)
-		src, err := os.ReadFile(srcPath)
+		srcPath := path.Join(dir, m.File)
+		src, err := fs.ReadFile(fsys, srcPath)
 		if err != nil {
 			return nil, fmt.Errorf("load %s: %w", srcPath, err)
 		}

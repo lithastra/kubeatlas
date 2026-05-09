@@ -38,8 +38,24 @@ tests:
   - it: persistence off (default) injects no PGCONN env
     template: deployment.yaml
     asserts:
-      - notExists:
+      # P2-T11 always renders KUBEATLAS_RULEPACK_OPENSHIFT, so the
+      # env block is no longer empty. The Tier 2 vars stay absent
+      # though — that's the actual invariant this test guards.
+      - notContains:
           path: spec.template.spec.containers[0].env
+          content:
+            name: PGCONN
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_BACKEND
+          any: true
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULEPACK_OPENSHIFT
+            value: auto
 
   - it: persistence on injects KUBEATLAS_BACKEND and PGCONN env
     template: deployment.yaml
@@ -78,6 +94,36 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "ingress\\.acknowledgeNoBuiltinAuth does not match"
+
+  - it: rulePacks.openshift=true is honoured
+    template: deployment.yaml
+    set:
+      rulePacks.openshift: "true"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULEPACK_OPENSHIFT
+            value: "true"
+
+  - it: rulePacks.openshift=false is honoured
+    template: deployment.yaml
+    set:
+      rulePacks.openshift: "false"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULEPACK_OPENSHIFT
+            value: "false"
+
+  - it: rulePacks.openshift bogus value is rejected by the schema
+    template: deployment.yaml
+    set:
+      rulePacks.openshift: "yes-please"
+    asserts:
+      - failedTemplate:
+          errorPattern: "rulePacks/openshift|enum"
 
   - it: ingress.enabled=true with acknowledgement passes the schema
     template: deployment.yaml

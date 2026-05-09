@@ -217,6 +217,16 @@
         "ingressNamespaceLabel": { "type": "string" }
       }
     },
+    "rulePacks": {
+      "type": "object",
+      "description": "Phase 2 rego engine rule pack toggles. Each entry governs a single embedded pack; OCI extras land in P2-T13.",
+      "properties": {
+        "openshift": {
+          "type": "string",
+          "enum": ["auto", "true", "false"]
+        }
+      }
+    },
     "extraLabels": { "type": "object" }
   },
   "required": ["image", "service", "ingress", "podSecurityContext", "securityContext", "persistence"]
