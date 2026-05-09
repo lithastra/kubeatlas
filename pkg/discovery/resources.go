@@ -50,6 +50,16 @@ var CoreGVRs = []schema.GroupVersionResource{
 	// when the Gateway API group is not installed).
 	{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gateways"},
 	{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"},
+
+	// rbac.authorization.k8s.io/v1 — Phase 2 P2-T14. Watching all
+	// four lets the BindsSubject / BindsRole extractors emit
+	// SA -> RoleBinding -> Role chains. Roles + ClusterRoles are
+	// graph nodes so the UI can render them even when no binding
+	// references them.
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"},
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"},
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"},
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"},
 }
 
 // optionalGroups is the set of API groups whose absence on the cluster

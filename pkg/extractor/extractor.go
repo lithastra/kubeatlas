@@ -36,8 +36,13 @@ func New() *Registry {
 	return &Registry{}
 }
 
-// Default returns a Registry pre-populated with the eight Phase 0
-// built-in extractors, in the order they appear in graph.AllEdgeTypes.
+// Default returns a Registry pre-populated with every built-in
+// extractor, in the order they appear in graph.AllEdgeTypes.
+//
+// Phase 0 contributed the first eight (OWNS through ATTACHED_TO);
+// Phase 2 P2-T14 added the two RBAC extractors so SA -> RoleBinding
+// -> Role chains land in the graph the same way OwnerReference
+// chains do.
 func Default() *Registry {
 	r := New()
 	r.Register(&OwnsExtractor{})
@@ -48,6 +53,8 @@ func Default() *Registry {
 	r.Register(&ServiceAccountExtractor{})
 	r.Register(&RoutesExtractor{})
 	r.Register(&AttachedExtractor{})
+	r.Register(&BindsSubjectExtractor{})
+	r.Register(&BindsRoleExtractor{})
 	return r
 }
 

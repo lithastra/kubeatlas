@@ -14,6 +14,8 @@ import (
 // keep both in lock-step. Adding a kind = update both places + bump
 // currentSchemaVersion if the kind is also expected to backfill.
 var expectedVertexLabels = []string{
+	"ClusterRole",
+	"ClusterRoleBinding",
 	"ConfigMap",
 	"CronJob",
 	"DaemonSet",
@@ -28,6 +30,8 @@ var expectedVertexLabels = []string{
 	"PersistentVolumeClaim",
 	"Pod",
 	"ReplicaSet",
+	"Role",
+	"RoleBinding",
 	"Secret",
 	"Service",
 	"ServiceAccount",
@@ -36,6 +40,8 @@ var expectedVertexLabels = []string{
 
 var expectedEdgeLabels = []string{
 	"ATTACHED_TO",
+	"BINDS_ROLE",
+	"BINDS_SUBJECT",
 	"MOUNTS_VOLUME",
 	"OWNS",
 	"ROUTES_TO",
@@ -75,8 +81,12 @@ func TestMigrate_FreshSchema(t *testing.T) {
 		versions = append(versions, v)
 	}
 	rows.Close()
-	if !slices.Equal(versions, []int{currentSchemaVersion}) {
-		t.Errorf("schema_migrations versions: got %v, want [%d]", versions, currentSchemaVersion)
+	wantVersions := make([]int, currentSchemaVersion)
+	for i := range wantVersions {
+		wantVersions[i] = i + 1
+	}
+	if !slices.Equal(versions, wantVersions) {
+		t.Errorf("schema_migrations versions: got %v, want %v", versions, wantVersions)
 	}
 
 	// AGE graph exists.
@@ -129,8 +139,9 @@ func TestMigrate_Idempotent(t *testing.T) {
 	).Scan(&rowCount); err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	if rowCount != 1 {
-		t.Errorf("schema_migrations row count after re-Init: got %d, want 1", rowCount)
+	if rowCount != currentSchemaVersion {
+		t.Errorf("schema_migrations row count after re-Init: got %d, want %d",
+			rowCount, currentSchemaVersion)
 	}
 }
 
@@ -181,8 +192,12 @@ func TestMigrate_FromVersionZero(t *testing.T) {
 		versions = append(versions, v)
 	}
 	rows.Close()
-	if !slices.Equal(versions, []int{0, 1}) {
-		t.Errorf("schema_migrations after upgrade: got %v, want [0 1]", versions)
+	want := []int{0}
+	for i := 1; i <= currentSchemaVersion; i++ {
+		want = append(want, i)
+	}
+	if !slices.Equal(versions, want) {
+		t.Errorf("schema_migrations after upgrade: got %v, want %v", versions, want)
 	}
 }
 

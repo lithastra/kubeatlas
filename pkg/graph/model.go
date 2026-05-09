@@ -58,11 +58,22 @@ const (
 	EdgeTypeUsesServiceAccount EdgeType = "USES_SERVICEACCOUNT"
 	EdgeTypeRoutesTo           EdgeType = "ROUTES_TO"
 	EdgeTypeAttachedTo         EdgeType = "ATTACHED_TO"
+
+	// Phase 2 P2-T14 RBAC edges. RoleBinding / ClusterRoleBinding
+	// produce two edges each: one to every subject (SA / User /
+	// Group) and one to the bound Role / ClusterRole. The store
+	// accepts edges to User / Group endpoints even though no
+	// informer creates those resource nodes — UI consumers decide
+	// whether to render dangling endpoints.
+	EdgeTypeBindsSubject EdgeType = "BINDS_SUBJECT"
+	EdgeTypeBindsRole    EdgeType = "BINDS_ROLE"
 )
 
-// AllEdgeTypes is the canonical Phase 0 list. Adding a new type means:
-// add the constant above, append to this slice, write an extractor in
-// pkg/extractor, and document it in docs/architecture.md.
+// AllEdgeTypes is the canonical edge-type list. Adding a new type
+// means: add the constant above, append to this slice, write an
+// extractor in pkg/extractor (or a Rego rule in
+// lithastra/kubeatlas-rules), and document it in
+// docs/architecture.md.
 var AllEdgeTypes = []EdgeType{
 	EdgeTypeOwns,
 	EdgeTypeUsesConfigMap,
@@ -72,6 +83,8 @@ var AllEdgeTypes = []EdgeType{
 	EdgeTypeUsesServiceAccount,
 	EdgeTypeRoutesTo,
 	EdgeTypeAttachedTo,
+	EdgeTypeBindsSubject,
+	EdgeTypeBindsRole,
 }
 
 // Edge represents a directed dependency between two resources.

@@ -141,5 +141,40 @@ func (s *Server) Routes() []RouteInfo {
 			Response:    ResponseSpec{Description: "OpenAPI 3.0 document", SchemaRef: "OpenAPI"},
 			handler:     s.handleOpenAPI,
 		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1alpha1/rbac/serviceaccount/{namespace}/{name}/permissions",
+			Summary:     "RBAC: roles bound to a ServiceAccount",
+			Description: "Walks BINDS_SUBJECT incoming edges on the SA back through RoleBinding / ClusterRoleBinding to the bound Role / ClusterRole and returns the rule rules block of each. Phase 2 P2-T14.",
+			PathParams: []ParamSpec{
+				{Name: "namespace", Required: true, Type: "string"},
+				{Name: "name", Required: true, Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Permissions summary", SchemaRef: "RBACPermissions"},
+			handler:  s.handleRBACServiceAccountPermissions,
+		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1alpha1/rbac/role/{namespace}/{name}/subjects",
+			Summary:     "RBAC: subjects bound to a Role",
+			Description: "Walks BINDS_ROLE incoming edges on the (namespaced) Role back through RoleBinding / ClusterRoleBinding to the subjects each binding lists. For ClusterRole use /clusterrole/{name}/subjects instead.",
+			PathParams: []ParamSpec{
+				{Name: "namespace", Required: true, Type: "string"},
+				{Name: "name", Required: true, Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Subject list", SchemaRef: "RBACSubjects"},
+			handler:  s.handleRBACRoleSubjects,
+		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1alpha1/rbac/clusterrole/{name}/subjects",
+			Summary:     "RBAC: subjects bound to a ClusterRole",
+			Description: "Same shape as the namespaced /role variant but for cluster-scoped ClusterRoles. Required as a separate route because net/http's mux folds repeated slashes, so a {namespace}-empty path 404s.",
+			PathParams: []ParamSpec{
+				{Name: "name", Required: true, Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Subject list", SchemaRef: "RBACSubjects"},
+			handler:  s.handleRBACClusterRoleSubjects,
+		},
 	}
 }

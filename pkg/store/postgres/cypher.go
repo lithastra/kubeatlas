@@ -49,6 +49,12 @@ var knownVertexLabels = map[string]struct{}{
 	"Service":               {},
 	"ServiceAccount":        {},
 	"StatefulSet":           {},
+	// Phase 2 P2-T14 RBAC. Schema migration 002 creates the
+	// matching AGE vertex labels.
+	"RoleBinding":        {},
+	"ClusterRoleBinding": {},
+	"Role":               {},
+	"ClusterRole":        {},
 }
 
 // knownEdgeLabels mirrors migrate/001_initial.sql's edge list and
@@ -62,6 +68,10 @@ var knownEdgeLabels = map[graph.EdgeType]struct{}{
 	graph.EdgeTypeUsesServiceAccount: {},
 	graph.EdgeTypeRoutesTo:           {},
 	graph.EdgeTypeAttachedTo:         {},
+	// Phase 2 P2-T14 RBAC. Schema migration 002 creates the
+	// matching AGE edge labels.
+	graph.EdgeTypeBindsSubject: {},
+	graph.EdgeTypeBindsRole:    {},
 }
 
 // vertexLabelKnown returns true if kind has a corresponding AGE
