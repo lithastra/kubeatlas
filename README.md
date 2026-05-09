@@ -25,29 +25,65 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**v0.1.0 — Phase 1 release.** First publicly installable build:
+**v1.0.0 — Phase 2 GA.** Every Phase 2 deliverable is in:
 
-- REST + WebSocket API (`/api/v1alpha1`)
-- React/MUI Web UI: Resources DataGrid, Cytoscape topology, Mermaid neighbour view
-- Helm chart with hard-locked secure defaults (read-only RBAC, non-root pod, ClusterIP-only)
-- Multi-arch container image (linux/amd64, linux/arm64)
-- Four-platform binaries (linux/darwin × amd64/arm64)
+- **Tier 2 persistence** — PostgreSQL + Apache AGE backend, opt-in
+  via `persistence.enabled=true`. Restart preserves the graph.
+- **Rego rule packs** — programmable CRD edge derivation, no rebuild
+  needed. Embedded OpenShift pack auto-loads on detection; extras
+  load via OCI ref or local directory.
+- **RBAC graph** — Roles, RoleBindings, ClusterRoles, and
+  ClusterRoleBindings are first-class with `BINDS_SUBJECT` /
+  `BINDS_ROLE` edges. New endpoints walk SA → role and role →
+  subjects.
+- **Blast radius** — `GET /api/v1/blast-radius/...` returns
+  every resource that depends on the target. P95 < 500ms on 5K-
+  resource clusters.
+- **Orphan + cycle analysis** — surface stale resources and
+  dependency loops as first-class endpoints.
+- **`/api/v1/*` GA + frozen v1alpha1** — every Phase 1 URL keeps
+  working. CI's `api-compat-check` enforces v1alpha1 cannot
+  regress.
+- **`kubeatlas export --format=dot`** — permanent CLI export path
+  for `dot -Tsvg` pipelines.
+- **cert-manager TLS Helm integration** — opt-in
+  `ingress.certManager.enabled=true` with three issuer modes.
 
-In-memory only (restart loses state), single-replica, **no built-in
-authentication** — exposing via Ingress requires an external auth layer
-(oauth2-proxy / Pomerium / Cloudflare Access). Persistence (PostgreSQL +
-Apache AGE), multi-cluster, and Rego/Wasm extensibility are planned for v1.0
-— see [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
+Phase 1's defaults still apply: in-memory unless you opt into
+Tier 2, single-replica, **no built-in authentication** — exposing
+via Ingress requires an external auth layer (oauth2-proxy /
+Pomerium / Cloudflare Access). Multi-cluster federation is
+planned for v1.1 — see [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
+
+Full release notes: [CHANGELOG.md](./CHANGELOG.md).
 
 ## Quick start
 
+In-memory single-binary install (no persistence, fastest path
+to a running UI):
+
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
 kubectl -n kubeatlas port-forward svc/kubeatlas 8080:80
+```
+
+Tier 2 + cert-manager TLS (production-shaped install):
+
+```bash
+helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version 1.0.0 \
+  --namespace kubeatlas --create-namespace \
+  --set persistence.enabled=true \
+  --set persistence.embedded.enabled=true \
+  --set ingress.enabled=true \
+  --set ingress.acknowledgeNoBuiltinAuth=true \
+  --set ingress.hosts[0].host=kubeatlas.example.com \
+  --set ingress.certManager.enabled=true \
+  --set ingress.certManager.issuer=letsencrypt-prod
 ```
 
 Then open <http://localhost:8080>. Pick a namespace from the dropdown to see
@@ -77,8 +113,10 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the
 [Code of Conduct](./CODE_OF_CONDUCT.md). Look for issues tagged
 [`good first issue`](https://github.com/lithastra/kubeatlas/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-Phase 1 is closed; Phase 2 (v1.0) work is ramping up — see
-[the roadmap](https://docs.kubeatlas.lithastra.com/roadmap) for priorities.
+Phase 2 (v1.0) shipped. Phase 3 / v1.1 priorities (multi-cluster
+federation, OPA rule pack signing via cosign, frontend Mermaid →
+Cytoscape consolidation) are tracked at
+[the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 ## License
 
