@@ -56,8 +56,15 @@ spec:
             - name: http
               containerPort: {{ .Values.service.containerPort }}
               protocol: TCP
-          {{- if .Values.persistence.enabled }}
           env:
+            # rulePacks.openshift selects the OpenShift detector
+            # mode (auto | true | false). The kubeatlas binary
+            # reads it at startup; an empty value would also fall
+            # back to "auto" but rendering the literal keeps the
+            # operator's intent visible in `kubectl describe`.
+            - name: KUBEATLAS_RULEPACK_OPENSHIFT
+              value: {{ .Values.rulePacks.openshift | default "auto" | quote }}
+          {{- if .Values.persistence.enabled }}
             - name: KUBEATLAS_BACKEND
               value: "postgres"
             {{- include "kubeatlas.pgEnv" . | nindent 12 }}

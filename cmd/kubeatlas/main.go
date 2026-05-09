@@ -11,15 +11,85 @@ import (
 	"os/signal"
 	"syscall"
 
+	"log/slog"
+
+	kdiscovery "k8s.io/client-go/discovery"
+
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
 	"github.com/lithastra/kubeatlas/pkg/api"
+	"github.com/lithastra/kubeatlas/pkg/crd"
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor"
+	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/store"
 	"github.com/lithastra/kubeatlas/pkg/store/postgres"
 	"github.com/lithastra/kubeatlas/pkg/version"
 )
+
+// buildRegoEngine constructs the rego engine + supporting router /
+// cache / metrics and loads the rule packs we ship at compile time
+// (currently just the embedded OpenShift pack, gated by the
+// rulePacks.openshift mode resolver). Caller (runWatch) wires the
+// returned engine into pkg/crd.Discovery.
+//
+// Pack-load failures are logged at warn and the offending pack is
+// skipped — anti-pattern #35: one bad pack must not kill boot.
+func buildRegoEngine(ctx context.Context, disc kdiscoveryClient) (*rego.Engine, error) {
+	metrics := rego.NewMetrics()
+	cache, err := rego.NewCache(0, metrics)
+	if err != nil {
+		return nil, fmt.Errorf("build rego cache: %w", err)
+	}
+
+	mode, err := crd.ParseRulePackMode(os.Getenv("KUBEATLAS_RULEPACK_OPENSHIFT"))
+	if err != nil {
+		return nil, fmt.Errorf("KUBEATLAS_RULEPACK_OPENSHIFT: %w", err)
+	}
+	load, detectErr := crd.ResolveOpenShiftLoad(mode, disc)
+	if detectErr != nil {
+		slog.Warn("openshift detector failed; assuming non-openshift",
+			"mode", mode, "err", detectErr)
+	}
+
+	var packs []*rego.RulePack
+	switch {
+	case load:
+		pack, err := rego.EmbeddedOpenShift()
+		if err != nil {
+			slog.Warn("embedded openshift pack failed to load; continuing without it",
+				"err", err)
+		} else {
+			packs = append(packs, pack)
+			slog.Info("OpenShift API group detected, loading openshift rule pack",
+				"version", pack.Version, "modules", len(pack.Modules))
+		}
+	case mode == crd.RulePackModeAuto:
+		slog.Info("No OpenShift detected, openshift rule pack not loaded")
+	default:
+		slog.Info("openshift rule pack disabled by config", "mode", mode)
+	}
+
+	router := rego.FromRulePacks(packs...)
+	engine := rego.New(
+		rego.WithRouter(router),
+		rego.WithCache(cache),
+		rego.WithMetrics(metrics),
+	)
+	for _, p := range packs {
+		if err := p.RegisterTo(ctx, engine); err != nil {
+			slog.Warn("rule pack register failed; skipping",
+				"pack", p.Name, "err", err)
+		}
+	}
+	return engine, nil
+}
+
+// kdiscoveryClient is the slice of k8s.io/client-go/discovery the
+// rego bootstrap needs. Aliasing the upstream interface keeps
+// buildRegoEngine's signature precise without growing main.go's
+// already-busy import list.
+type kdiscoveryClient = kdiscovery.DiscoveryInterface
 
 // loadStoreConfig builds a store.Config from the process environment.
 // The Helm chart sets KUBEATLAS_BACKEND when persistence.enabled is
@@ -188,7 +258,8 @@ func runWatch() {
 	if err != nil {
 		log.Fatalf("failed to load kubeconfig: %v", err)
 	}
-	gvrs, err := discovery.FilterAvailableGVRs(ctx, discovery.NewDiscoveryFromClient(client), discovery.CoreGVRs)
+	disc := discovery.NewDiscoveryFromClient(client)
+	gvrs, err := discovery.FilterAvailableGVRs(ctx, disc, discovery.CoreGVRs)
 	if err != nil {
 		log.Fatalf("filter GVRs: %v", err)
 	}
@@ -196,6 +267,18 @@ func runWatch() {
 	if err != nil {
 		log.Fatalf("failed to construct graph store: %v", err)
 	}
+
+	// Phase 2 wire-up: the rego engine handles CRD-driven edge
+	// derivation; the built-in extractor.Default() still owns core
+	// K8s GVRs. The two pipelines write to the same store but never
+	// race on the same resource — InformerManager covers the GVRs
+	// in CoreGVRs, crd.Discovery covers everything else through the
+	// dynamic CRD informer.
+	regoEngine, err := buildRegoEngine(ctx, disc)
+	if err != nil {
+		log.Fatalf("build rego engine: %v", err)
+	}
+
 	srv := api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(), api.WithWebFS(webFS))
 	mgr := discovery.NewInformerManager(client.Dynamic(), graphStore,
 		discovery.WithGVRs(gvrs),
@@ -203,23 +286,28 @@ func runWatch() {
 		discovery.WithOnSynced(srv.Readiness().MarkReady),
 		discovery.WithBroadcaster(srv.Hub().BroadcastEvent),
 	)
+	crdDiscovery := crd.New(client.Dynamic(), graphStore,
+		crd.WithRegoEvaluator(regoEngine),
+	)
 
-	// Run both components under the same cancellable context. If
-	// either returns an error (or the user hits Ctrl-C), cancel the
-	// context so the other shuts down too.
+	// Run all three components under the same cancellable context.
+	// If any returns a non-Canceled error (or the user hits Ctrl-C),
+	// the cancel cascades and the others wind down.
 	type result struct {
 		who string
 		err error
 	}
-	results := make(chan result, 2)
+	results := make(chan result, 3)
 	go func() { results <- result{"informer", mgr.Start(ctx)} }()
 	go func() { results <- result{"api", srv.Start(ctx)} }()
+	go func() { results <- result{"crd-discovery", crdDiscovery.Start(ctx)} }()
 
 	first := <-results
 	cancel()
 	second := <-results
+	third := <-results
 
-	for _, r := range []result{first, second} {
+	for _, r := range []result{first, second, third} {
 		if r.err != nil && !errors.Is(r.err, context.Canceled) {
 			log.Fatalf("%s: %v", r.who, r.err)
 		}

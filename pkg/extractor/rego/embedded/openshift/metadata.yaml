@@ -1,0 +1,12 @@
+name: openshift
+version: 0.1.0
+rego_api: v1
+kubeatlas: ">= 1.0.0"
+description: "OpenShift platform CRDs (Route, DeploymentConfig, BuildConfig, ImageStream, SCC). Auto-loaded when route.openshift.io is detected."
+modules:
+  - name: route
+    file: route.rego
+    entrypoint: data.kubeatlas.rules.openshift.route.derive
+    match:
+      group: route.openshift.io
+      kind: Route

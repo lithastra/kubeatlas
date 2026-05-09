@@ -176,5 +176,19 @@ networkPolicy:
   enabled: true
   ingressNamespaceLabel: ""
 
+# Rule packs (Phase 2 / Tier 2 rego engine). Each pack governs a
+# slice of CRDs that KubeAtlas does not have a built-in extractor
+# for: OpenShift Routes / DeploymentConfigs / etc. live in the
+# embedded openshift pack, cert-manager and other community packs
+# arrive via the OCI extras list (P2-T13).
+rulePacks:
+  # auto: detect route.openshift.io at startup and load the
+  #       embedded openshift pack only when present.
+  # true: force-load the pack (kind cluster + raw Route YAML, for
+  #       rule-pack development).
+  # false: never load (when an operator wants to swap in a fork
+  #       via extras).
+  openshift: auto
+
 # Extra labels applied to every resource the chart renders.
 extraLabels: {}
