@@ -330,10 +330,17 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 }
 
 // buildEvalInput shapes a graph.Resource into the JSON-like input
-// the rego v1 modules consume. Fields are mirrored from the K8s
-// metadata layout the rule-pack contract documents (see
-// testdata/rules/sample/derive.rego header).
+// the rego v1 modules consume. When Raw is populated (every real
+// resource from an informer) we pass it through directly so rules
+// can read non-spec top-level fields (SCC's users/groups, RoleBinding's
+// subjects/roleRef, ConfigMap's data, …) without the engine having to
+// enumerate every K8s API shape. Synthetic resources without Raw
+// (engine unit tests, hand-built fixtures) fall back to the documented
+// minimal shape: kind / apiVersion / metadata / spec.
 func buildEvalInput(r graph.Resource) map[string]any {
+	if r.Raw != nil {
+		return r.Raw
+	}
 	return map[string]any{
 		"kind":       r.Kind,
 		"apiVersion": r.GroupVersion,
@@ -345,16 +352,6 @@ func buildEvalInput(r graph.Resource) map[string]any {
 			"annotations":     r.Annotations,
 			"resourceVersion": r.ResourceVersion,
 		},
-		"spec": specOf(r),
+		"spec": nil,
 	}
-}
-
-// specOf pulls the unstructured spec block out of Resource.Raw
-// when available; rule packs that match on spec fields (e.g. Route
-// → Service in P2R-T3) need this. Returns nil if Raw is empty.
-func specOf(r graph.Resource) any {
-	if r.Raw == nil {
-		return nil
-	}
-	return r.Raw["spec"]
 }
