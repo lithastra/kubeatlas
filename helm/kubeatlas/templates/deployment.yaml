@@ -66,6 +66,14 @@ spec:
             # silently substitute "auto".
             - name: KUBEATLAS_RULEPACK_OPENSHIFT
               value: {{ printf "%v" .Values.rulePacks.openshift | quote }}
+            {{- with .Values.rulePacks.extras }}
+            # rulePacks.extras → comma-separated env var the binary
+            # reads in main.go's rulePackRefs(). Operators can also
+            # pass --rule-pack repeatedly on the command line; the
+            # two are unioned.
+            - name: KUBEATLAS_RULE_PACKS
+              value: {{ join "," . | quote }}
+            {{- end }}
           {{- if .Values.persistence.enabled }}
             - name: KUBEATLAS_BACKEND
               value: "postgres"

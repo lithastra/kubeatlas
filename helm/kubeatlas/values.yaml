@@ -204,5 +204,18 @@ rulePacks:
   #       via extras).
   openshift: auto
 
+  # Additional rule packs to load from OCI artifacts. Each entry
+  # is an OCI ref ("ghcr.io/lithastra/rules/<pack>:<version>" or
+  # "oci://<host>/...:<version>"). Loaded after built-ins and the
+  # OpenShift pack (if any). Pinning a semver tag is mandatory —
+  # ":latest" trips the loader's anti-pattern guard.
+  #
+  # Example:
+  #   rulePacks:
+  #     extras:
+  #       - oci://ghcr.io/lithastra/rules/cert-manager:0.1.0
+  #       - oci://ghcr.io/lithastra/rules/argo:0.2.0
+  extras: []
+
 # Extra labels applied to every resource the chart renders.
 extraLabels: {}

@@ -145,6 +145,56 @@ The engine enforces guardrails at evaluation time:
 - **Panic isolation**: if the OPA runtime panics inside a rule, it is recovered and surfaced as `ErrEvalPanic` + counted in `kubeatlas_rego_eval_panic_total`. The server keeps running.
 - **No state**: rules cannot read external data, write files, or call HTTP. Only `input`.
 
+## Loading extra packs from OCI
+
+The OpenShift pack ships embedded in the kubeatlas binary, but every other pack lives in [`lithastra/kubeatlas-rules`](https://github.com/lithastra/kubeatlas-rules) and is published as an OCI artifact under `ghcr.io/lithastra/rules/<pack>:<version>`. Operators load them via Helm or the `--rule-pack` flag.
+
+### Helm
+
+```yaml
+# helm values.yaml
+rulePacks:
+  openshift: auto       # detect + load embedded pack
+  extras:
+    - oci://ghcr.io/lithastra/rules/cert-manager:0.1.0
+    - oci://ghcr.io/lithastra/rules/argo:0.2.0
+```
+
+The chart writes a comma-separated `KUBEATLAS_RULE_PACKS` env var; the binary reads it at startup and pulls each artifact via the same OCI flow `docker pull` uses (Docker credential helpers honored — `docker login ghcr.io` first if the artifact is private).
+
+### CLI
+
+```bash
+kubeatlas \
+  --rule-pack oci://ghcr.io/lithastra/rules/cert-manager:0.1.0 \
+  --rule-pack ./local/dev-pack
+```
+
+`--rule-pack` is repeatable. Local directories work too — useful when iterating on a pack you have not pushed yet.
+
+### Pinning
+
+Tags must be a real semver. The loader rejects `:latest` with an error so a registry mutation cannot silently change the rules a deployment loads.
+
+## Testing a pack locally
+
+`kubeatlas rules-test` evaluates a pack against a directory of YAML samples without needing a cluster:
+
+```bash
+# Local pack directory
+kubeatlas rules-test --pack=./cert-manager
+
+# OCI artifact
+kubeatlas rules-test \
+  --pack=oci://ghcr.io/lithastra/rules/cert-manager:0.1.0 \
+  --samples=./cert-manager/samples
+
+# Machine-readable output for CI
+kubeatlas rules-test --pack=./cert-manager --format=json
+```
+
+The exit code is 0 only if every sample produced at least one edge. CI in `lithastra/kubeatlas-rules` invokes this through `make integration` so every PR exercises the pack against the real engine.
+
 ## Versioning
 
 `rego_api: v1` is a contract: KubeAtlas v1.x guarantees the shape above. A future `rego_api: v2` will only ship after at least 6 months of dual-version support — see [API versioning](./api-versioning.md). If you set `kubeatlas: ">= 2.0.0"` in a pack and try to load it on a 1.x binary, the loader rejects it with `ErrIncompatibleKubeAtlas` and the rest of the engine keeps running.
