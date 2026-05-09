@@ -1,0 +1,241 @@
+name: E2E OpenShift Local (CRC)
+
+# P2-T16: Weekly + on-demand integration test against a real OpenShift
+# Local (CRC) cluster. CRC ships pulls-from-RH bits, so we need a Red
+# Hat pull-secret in the CRC_PULL_SECRET repo secret. When that secret
+# is missing the workflow short-circuits with a notice instead of
+# failing — that way forks without the secret stay green.
+#
+# Anti-patterns guarded:
+#   - Not run on PRs (macOS runner is expensive + slow).
+#   - CRC is started fresh on every run (no caching of cluster state).
+#   - CRC version is pinned >= 2.40 (newer pull-secret handling).
+#   - Route URL is consumed in-cluster only — we never expose it to
+#     the public internet.
+#
+# Security note: every reference to a secret or to a github.* context
+# field is routed through `env:` and never interpolated into a `run:`
+# block, per the workflow-injection guidance.
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  e2e-crc:
+    name: CRC + kubeatlas + OpenShift assertions
+    runs-on: macos-14-large
+    timeout-minutes: 90
+
+    env:
+      CRC_VERSION: '2.45.0'
+      KUBEATLAS_NAMESPACE: kubeatlas
+      KUBEATLAS_RELEASE: kubeatlas
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Short-circuit when CRC pull-secret missing
+        id: check-secret
+        env:
+          CRC_PULL_SECRET: ${{ secrets.CRC_PULL_SECRET }}
+        run: |
+          if [[ -z "${CRC_PULL_SECRET}" ]]; then
+            echo "::notice::CRC_PULL_SECRET secret not set; skipping the OpenShift Local job."
+            echo "skip=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "skip=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Install CRC
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          curl -fL "https://developers.redhat.com/content-gateway/file/pub/openshift-v4/clients/crc/${CRC_VERSION}/crc-macos-installer.pkg" -o crc.pkg
+          sudo installer -pkg crc.pkg -target /
+          crc version
+
+      - name: Configure CRC pull secret
+        if: steps.check-secret.outputs.skip != 'true'
+        env:
+          CRC_PULL_SECRET: ${{ secrets.CRC_PULL_SECRET }}
+        run: |
+          mkdir -p "${HOME}/.crc"
+          printf '%s' "${CRC_PULL_SECRET}" > "${HOME}/.crc/pull-secret"
+          chmod 600 "${HOME}/.crc/pull-secret"
+          crc config set pull-secret-file "${HOME}/.crc/pull-secret"
+          crc config set memory 12288
+          crc config set cpus 6
+          crc config set disk-size 50
+
+      - name: Start CRC
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          crc start --log-level info
+          eval "$(crc oc-env)"
+          oc whoami
+          oc get nodes
+
+      - name: Set kubectl + helm context to CRC
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          eval "$(crc oc-env)"
+          oc whoami --show-context
+          kubectl get nodes
+          helm version
+
+      - name: Helm dependency update
+        if: steps.check-secret.outputs.skip != 'true'
+        run: helm dependency update helm/kubeatlas
+
+      - name: Build kubeatlas binary (CGO_ENABLED=0)
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          mkdir -p web/dist
+          echo '<html><body>crc placeholder</body></html>' > web/dist/index.html
+          CGO_ENABLED=0 go build \
+            -tags embed_web \
+            -o bin/kubeatlas ./cmd/kubeatlas
+
+      - name: Build + push kubeatlas image into CRC's internal registry
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          eval "$(crc oc-env)"
+          mkdir -p .docker-context
+          cp Dockerfile .docker-context/
+          cp bin/kubeatlas .docker-context/
+          oc registry login --insecure=true || true
+          REGISTRY="$(oc registry info --internal)"
+          IMAGE="${REGISTRY}/${KUBEATLAS_NAMESPACE}/kubeatlas:crc-test"
+          docker build -t "${IMAGE}" .docker-context
+          oc create namespace "${KUBEATLAS_NAMESPACE}" --dry-run=client -o yaml | oc apply -f -
+          docker push "${IMAGE}"
+          echo "KUBEATLAS_IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Helm install kubeatlas (Tier 2, OpenShift auto-detect)
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          IMG="${KUBEATLAS_IMAGE}"
+          REPO="${IMG%:*}"
+          TAG="${IMG##*:}"
+          helm install kubeatlas helm/kubeatlas \
+            --namespace "${KUBEATLAS_NAMESPACE}" --create-namespace \
+            --set image.repository="${REPO}" \
+            --set image.tag="${TAG}" \
+            --set persistence.enabled=true \
+            --set persistence.embedded.enabled=true \
+            --set persistence.embedded.storageSize=4Gi \
+            --set rulePacks.openshift=auto \
+            --wait --timeout 10m
+
+      - name: Assert OpenShift detector fired
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          kubectl logs -n "${KUBEATLAS_NAMESPACE}" deploy/kubeatlas --tail=2000 \
+            | grep -q 'OpenShift API group detected' \
+            || { echo "::error::detector log line missing"; exit 1; }
+
+      - name: Apply OpenShift fixture (DeploymentConfig + Route)
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          eval "$(crc oc-env)"
+          oc create namespace ocp-fixture --dry-run=client -o yaml | oc apply -f -
+          oc apply -n ocp-fixture -f - <<'EOF'
+          apiVersion: apps.openshift.io/v1
+          kind: DeploymentConfig
+          metadata:
+            name: hello-dc
+          spec:
+            replicas: 1
+            selector: { app: hello }
+            template:
+              metadata: { labels: { app: hello } }
+              spec:
+                containers:
+                  - name: app
+                    image: registry.redhat.io/ubi9/ubi-micro:latest
+                    command: ["sleep","3600"]
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata: { name: hello }
+          spec:
+            selector: { app: hello }
+            ports: [{ port: 8080, targetPort: 8080 }]
+          ---
+          apiVersion: route.openshift.io/v1
+          kind: Route
+          metadata: { name: hello }
+          spec:
+            to: { kind: Service, name: hello }
+            port: { targetPort: 8080 }
+          EOF
+
+      - name: Run verify/phase2.sh
+        if: steps.check-secret.outputs.skip != 'true'
+        run: bash test/verify/phase2.sh
+
+      - name: Assert ROUTES_TO edge appeared on the Route
+        if: steps.check-secret.outputs.skip != 'true'
+        run: |
+          kubectl port-forward -n "${KUBEATLAS_NAMESPACE}" deploy/kubeatlas 18081:8080 &
+          PF=$!
+          trap "kill ${PF} || true" EXIT
+          for _ in $(seq 1 30); do
+            curl -fsS --max-time 1 "http://127.0.0.1:18081/healthz" >/dev/null && break
+            sleep 1
+          done
+          for _ in $(seq 1 30); do
+            body=$(curl -fsS "http://127.0.0.1:18081/api/v1alpha1/resources/ocp-fixture/Route/hello/outgoing" 2>/dev/null || echo '[]')
+            if echo "${body}" | jq -e '[.[] | select(.type == "ROUTES_TO")] | length >= 1' >/dev/null; then
+              echo "ROUTES_TO edge present"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::ROUTES_TO edge never landed on Route ocp-fixture/hello"
+          echo "Last body:"
+          echo "${body}"
+          exit 1
+
+      - name: Collect logs on failure
+        if: failure() && steps.check-secret.outputs.skip != 'true'
+        run: |
+          mkdir -p /tmp/crc-logs
+          kubectl get pods -A > /tmp/crc-logs/pods.txt || true
+          kubectl logs -n "${KUBEATLAS_NAMESPACE}" deploy/kubeatlas --tail=2000 \
+            > /tmp/crc-logs/kubeatlas.log 2>&1 || true
+          kubectl describe pods -n "${KUBEATLAS_NAMESPACE}" \
+            > /tmp/crc-logs/describe.txt 2>&1 || true
+
+      - name: Upload artifacts on failure
+        if: failure() && steps.check-secret.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crc-e2e-logs
+          path: /tmp/crc-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Open issue on failure
+        if: failure() && steps.check-secret.outputs.skip != 'true' && github.event_name == 'schedule'
+        uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          filename: .github/issue-templates/crc-e2e-failure.md
+          update_existing: true
+          search_existing: open
