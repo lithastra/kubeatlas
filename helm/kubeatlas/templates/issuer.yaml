@@ -1,0 +1,21 @@
+{{- /*
+SelfSigned Issuer for the cert-manager-driven TLS path. Rendered
+only when the operator chose the `selfsigned` mode — the
+`letsencrypt-staging`, `letsencrypt-prod`, and `custom` modes
+assume an Issuer / ClusterIssuer already exists outside the chart
+(per the playbook's anti-pattern: don't auto-provision ACME
+Issuers; let the operator point at their own).
+
+P2-T21 (F-121).
+*/ -}}
+{{- if and .Values.ingress.enabled .Values.ingress.certManager.enabled (eq .Values.ingress.certManager.issuer "selfsigned") -}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "kubeatlas.tls.issuerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeatlas.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}

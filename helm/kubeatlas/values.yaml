@@ -83,7 +83,37 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+  # User-managed TLS: each entry is rendered as-is into
+  # ingress.spec.tls. Mutually exclusive with certManager.enabled
+  # (schema rejects setting both).
   tls: []
+  # cert-manager TLS (P2-T21 / F-121). Off by default so the
+  # zero-config install stays plain HTTP. When enabled the chart
+  # renders a Certificate (and a SelfSigned Issuer for the
+  # `selfsigned` mode) and auto-injects the resulting Secret into
+  # ingress.spec.tls.
+  certManager:
+    enabled: false
+    # selfsigned          → chart creates a SelfSigned Issuer.
+    # letsencrypt-staging → chart references issuerName, does not
+    #                       create an Issuer (use this for testing).
+    # letsencrypt-prod    → same shape as staging, hits the
+    #                       production ACME endpoint.
+    # custom              → chart references issuerName/issuerKind
+    #                       verbatim.
+    issuer: selfsigned
+    # The Issuer / ClusterIssuer kubeatlas references. Defaulted by
+    # the resolver in _helpers.tpl when the issuer mode is not
+    # `custom`; required when issuer=custom.
+    issuerName: ""
+    # Issuer or ClusterIssuer. ClusterIssuer is the natural choice
+    # for letsencrypt-* (typically cluster-wide). Schema-validated.
+    issuerKind: ""
+    # Certificate duration / renewBefore knobs. Cert-manager defaults
+    # are sane; surface these for operators who need RFC-style short-
+    # lived certs.
+    duration: ""
+    renewBefore: ""
 
 resources:
   requests:

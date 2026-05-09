@@ -123,3 +123,42 @@ BYO so each path renders the right host/secret reference:
   value: {{ .Values.persistence.connection.sslMode | quote }}
 {{- end }}
 {{- end -}}
+
+{{/*
+kubeatlas.tls.secretName: the name of the Secret the chart wires
+into ingress.spec.tls when cert-manager is driving TLS. Stable
+("<release>-tls") so the user can reference it in external probes.
+*/}}
+{{- define "kubeatlas.tls.secretName" -}}
+{{- printf "%s-tls" (include "kubeatlas.fullname" .) -}}
+{{- end -}}
+
+{{/*
+kubeatlas.tls.issuerName: resolves the Issuer / ClusterIssuer the
+Certificate references, given the issuer mode the operator chose.
+Custom mode demands an explicit name (schema-enforced); the other
+modes default to the chart-provided convention.
+*/}}
+{{- define "kubeatlas.tls.issuerName" -}}
+{{- $cm := .Values.ingress.certManager -}}
+{{- if eq $cm.issuer "selfsigned" -}}
+{{- include "kubeatlas.fullname" . -}}-selfsigned
+{{- else if or (eq $cm.issuer "letsencrypt-staging") (eq $cm.issuer "letsencrypt-prod") -}}
+{{- if $cm.issuerName -}}{{- $cm.issuerName -}}{{- else -}}{{ $cm.issuer }}{{- end -}}
+{{- else -}}
+{{- $cm.issuerName -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+kubeatlas.tls.issuerKind: same idea for the Issuer kind. ACME
+issuers are conventionally cluster-wide; selfsigned is namespaced;
+custom mode honours the operator's explicit value.
+*/}}
+{{- define "kubeatlas.tls.issuerKind" -}}
+{{- $cm := .Values.ingress.certManager -}}
+{{- if $cm.issuerKind -}}{{- $cm.issuerKind -}}
+{{- else if eq $cm.issuer "selfsigned" -}}Issuer
+{{- else -}}ClusterIssuer
+{{- end -}}
+{{- end -}}
