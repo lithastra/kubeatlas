@@ -98,21 +98,103 @@
         "className": { "type": "string" },
         "annotations": { "type": "object" },
         "hosts": { "type": "array" },
-        "tls": { "type": "array" }
+        "tls": { "type": "array" },
+        "certManager": {
+          "type": "object",
+          "description": "cert-manager-driven TLS (P2-T21 / F-121). When enabled, the chart renders a Certificate and (for selfsigned) an Issuer, then auto-injects the resulting Secret into ingress.spec.tls. Mutually exclusive with the user-managed ingress.tls array.",
+          "properties": {
+            "enabled":     { "type": "boolean" },
+            "issuer":      {
+              "type": "string",
+              "enum": ["selfsigned", "letsencrypt-staging", "letsencrypt-prod", "custom"]
+            },
+            "issuerName":  { "type": "string" },
+            "issuerKind":  {
+              "type": "string",
+              "enum": ["", "Issuer", "ClusterIssuer"]
+            },
+            "duration":    { "type": "string" },
+            "renewBefore": { "type": "string" }
+          },
+          "if": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          },
+          "then": {
+            "properties": {
+              "issuer": {
+                "type": "string",
+                "enum": ["selfsigned", "letsencrypt-staging", "letsencrypt-prod", "custom"]
+              }
+            },
+            "required": ["issuer"],
+            "allOf": [
+              {
+                "comment": "issuer=custom must carry an explicit issuerName.",
+                "if": {
+                  "properties": { "issuer": { "const": "custom" } },
+                  "required": ["issuer"]
+                },
+                "then": {
+                  "properties": {
+                    "issuerName": { "type": "string", "minLength": 1 }
+                  },
+                  "required": ["issuerName"]
+                }
+              }
+            ]
+          }
+        }
       },
       "required": ["enabled"],
-      "if": {
-        "properties": {
-          "enabled": { "const": true }
+      "allOf": [
+        {
+          "comment": "Enabling ingress requires acknowledging that authentication is external.",
+          "if": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          },
+          "then": {
+            "properties": { "acknowledgeNoBuiltinAuth": { "const": true } },
+            "required": ["acknowledgeNoBuiltinAuth"]
+          }
         },
-        "required": ["enabled"]
-      },
-      "then": {
-        "properties": {
-          "acknowledgeNoBuiltinAuth": { "const": true }
+        {
+          "comment": "certManager.enabled=true forbids user-managed ingress.tls entries (schema-level mutual exclusion). The cert-manager-managed secret is injected by the template; mixing both modes is ambiguous.",
+          "if": {
+            "properties": {
+              "certManager": {
+                "properties": { "enabled": { "const": true } },
+                "required": ["enabled"]
+              }
+            },
+            "required": ["certManager"]
+          },
+          "then": {
+            "properties": {
+              "tls": { "type": "array", "maxItems": 0 }
+            }
+          }
         },
-        "required": ["acknowledgeNoBuiltinAuth"]
-      }
+        {
+          "comment": "certManager.enabled=true requires at least one entry in ingress.hosts (we use hosts[0].host as the certificate dnsName).",
+          "if": {
+            "properties": {
+              "certManager": {
+                "properties": { "enabled": { "const": true } },
+                "required": ["enabled"]
+              }
+            },
+            "required": ["certManager"]
+          },
+          "then": {
+            "properties": {
+              "hosts": { "type": "array", "minItems": 1 }
+            },
+            "required": ["hosts"]
+          }
+        }
+      ]
     },
     "resources": { "type": "object" },
     "livenessProbe": { "type": "object" },

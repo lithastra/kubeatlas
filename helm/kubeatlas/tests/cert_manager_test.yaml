@@ -1,0 +1,161 @@
+suite: cert-manager TLS
+templates:
+  - issuer.yaml
+  - certificate.yaml
+  - ingress.yaml
+tests:
+  - it: nothing renders when ingress is disabled (defaults)
+    template: issuer.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: nothing renders when ingress is enabled but certManager is off
+    template: issuer.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: selfsigned mode renders an Issuer
+    template: issuer.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.certManager.enabled: true
+      ingress.certManager.issuer: selfsigned
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Issuer
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kubeatlas-selfsigned
+      - exists:
+          path: spec.selfSigned
+
+  - it: selfsigned mode renders a Certificate that references the Issuer
+    template: certificate.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.certManager.enabled: true
+      ingress.certManager.issuer: selfsigned
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: RELEASE-NAME-kubeatlas-tls
+      - equal:
+          path: spec.issuerRef.name
+          value: RELEASE-NAME-kubeatlas-selfsigned
+      - equal:
+          path: spec.issuerRef.kind
+          value: Issuer
+      - equal:
+          path: spec.dnsNames[0]
+          value: kubeatlas.local
+
+  - it: letsencrypt-staging mode does NOT render an Issuer
+    template: issuer.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.certManager.enabled: true
+      ingress.certManager.issuer: letsencrypt-staging
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: letsencrypt-staging mode renders a Certificate referencing a ClusterIssuer
+    template: certificate.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.certManager.enabled: true
+      ingress.certManager.issuer: letsencrypt-staging
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.issuerRef.name
+          value: letsencrypt-staging
+      - equal:
+          path: spec.issuerRef.kind
+          value: ClusterIssuer
+
+  - it: custom mode renders a Certificate referencing the operator-provided issuer
+    template: certificate.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.certManager.enabled: true
+      ingress.certManager.issuer: custom
+      ingress.certManager.issuerName: my-corp-ca
+      ingress.certManager.issuerKind: ClusterIssuer
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.issuerRef.name
+          value: my-corp-ca
+      - equal:
+          path: spec.issuerRef.kind
+          value: ClusterIssuer
+
+  - it: certManager.enabled wires the Ingress tls block to the cert-manager secret
+    template: ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.certManager.enabled: true
+      ingress.certManager.issuer: selfsigned
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: RELEASE-NAME-kubeatlas-tls
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: kubeatlas.local
+
+  - it: user-managed ingress.tls path is unaffected when certManager is off
+    template: ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.tls:
+        - secretName: my-byo-secret
+          hosts: [kubeatlas.example.com]
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: my-byo-secret
+
+  - it: schema rejects ingress.tls populated alongside certManager.enabled
+    template: certificate.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.certManager.enabled: true
+      ingress.certManager.issuer: selfsigned
+      ingress.tls:
+        - secretName: my-byo
+          hosts: [kubeatlas.local]
+    asserts:
+      - failedTemplate: {}
+
+  - it: schema rejects custom mode without an issuerName
+    template: certificate.yaml
+    set:
+      ingress.enabled: true
+      ingress.acknowledgeNoBuiltinAuth: true
+      ingress.certManager.enabled: true
+      ingress.certManager.issuer: custom
+    asserts:
+      - failedTemplate: {}

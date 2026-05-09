@@ -1,0 +1,36 @@
+{{- /*
+Certificate driving cert-manager-managed TLS for the kubeatlas
+Ingress. Rendered whenever certManager is enabled, regardless of
+issuer mode — selfsigned points at the chart's own Issuer; the
+ACME and custom modes point at a pre-existing (Cluster)Issuer.
+
+dnsNames pulls every host out of ingress.hosts so multi-host
+installs (rare, but supported by the chart) all share one
+certificate.
+
+P2-T21 (F-121).
+*/ -}}
+{{- if and .Values.ingress.enabled .Values.ingress.certManager.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "kubeatlas.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeatlas.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "kubeatlas.tls.secretName" . }}
+  issuerRef:
+    name: {{ include "kubeatlas.tls.issuerName" . }}
+    kind: {{ include "kubeatlas.tls.issuerKind" . }}
+  dnsNames:
+    {{- range .Values.ingress.hosts }}
+    - {{ .host | quote }}
+    {{- end }}
+  {{- with .Values.ingress.certManager.duration }}
+  duration: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.ingress.certManager.renewBefore }}
+  renewBefore: {{ . | quote }}
+  {{- end }}
+{{- end }}

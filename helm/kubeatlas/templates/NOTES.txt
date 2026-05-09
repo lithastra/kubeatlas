@@ -18,6 +18,23 @@ controller fronts the API with an authentication layer
 etc.). If that's not the case, disable Ingress immediately.
 
   helm upgrade {{ .Release.Name }} -n {{ $ns }} --reuse-values --set ingress.enabled=false
+
+{{- if .Values.ingress.certManager.enabled }}
+
+cert-manager TLS is enabled (issuer: {{ .Values.ingress.certManager.issuer | quote }}).
+Verify the Certificate becomes Ready within ~60 seconds:
+
+  kubectl wait -n {{ $ns }} certificate/{{ $fullname }} --for=condition=Ready --timeout=2m
+
+{{- if ne .Values.ingress.certManager.issuer "selfsigned" }}
+The chart did NOT create an Issuer for the
+{{ .Values.ingress.certManager.issuer | quote }} mode — it expects an existing
+{{ include "kubeatlas.tls.issuerKind" . }} named "{{ include "kubeatlas.tls.issuerName" . }}".
+Confirm it exists:
+
+  kubectl get {{ include "kubeatlas.tls.issuerKind" . | lower }} {{ include "kubeatlas.tls.issuerName" . }}{{ if eq (include "kubeatlas.tls.issuerKind" .) "Issuer" }} -n {{ $ns }}{{ end }}
+{{- end }}
+{{- end }}
 {{- else }}
 
 Ingress is disabled. To expose KubeAtlas externally, configure an

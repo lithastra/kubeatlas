@@ -21,9 +21,18 @@ spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
   {{- end }}
+  {{- if .Values.ingress.certManager.enabled }}
+  tls:
+    - secretName: {{ include "kubeatlas.tls.secretName" . }}
+      hosts:
+        {{- range .Values.ingress.hosts }}
+        - {{ .host | quote }}
+        {{- end }}
+  {{- else }}
   {{- with .Values.ingress.tls }}
   tls:
     {{- toYaml . | nindent 4 }}
+  {{- end }}
   {{- end }}
   rules:
     {{- range .Values.ingress.hosts }}
