@@ -436,9 +436,11 @@ func TestVertexLabelKnown(t *testing.T) {
 func TestEdgeLabelKnown(t *testing.T) {
 	cases := map[graph.EdgeType]bool{
 		graph.EdgeTypeOwns: true,
-		"BINDS_SUBJECT":    false, // P2-T14 territory; not yet registered
+		"BINDS_SUBJECT":    true, // registered in P2-T14
+		"BINDS_ROLE":       true, // registered in P2-T14
 		"":                 false,
 		"123BAD":           false,
+		"DROP_TABLE":       false, // unknown / injection
 	}
 	for in, want := range cases {
 		if got := edgeLabelKnown(in); got != want {

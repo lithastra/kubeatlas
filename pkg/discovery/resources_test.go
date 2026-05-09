@@ -44,10 +44,11 @@ func (e *errDiscovery) ServerResourcesForGroupVersion(_ string) (*metav1.APIReso
 func TestFilterAvailableGVRs_KeepsAvailableSkipsOptional(t *testing.T) {
 	dc := &fakeDiscovery{
 		available: map[string]bool{
-			"v1":                   true,
-			"apps/v1":              true,
-			"batch/v1":             true,
-			"networking.k8s.io/v1": true,
+			"v1":                            true,
+			"apps/v1":                       true,
+			"batch/v1":                      true,
+			"networking.k8s.io/v1":          true,
+			"rbac.authorization.k8s.io/v1":  true,
 			// gateway.networking.k8s.io/v1 deliberately omitted.
 		},
 	}
@@ -89,10 +90,12 @@ func TestFilterAvailableGVRs_PropagatesTransientError(t *testing.T) {
 
 func TestCoreGVRs_HasExpectedShape(t *testing.T) {
 	// Sanity: the registry must include the 16 Phase 0 GVRs (15 core +
-	// ServiceAccount). The exact list shifts with cluster API
-	// availability at runtime, but the registry itself is stable.
-	if len(kdiscovery.CoreGVRs) != 16 {
-		t.Errorf("CoreGVRs length = %d, want 16", len(kdiscovery.CoreGVRs))
+	// ServiceAccount) plus the 4 RBAC GVRs added in P2-T14
+	// (Role/RoleBinding/ClusterRole/ClusterRoleBinding). The exact
+	// list shifts with cluster API availability at runtime, but the
+	// registry itself is stable.
+	if len(kdiscovery.CoreGVRs) != 20 {
+		t.Errorf("CoreGVRs length = %d, want 20", len(kdiscovery.CoreGVRs))
 	}
 	required := map[string]bool{
 		"namespaces": true, "pods": true, "services": true,
@@ -107,6 +110,11 @@ func TestCoreGVRs_HasExpectedShape(t *testing.T) {
 		"ingresses":       true,
 		"gateways":        true,
 		"httproutes":      true,
+		// P2-T14: RBAC graph
+		"roles":               true,
+		"rolebindings":        true,
+		"clusterroles":        true,
+		"clusterrolebindings": true,
 	}
 	seen := make(map[string]bool, len(kdiscovery.CoreGVRs))
 	for _, gvr := range kdiscovery.CoreGVRs {

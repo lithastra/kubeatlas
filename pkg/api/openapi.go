@@ -308,6 +308,50 @@ func openAPIComponents() map[string]any {
 				"type":        "object",
 				"description": "OpenAPI 3.0 document. Self-describing; clients should consume the spec directly rather than this schema entry.",
 			},
+			"RBACSubjectRef": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"kind":      map[string]any{"type": "string"},
+					"namespace": map[string]any{"type": "string"},
+					"name":      map[string]any{"type": "string"},
+				},
+				"required": []any{"kind", "name"},
+			},
+			"RBACRule": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"apiGroups":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"resources":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"resourceNames": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"verbs":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				},
+			},
+			"RBACBinding": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"binding":  map[string]any{"$ref": "#/components/schemas/RBACSubjectRef"},
+					"role":     map[string]any{"$ref": "#/components/schemas/RBACSubjectRef"},
+					"rules":    map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/RBACRule"}},
+					"subjects": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/RBACSubjectRef"}},
+				},
+				"required": []any{"binding"},
+			},
+			"RBACPermissions": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"subject":  map[string]any{"$ref": "#/components/schemas/RBACSubjectRef"},
+					"bindings": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/RBACBinding"}},
+				},
+				"required": []any{"subject", "bindings"},
+			},
+			"RBACSubjects": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"role":     map[string]any{"$ref": "#/components/schemas/RBACSubjectRef"},
+					"bindings": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/RBACBinding"}},
+				},
+				"required": []any{"role", "bindings"},
+			},
 		},
 	}
 }
