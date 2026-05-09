@@ -20,8 +20,8 @@
 #
 # M5 assertions land in part 2 below: RBAC graph, blast radius, and
 # (when KUBEATLAS_CHECK_CERT_MANAGER_RULES=1) the cert-manager rule
-# pack STORES_IN edge. M6 part 3 covers orphan detection (P2-T17);
-# cycle detection (P2-T18) lands when M6 part 4 ships.
+# pack STORES_IN edge. M6 covers orphan detection (P2-T17, part 3)
+# and cycle detection (P2-T18, part 4).
 #
 # Required tools on PATH: kubectl, helm, jq, curl.
 # The script assumes:
@@ -488,13 +488,33 @@ fi
 orphan_count=$(jq -r '.count' <<<"${all_orphans}")
 pass "Namespace excluded; total orphan reports = ${orphan_count}"
 
+# ----- Part 4 (M6): cycle detection ----------------------------------
+#
+# Tarjan's SCC must report no cycles on a clean cluster. We don't
+# seed a deliberate cycle here — the API contract is "empty when
+# the cluster is healthy", which is exactly what we want CI to
+# enforce. Unit tests in pkg/graph/analysis/cycles_test.go cover
+# the positive case on a deterministic in-memory fixture.
+
+step "cycles: /api/v1alpha1/cycles is empty on a healthy fixture cluster"
+cycles_body=$(kubeatlas_curl /api/v1alpha1/cycles)
+cycles_count=$(jq -r '.count' <<<"${cycles_body}")
+if ! [[ "${cycles_count}" =~ ^[0-9]+$ ]]; then
+  fail "cycles count not numeric (body: ${cycles_body})"
+fi
+if (( cycles_count > 0 )); then
+  fail "cycles endpoint reported ${cycles_count} cycle(s) on a fresh cluster: ${cycles_body}"
+fi
+pass "no cycles detected (count=${cycles_count})"
+
 # ----- summary -------------------------------------------------------
 
 green ""
-green "phase2.sh M4+M5+M6.1 — all assertions green"
+green "phase2.sh M4+M5+M6.1+M6.2 — all assertions green"
 green "  rego engine modules loaded: ${loaded}"
 green "  Pod restart budget: ${restart_elapsed}s / ${RESTART_BUDGET_SECONDS}s"
 green "  resources before/after restart: ${pre_resources} / ${post_resources}"
 green "  rbac permissions: api-sa -> api-cm-reader (${M5_NS})"
 green "  blast-radius affected count from app-config: ${blast_count}"
 green "  orphan reports total: ${orphan_count} (ghost-rs flagged)"
+green "  cycle count: ${cycles_count}"

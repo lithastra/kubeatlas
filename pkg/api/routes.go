@@ -178,6 +178,14 @@ func (s *Server) Routes() []RouteInfo {
 		},
 		{
 			Method:      "GET",
+			Pattern:     "/api/v1alpha1/cycles",
+			Summary:     "Strongly connected components of size >= 2",
+			Description: "Returns every SCC of two or more resources. In a healthy cluster the list is empty; non-empty results indicate cyclic dependencies (e.g. ConfigMaps that reference each other). P2-T18 (F-112 part 2).",
+			Response:    ResponseSpec{Description: "Cycle reports", SchemaRef: "CyclesResponse"},
+			handler:     s.handleCycles,
+		},
+		{
+			Method:      "GET",
 			Pattern:     "/api/v1alpha1/orphans",
 			Summary:     "List resources with no upstream owner",
 			Description: "Returns every resource that is either a non-top-level kind with zero incoming edges (an orphan) or a Pod without an OwnerReference (a standalone Pod). Optional query param `namespace` narrows the scope. P2-T17 (F-112 part 1).",
