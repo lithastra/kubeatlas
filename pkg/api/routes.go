@@ -178,6 +178,17 @@ func (s *Server) Routes() []RouteInfo {
 		},
 		{
 			Method:      "GET",
+			Pattern:     "/api/v1alpha1/orphans",
+			Summary:     "List resources with no upstream owner",
+			Description: "Returns every resource that is either a non-top-level kind with zero incoming edges (an orphan) or a Pod without an OwnerReference (a standalone Pod). Optional query param `namespace` narrows the scope. P2-T17 (F-112 part 1).",
+			QueryParams: []ParamSpec{
+				{Name: "namespace", Description: "Restrict the sweep to one namespace", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Orphan reports", SchemaRef: "OrphansResponse"},
+			handler:  s.handleOrphans,
+		},
+		{
+			Method:      "GET",
 			Pattern:     "/api/v1alpha1/blast-radius/{namespace}/{kind}/{name}",
 			Summary:     "Transitive set of resources affected by changes to this resource",
 			Description: "Returns every resource reachable by walking incoming edges from the target — i.e. everything that would be impacted if this resource were deleted or broken. Use the underscore '_' as namespace for cluster-scoped resources. P2-T15 (F-110).",

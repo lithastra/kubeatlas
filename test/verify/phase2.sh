@@ -20,7 +20,8 @@
 #
 # M5 assertions land in part 2 below: RBAC graph, blast radius, and
 # (when KUBEATLAS_CHECK_CERT_MANAGER_RULES=1) the cert-manager rule
-# pack STORES_IN edge. M6 (orphans + cycles) lives in P2-T26.
+# pack STORES_IN edge. M6 part 3 covers orphan detection (P2-T17);
+# cycle detection (P2-T18) lands when M6 part 4 ships.
 #
 # Required tools on PATH: kubectl, helm, jq, curl.
 # The script assumes:
@@ -437,12 +438,63 @@ else
   yellow "▶ cert-manager rules: SKIPPED (set KUBEATLAS_CHECK_CERT_MANAGER_RULES=1 to enable)"
 fi
 
+# ----- Part 3 (M6): orphan detection ---------------------------------
+#
+# Creates a deliberately orphan ReplicaSet (no Deployment owner, no
+# Pods) in the M5 fixture namespace and asserts /api/v1alpha1/orphans
+# flags it with reason=orphan. The same call must NOT include the
+# Namespace itself (top-level whitelist) or any healthy resource
+# from Part 2's blast-radius fixture.
+
+step "orphans: seed an unowned ReplicaSet"
+cat <<EOF | kubectl apply -f - >/dev/null
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: ghost-rs
+  namespace: ${M5_NS}
+spec:
+  replicas: 0
+  selector: { matchLabels: { app: ghost } }
+  template:
+    metadata: { labels: { app: ghost } }
+    spec:
+      containers:
+        - name: app
+          image: registry.k8s.io/pause:3.10
+EOF
+pass "ghost-rs applied in ${M5_NS}"
+
+step "orphans: ghost-rs appears in /api/v1alpha1/orphans"
+deadline=$((SECONDS + 60))
+saw_orphan=0
+orphans_body=""
+while (( SECONDS < deadline )); do
+  orphans_body=$(kubeatlas_curl "/api/v1alpha1/orphans?namespace=${M5_NS}" 2>/dev/null || echo '{}')
+  if jq -e '[.reports[] | select(.resource.kind == "ReplicaSet" and .resource.name == "ghost-rs" and .reason == "orphan")] | length >= 1' <<<"${orphans_body}" >/dev/null 2>&1; then
+    saw_orphan=1
+    break
+  fi
+  sleep 2
+done
+(( saw_orphan == 1 )) || fail "ghost-rs never appeared in orphans endpoint (last body: ${orphans_body})"
+pass "ghost-rs flagged with reason=orphan"
+
+step "orphans: Namespace is not flagged (top-level whitelist)"
+all_orphans=$(kubeatlas_curl "/api/v1alpha1/orphans")
+if jq -e '[.reports[] | select(.resource.kind == "Namespace")] | length >= 1' <<<"${all_orphans}" >/dev/null 2>&1; then
+  fail "Namespace incorrectly flagged: ${all_orphans}"
+fi
+orphan_count=$(jq -r '.count' <<<"${all_orphans}")
+pass "Namespace excluded; total orphan reports = ${orphan_count}"
+
 # ----- summary -------------------------------------------------------
 
 green ""
-green "phase2.sh M4+M5 — all assertions green"
+green "phase2.sh M4+M5+M6.1 — all assertions green"
 green "  rego engine modules loaded: ${loaded}"
 green "  Pod restart budget: ${restart_elapsed}s / ${RESTART_BUDGET_SECONDS}s"
 green "  resources before/after restart: ${pre_resources} / ${post_resources}"
 green "  rbac permissions: api-sa -> api-cm-reader (${M5_NS})"
 green "  blast-radius affected count from app-config: ${blast_count}"
+green "  orphan reports total: ${orphan_count} (ghost-rs flagged)"
