@@ -84,9 +84,23 @@ func (s *Store) Init(ctx context.Context) error {
 	return s.migrate(ctx)
 }
 
-// UpsertResource inserts or replaces the resource at r.ID(). The full
-// Resource is serialized to JSONB; Resource.Raw is dropped per its
-// json:"-" tag, matching the wire contract.
+// storageBlob wraps a Resource for JSONB persistence. The embedded
+// graph.Resource provides the canonical wire fields (kind / name /
+// ...). RawSpec is a sibling key — needed because Resource.Raw
+// carries `json:"-"`, which is correct for the API wire format but
+// would otherwise drop the unstructured spec on a Tier 2 round-trip.
+//
+// The RBAC handlers (P2-T14) read role.Raw["rules"] off resources
+// returned by GetResource; without RawSpec, that read sees nil on
+// any Tier 2 install and the API silently returns empty rules.
+type storageBlob struct {
+	graph.Resource
+	RawSpec map[string]any `json:"raw,omitempty"`
+}
+
+// UpsertResource inserts or replaces the resource at r.ID(). The
+// Resource is serialized as a storageBlob so both the public wire
+// fields and the unstructured Raw map land in the JSONB column.
 //
 // Tier 2 keeps PG and AGE in sync via a single transaction: the
 // JSONB row is the source of truth, the AGE vertex mirrors it for
@@ -94,7 +108,7 @@ func (s *Store) Init(ctx context.Context) error {
 // kinds (CRDs not in migrate/001_initial.sql's allowlist) fall
 // through to PG-only — P2-T10 will register CRD labels at runtime.
 func (s *Store) UpsertResource(ctx context.Context, r graph.Resource) error {
-	body, err := json.Marshal(r)
+	body, err := json.Marshal(storageBlob{Resource: r, RawSpec: r.Raw})
 	if err != nil {
 		return fmt.Errorf("postgres.UpsertResource: marshal %s: %w", r.ID(), err)
 	}
@@ -175,10 +189,20 @@ func (s *Store) GetResource(ctx context.Context, id string) (graph.Resource, err
 	if err != nil {
 		return graph.Resource{}, fmt.Errorf("postgres.GetResource: %s: %w", id, err)
 	}
-	var r graph.Resource
-	if err := json.Unmarshal(body, &r); err != nil {
+	return unmarshalStorageBlob(body, id)
+}
+
+// unmarshalStorageBlob parses a JSONB row into a Resource, lifting
+// the storageBlob's RawSpec into Resource.Raw. Tolerant of legacy
+// rows written before the wrapper landed: a missing "raw" key
+// simply leaves Resource.Raw nil.
+func unmarshalStorageBlob(body []byte, id string) (graph.Resource, error) {
+	var sb storageBlob
+	if err := json.Unmarshal(body, &sb); err != nil {
 		return graph.Resource{}, fmt.Errorf("postgres.GetResource: unmarshal %s: %w", id, err)
 	}
+	r := sb.Resource
+	r.Raw = sb.RawSpec
 	return r, nil
 }
 
@@ -309,9 +333,9 @@ func scanResources(rows pgx.Rows) ([]graph.Resource, error) {
 		if err := rows.Scan(&body); err != nil {
 			return nil, fmt.Errorf("scan resource: %w", err)
 		}
-		var r graph.Resource
-		if err := json.Unmarshal(body, &r); err != nil {
-			return nil, fmt.Errorf("unmarshal resource: %w", err)
+		r, err := unmarshalStorageBlob(body, "")
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, r)
 	}
