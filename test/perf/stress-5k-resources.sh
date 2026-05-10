@@ -89,6 +89,7 @@ for i in $(seq 0 $((NUM_SVC - 1))); do
   name="$(printf 'svc-%04d' "$i")"
   # Each Service selects a label that ${DEP_PER_SVC} deployments
   # share — adds SELECTS edges to the graph.
+  pool=$(( i % 50 ))
   cat <<YAML >> "${TMP}/svcs.yaml"
 ---
 apiVersion: v1
@@ -98,7 +99,7 @@ metadata:
   namespace: ${NS}
 spec:
   selector:
-    pool: $(( i % 50 ))
+    pool: "${pool}"
   ports:
     - port: 80
       targetPort: 8080
