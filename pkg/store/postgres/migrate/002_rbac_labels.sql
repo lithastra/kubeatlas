@@ -13,8 +13,13 @@
 --
 -- All statements are idempotent. Same DO-block / IF NOT EXISTS
 -- pattern as 001_initial.sql.
+--
+-- Note: no `LOAD 'age'` here. CNPG's restricted_load_libraries
+-- blocks LOAD for the non-superuser app role; Postgres autoloads
+-- the AGE shared object the first time a function under
+-- ag_catalog is called (create_vlabel / create_elabel below
+-- both qualify). 001_initial.sql works the same way.
 
-LOAD 'age';
 SET LOCAL search_path = ag_catalog, "$user", public;
 
 DO $$
