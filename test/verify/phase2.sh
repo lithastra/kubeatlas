@@ -21,7 +21,10 @@
 # M5 assertions land in part 2 below: RBAC graph, blast radius, and
 # (when KUBEATLAS_CHECK_CERT_MANAGER_RULES=1) the cert-manager rule
 # pack STORES_IN edge. M6 covers orphan detection (P2-T17, part 3)
-# and cycle detection (P2-T18, part 4).
+# and cycle detection (P2-T18, part 4). Part 5 (P2-T26) runs the
+# chaos suite + re-asserts the M4/M5/M6 readiness afterwards;
+# enable with KUBEATLAS_RUN_CHAOS=1 since chaos adds 5-10 minutes
+# to the run.
 #
 # Required tools on PATH: kubectl, helm, jq, curl.
 # The script assumes:
@@ -57,6 +60,10 @@ SKIP_TIER2="${KUBEATLAS_SKIP_TIER2:-0}"
 # assertion that the cert-manager rule pack landed STORES_IN edges
 # on the Certificate. Off by default until the OCI artifact ships.
 CHECK_CERT_MANAGER_RULES="${KUBEATLAS_CHECK_CERT_MANAGER_RULES:-0}"
+# KUBEATLAS_RUN_CHAOS=1 turns on Part 5 (chaos suite). Off by
+# default — chaos adds 5-10 minutes to the run; the v1.0 release
+# gate runs it explicitly via the workflow_dispatch trigger.
+RUN_CHAOS="${KUBEATLAS_RUN_CHAOS:-0}"
 M5_NS="${KUBEATLAS_M5_NS:-petclinic-m5}"
 
 # ----- helpers -------------------------------------------------------
@@ -507,10 +514,62 @@ if (( cycles_count > 0 )); then
 fi
 pass "no cycles detected (count=${cycles_count})"
 
+# ----- Part 5 (M6.3): chaos suite + post-chaos re-verify ------------
+#
+# Each scenario is invoked with the port-forward env exported so
+# the chaos scripts hit the same kubeatlas the assertions above
+# already validated. Between scenarios we re-run a thin
+# /healthz + /readyz probe and a cluster-view fetch to confirm
+# nothing residual broke. Each scenario script is responsible for
+# its own internal recovery wait; the 30s sleep between scenarios
+# is anti-pattern guard #2 (chaos must have recovery time).
+
+if [[ "${RUN_CHAOS}" == "1" ]]; then
+  step "chaos: prerequisite — kubeatlas /healthz before chaos suite"
+  curl -fsS "http://127.0.0.1:${KUBEATLAS_PF_PORT}/healthz" >/dev/null \
+    || fail "kubeatlas not healthy before chaos suite"
+  pass "kubeatlas healthy"
+
+  DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$(cd "${DIR}/../.." && pwd)"
+
+  chaos_scenarios=(
+    "${REPO_ROOT}/test/chaos/pg-disconnect.sh"
+    "${REPO_ROOT}/test/chaos/rego-panic.sh"
+    "${REPO_ROOT}/test/chaos/rego-runaway.sh"
+    "${REPO_ROOT}/test/chaos/cert-manager-flap.sh"
+  )
+
+  for scenario in "${chaos_scenarios[@]}"; do
+    name="$(basename "${scenario}" .sh)"
+    step "chaos: ${name}"
+    KUBEATLAS_PF_PORT="${KUBEATLAS_PF_PORT}" \
+    KUBEATLAS_TIER="${KUBEATLAS_TIER:-tier2}" \
+    NS="${NS}" \
+    RELEASE="${RELEASE}" \
+      bash "${scenario}" || fail "chaos ${name} reported failure"
+    pass "chaos ${name} green"
+
+    step "chaos: post-${name} re-verify (kubeatlas health + cluster view)"
+    curl -fsS "http://127.0.0.1:${KUBEATLAS_PF_PORT}/healthz" >/dev/null \
+      || fail "post-${name}: /healthz not 200"
+    cluster_resp=$(kubeatlas_curl '/api/v1alpha1/graph?level=cluster')
+    rc_count=$(jq -r '.resources | length' <<<"${cluster_resp}" 2>/dev/null || echo "")
+    [[ -n "${rc_count}" && "${rc_count}" != "null" ]] \
+      || fail "post-${name}: cluster view failed (body: ${cluster_resp})"
+    pass "post-${name} re-verify (resources=${rc_count})"
+
+    yellow "  (recovery sleep 30s before next scenario)"
+    sleep 30
+  done
+
+  pass "chaos suite complete"
+fi
+
 # ----- summary -------------------------------------------------------
 
 green ""
-green "phase2.sh M4+M5+M6.1+M6.2 — all assertions green"
+green "phase2.sh M4+M5+M6.1+M6.2$([[ ${RUN_CHAOS} == 1 ]] && echo "+M6.3 chaos") — all assertions green"
 green "  rego engine modules loaded: ${loaded}"
 green "  Pod restart budget: ${restart_elapsed}s / ${RESTART_BUDGET_SECONDS}s"
 green "  resources before/after restart: ${pre_resources} / ${post_resources}"
