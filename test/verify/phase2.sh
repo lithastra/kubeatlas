@@ -497,22 +497,52 @@ pass "Namespace excluded; total orphan reports = ${orphan_count}"
 
 # ----- Part 4 (M6): cycle detection ----------------------------------
 #
-# Tarjan's SCC must report no cycles on a clean cluster. We don't
-# seed a deliberate cycle here — the API contract is "empty when
-# the cluster is healthy", which is exactly what we want CI to
-# enforce. Unit tests in pkg/graph/analysis/cycles_test.go cover
-# the positive case on a deterministic in-memory fixture.
+# Tarjan's SCC must report no *unexpected* cycles on a healthy
+# cluster. Real installs frequently carry "bootstrap-cert"
+# cycles where a webhook controller owns its own cert Secret
+# AND consumes that Secret (CNPG, cert-manager, kyverno, ...).
+# Tarjan correctly identifies these — they're real cycles by
+# graph definition — but they're benign at the operational
+# level. The assertion below counts those out and only fails on
+# residual cycles.
+#
+# A bootstrap-cert cycle is a 2-member SCC where one member is
+# kind=Secret with an OwnerReference pointing at the other
+# member (any kind, typically a Deployment). Anything not
+# matching that shape is treated as a real finding.
+#
+# Unit tests in pkg/graph/analysis/cycles_test.go cover the
+# positive case (a 3-cycle of ConfigMaps) on a deterministic
+# in-memory fixture, so the algorithm itself is gated
+# elsewhere.
 
-step "cycles: /api/v1alpha1/cycles is empty on a healthy fixture cluster"
+step "cycles: /api/v1alpha1/cycles has no unexpected entries"
 cycles_body=$(kubeatlas_curl /api/v1alpha1/cycles)
 cycles_count=$(jq -r '.count' <<<"${cycles_body}")
 if ! [[ "${cycles_count}" =~ ^[0-9]+$ ]]; then
   fail "cycles count not numeric (body: ${cycles_body})"
 fi
-if (( cycles_count > 0 )); then
-  fail "cycles endpoint reported ${cycles_count} cycle(s) on a fresh cluster: ${cycles_body}"
+benign_count=$(jq '
+  def benign:
+    if (.members | length) != 2 then false
+    else . as $c |
+      (
+        ($c.members[0].kind == "Secret" and
+         (($c.members[0].ownerReferences // []) | map(.name)
+          | index($c.members[1].name) != null))
+        or
+        ($c.members[1].kind == "Secret" and
+         (($c.members[1].ownerReferences // []) | map(.name)
+          | index($c.members[0].name) != null))
+      )
+    end;
+  [.cycles[] | select(benign)] | length
+' <<<"${cycles_body}")
+real_cycles=$(( cycles_count - benign_count ))
+if (( real_cycles > 0 )); then
+  fail "cycles endpoint reported ${real_cycles} non-benign cycle(s) (total=${cycles_count}, benign=${benign_count}): ${cycles_body}"
 fi
-pass "no cycles detected (count=${cycles_count})"
+pass "no unexpected cycles (total=${cycles_count}, benign bootstrap-cert=${benign_count})"
 
 # ----- Part 5 (M6.3): chaos suite + post-chaos re-verify ------------
 #
