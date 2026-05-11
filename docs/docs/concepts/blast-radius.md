@@ -74,9 +74,16 @@ Tier 1 (in-memory): a BFS over the adjacency map keyed by `to`,
 bounded by `max_depth`. Cost is O(V+E) over the reachable
 sub-graph; for typical clusters this is sub-millisecond.
 
-Tier 2 (PostgreSQL + Apache AGE): one Cypher variable-length path
-query. The same depth bound becomes the upper bound on the
-`-[*1..N]-` quantifier; AGE plans the join + early-cuts for us.
+Tier 2 (PostgreSQL + Apache AGE): a recursive CTE on the plain
+`edges` table — both directions share two fixed SQL strings,
+which lets pgx's per-connection statement cache + Postgres'
+plan cache reuse the work across calls. The AGE vertex / edge
+mirror is still maintained by the double-write Upsert path
+(future graph-pattern queries can use it); reads bypass AGE
+because the recursive-CTE plan is well-trodden in Postgres and
+the per-call `cypher()` parse cost otherwise dominated wall
+time on short queries.
+
 Both backends share the same `Direction` enum and the same
 `Traverse` interface method, so semantics never drift between
 tiers.
