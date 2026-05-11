@@ -70,7 +70,7 @@ kubeatlas export --format=dot | dot -Tdot:cairo | base64 | gh gist create -
 ### `kubeatlas rules-test`
 
 Offline rule-pack evaluator for rule-pack contributors. See
-[Rego rules](rego-rules) for the workflow.
+[Rego rules](./concepts/rego-rules) for the workflow.
 
 ## Top-level flags (server mode)
 
