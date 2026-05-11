@@ -27,25 +27,28 @@ the tools above instead of replacing them.
 
 ## Project status
 
-**v0.1.0 — released 2026-05-06.** The first publicly installable
-build: REST + WebSocket API, React/MUI Web UI with Cytoscape
-topology and Mermaid neighbour view, Helm chart with hard-locked
-secure defaults, multi-arch container image. In-memory only,
-single-replica, no built-in authentication — see the
+**v1.0.0 — Phase 2 GA.** Persistent state (PostgreSQL + Apache
+AGE, opt-in), programmable Rego rule packs, RBAC graph, blast
+radius, orphan + cycle detection, `/api/v1/*` GA endpoints
+alongside the frozen `/api/v1alpha1/*` surface, cert-manager
+TLS Helm integration. Defaults stay the same as v0.1.0: in-
+memory unless you opt in, single-replica, no built-in
+authentication — see the
 [security warning](./installation/security-warning.md) before
-exposing the UI. The [Quick Start](./quick-start.md) walks through
-the install; the [Roadmap](./roadmap.md) covers what's coming in
-v1.0.
+exposing the UI. The [Quick Start](./quick-start.md) walks
+through the install; the [Roadmap](./roadmap.md) covers what's
+next.
 
 ## Reading order
 
 1. [Quick Start](./quick-start.md) — get a graph out of a cluster
    (any cluster you control; kind works if you don't have one) in a
    few minutes.
-2. [Architecture](./architecture.md) — six design principles and how
+2. [Architecture](./architecture.md) — design principles and how
    the pieces fit together.
-3. [Developer Guide](./developer-guide.md) — for contributors:
+3. [Concepts](./concepts/api-versioning) — the conceptual model
+   (blast radius, orphans + cycles, Rego rules, API versioning).
+4. [Developer Guide](./developer-guide.md) — for contributors:
    prerequisites, build, test, and a worked example of adding an edge
    type.
-4. [Roadmap](./roadmap.md) — where v0.1.0, v1.0, and v2.0 are headed
-   and what's deliberately deferred.
+5. [Roadmap](./roadmap.md) — what's next for v1.0.x and v1.1.

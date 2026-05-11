@@ -71,7 +71,7 @@ my-pack/
 
 ```yaml
 name: cert-manager
-version: 0.1.0
+version: 1.0.0
 rego_api: v1                  # KubeAtlas Rego interface contract
 kubeatlas: ">= 1.0.0"         # semver constraint against the engine
 description: "cert-manager CRDs"

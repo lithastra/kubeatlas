@@ -5,7 +5,7 @@ title: Authentication is your job
 
 # Authentication is your job
 
-KubeAtlas v0.1.0 ships with **no built-in authentication**. The chart
+KubeAtlas ships with **no built-in authentication**. The chart
 defaults reflect this:
 
 - `service.type=ClusterIP` — the API is not reachable from outside the

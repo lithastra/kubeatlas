@@ -29,7 +29,7 @@ needed.
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --namespace kubeatlas --create-namespace
 ```
 
@@ -39,6 +39,8 @@ Defaults are deliberate and conservative:
 - `ingress.enabled=false`
 - RBAC ClusterRole hard-coded to `[get, list, watch]` (read-only)
 - Pod runs non-root with a read-only root filesystem
+- `persistence.enabled=false` (in-memory; opt in to Tier 2 via
+  the [persistence guide](./installation/persistence.md))
 
 See [Helm install options](./installation/helm.md) for every value.
 
@@ -66,9 +68,11 @@ Then open [http://localhost:8080](http://localhost:8080) in a browser. You shoul
    workloads and the configs / SAs / PVCs they reference.
 2. Click any row to open the resource detail page. The header shows
    kind, name, labels, and annotations. Below it, two tables list
-   incoming and outgoing edges (eight types: `OWNS`,
+   incoming and outgoing edges. The ten built-in types: `OWNS`,
    `USES_CONFIGMAP`, `USES_SECRET`, `MOUNTS_VOLUME`, `SELECTS`,
-   `USES_SERVICEACCOUNT`, `ROUTES_TO`, `ATTACHED_TO`).
+   `USES_SERVICEACCOUNT`, `ROUTES_TO`, `ATTACHED_TO`,
+   `BINDS_SUBJECT`, `BINDS_ROLE` — additional types come from any
+   loaded [Rego rule packs](./concepts/rego-rules.md).
 3. The **Neighborhood** panel at the bottom is a Mermaid flowchart
    of the resource and its one-hop neighbors.
 4. Click **Topology** in the sidebar for the cluster-wide and
@@ -81,15 +85,20 @@ port-forward is up:
 
 ```bash
 # Cluster summary — one node per namespace.
-curl -s http://localhost:8080/api/v1alpha1/graph?level=cluster | jq '.nodes | length'
+curl -s http://localhost:8080/api/v1/graph?level=cluster | jq '.nodes | length'
+
+# What depends on this resource?
+curl -s http://localhost:8080/api/v1/blast-radius/<ns>/<kind>/<name>
 
 # Health & readiness.
 curl -s http://localhost:8080/healthz
 curl -s http://localhost:8080/readyz
 ```
 
-See the [API reference](./api-reference.md) for the full endpoint
-list.
+The `/api/v1alpha1/*` surface from v0.1.0 is also served, frozen
+and CI-enforced — see [API versioning](./concepts/api-versioning.md)
+for the dual-surface story. The
+[API reference](./api-reference.md) has the full endpoint list.
 
 ## What's next
 
@@ -108,5 +117,5 @@ list.
   principles and the data flow.
 - **Contribute.** The [Developer Guide](./developer-guide.md) has the
   build/test loop and a worked example of adding a new edge type.
-- **Plan ahead.** The [Roadmap](./roadmap.md) lays out what's coming
-  in v1.0 and what's deliberately out of scope for v0.1.0.
+- **Plan ahead.** The [Roadmap](./roadmap.md) lays out what's
+  next for v1.0.x and v1.1.

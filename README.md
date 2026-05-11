@@ -41,7 +41,7 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
   resource clusters.
 - **Orphan + cycle analysis** — surface stale resources and
   dependency loops as first-class endpoints.
-- **`/api/v1/*` GA + frozen v1alpha1** — every Phase 1 URL keeps
+- **`/api/v1/*` GA + frozen v1alpha1** — every v0.1.0 URL keeps
   working. CI's `api-compat-check` enforces v1alpha1 cannot
   regress.
 - **`kubeatlas export --format=dot`** — permanent CLI export path
@@ -49,7 +49,7 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 - **cert-manager TLS Helm integration** — opt-in
   `ingress.certManager.enabled=true` with three issuer modes.
 
-Phase 1's defaults still apply: in-memory unless you opt into
+The v0.1.0 defaults still apply: in-memory unless you opt into
 Tier 2, single-replica, **no built-in authentication** — exposing
 via Ingress requires an external auth layer (oauth2-proxy /
 Pomerium / Cloudflare Access). Multi-cluster federation is
@@ -113,9 +113,9 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the
 [Code of Conduct](./CODE_OF_CONDUCT.md). Look for issues tagged
 [`good first issue`](https://github.com/lithastra/kubeatlas/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-Phase 2 (v1.0) shipped. Phase 3 / v1.1 priorities (multi-cluster
-federation, OPA rule pack signing via cosign, frontend Mermaid →
-Cytoscape consolidation) are tracked at
+v1.0 shipped. v1.1 priorities (multi-cluster federation,
+cosign-verified rule pack loading, Headlamp plugin, frontend
+Mermaid → Cytoscape consolidation, dark mode) are tracked at
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 ## License
