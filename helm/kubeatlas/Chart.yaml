@@ -2,8 +2,8 @@ apiVersion: v2
 name: kubeatlas
 description: Kubernetes resource dependency graph
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 1.0.0
+appVersion: "1.0.0"
 kubeVersion: ">=1.26.0-0"
 # Optional CloudNativePG dependency. The conditional means
 # `helm dependency update` only fetches it when the user opts in

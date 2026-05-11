@@ -18,26 +18,34 @@ with `kubectl`, and target the day-to-day "browse and edit" loop.
 KubeAtlas is **only the dependency graph**. It doesn't render Pods
 as a list to manage them; it tells you what depends on what. The two
 tools coexist — install Headlamp for "show me the cluster" and
-KubeAtlas for "show me the wiring". A v1.0 Headlamp plugin is on the
-[roadmap](./roadmap.md#phase-2--v10-active).
+KubeAtlas for "show me the wiring". A Headlamp plugin is on the
+v1.1 [roadmap](./roadmap.md#v11-themes-active).
 
 ## Can I run this in production today?
 
-You can — for read-only introspection, not for anything load-bearing.
-v0.1.0 is in-memory only (restart loses state), single-replica, and
-has no built-in auth. That's fine for an internal SRE tool fronted
-by [an auth layer](./installation/security-warning.md). It's not
-fine for serving public traffic, surviving Pod evictions silently,
-or anything that needs persistence. Tier 2 (PostgreSQL + Apache
-AGE) lands in v1.0 — see the [roadmap](./roadmap.md).
+Yes — for read-only introspection. From v1.0 the chart ships an
+opt-in Tier 2 backend (PostgreSQL + Apache AGE via the embedded
+CloudNativePG sub-chart) so restart preserves the graph. Single-
+replica is still the deploy shape; multi-cluster federation is a
+v1.1 target. Authentication is still your job — read the
+[security warning](./installation/security-warning.md) before
+exposing the UI.
 
 ## Does it work on OpenShift / EKS / AKS / GKE?
 
 Yes — anything that exposes a standard Kubernetes API at version
 1.26 or later. Discovery is GVR-driven, so platform-specific add-ons
 that publish CRDs work as long as the cluster has them installed.
-First-class platform integration (IRSA on EKS, Workload Identity on
-GKE, OpenShift `Route` as a first-class edge) is on the
+
+OpenShift gets first-class support from v1.0: the detector at
+startup notices `route.openshift.io`, auto-loads the embedded
+rule pack (Route, DeploymentConfig, BuildConfig, ImageStream,
+SecurityContextConstraints), and the docs include a CRC and OCP
+4.x install guide — see
+[OpenShift installation](./installation/openshift.md).
+
+Deeper platform integration (IRSA on EKS, Workload Identity on
+GKE, AAD on AKS) is on the
 [v2.0+ roadmap](./roadmap.md#phase-3--v20-sketch).
 
 ## How much memory does it use?
@@ -50,24 +58,22 @@ roughly 4000–5000 resources. Past that, raise
 
 ## What if my cluster has 50K resources?
 
-v0.1.0 is designed for the small-to-medium range (≤ ~5000
-resources comfortably). Above that you'll hit two ceilings: in-memory
-graph footprint and JSON serialisation latency on the
-`level=cluster` endpoint. Tier 2 storage in v1.0 (Postgres + AGE)
-addresses both — the graph lives outside the process and queries
-become server-paged.
-
-If you want to test the boundary, the
-[`test/perf/stress-1k-configmaps.sh`](https://github.com/lithastra/kubeatlas/blob/main/test/perf/stress-1k-configmaps.sh)
-fixture reproduces a 1000-resource environment in kind. Scale the
-loop higher to push past it.
+v1.0 is comfortable in the small-to-medium range (≤ ~5K-10K
+resources). Above that you'll hit two ceilings: graph footprint
+in memory and JSON serialisation latency on the `level=cluster`
+endpoint. Tier 2 storage moves the graph out of the process so
+the memory side is no longer the bottleneck, but the aggregator
+response shape is still O(R) — see the
+[`stress-test-5k`](https://github.com/lithastra/kubeatlas/blob/main/test/perf/stress-5k-resources.sh)
+fixture for a worked baseline. Response-shape pagination is a
+v1.0.x target.
 
 ## Why is there no built-in authentication?
 
 Building a good auth story for a generic web UI is a year of work
 on its own — OIDC IdP integrations, token refresh, session storage,
 RBAC mapping. The Kubernetes ecosystem already has battle-tested
-choices (oauth2-proxy, Pomerium, Cloudflare Access). v0.1.0
+choices (oauth2-proxy, Pomerium, Cloudflare Access). KubeAtlas
 deliberately punts to those rather than ship a half-baked first
 version. Read the
 [security warning](./installation/security-warning.md) before
@@ -75,26 +81,25 @@ exposing the UI.
 
 ## When will Tier 2 / Rego / Headlamp plugin be ready?
 
-All three are in **Phase 2 (v1.0)**. There's no committed date —
-v0.1.0 shipped on 2026-05-06 and Phase 2 priorities are now being
-shaped by user feedback. The order will partly depend on what
-early adopters ask for. See the
-[roadmap](./roadmap.md#phase-2--v10-active).
+Tier 2 and Rego rule packs shipped in v1.0. The Headlamp plugin
+moved to v1.1 — see the
+[roadmap](./roadmap.md#v11-themes-active).
 
 ## How do I extend it with custom edge types?
 
-In v0.1.0, you write a Go file. The
-[Developer Guide](./developer-guide.md) has a worked example of
-adding a new edge type — it's roughly:
+Two paths, depending on whether you want to ship a binary fork
+or load a rule at runtime:
 
-1. Implement the `extractor.Extractor` interface.
-2. Register it in `extractor.Default()`.
-3. Add a contract test under `pkg/extractor/`.
-
-In v1.0 we plan to add **runtime Rego/Wasm extractors** so this no
-longer requires a fork — operators declare custom edges in policy.
-That's tracked in
-[the roadmap](./roadmap.md#phase-2--v10-active).
+- **Runtime [Rego rule pack](./concepts/rego-rules.md)** — the
+  Phase 2 extension surface. Declare CRD edges in Rego, sign and
+  publish to an OCI registry, point `rulePacks.extras` at the
+  artifact. No rebuild required. See
+  [`lithastra/kubeatlas-rules`](https://github.com/lithastra/kubeatlas-rules)
+  for the canonical examples (openshift, cert-manager).
+- **Built-in Go extractor** — for edges that should ship as
+  defaults. The [Developer Guide](./developer-guide.md) has the
+  worked example: implement `extractor.Extractor`, register in
+  `extractor.Default()`, add a contract test.
 
 ## Does it phone home / collect telemetry?
 

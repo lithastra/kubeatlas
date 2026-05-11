@@ -52,7 +52,7 @@ pull-secret from
 
    ```bash
    helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-     --version 0.1.0 \
+     --version 1.0.0 \
      --namespace kubeatlas --create-namespace \
      --set persistence.enabled=true \
      --set persistence.embedded.enabled=true \
@@ -74,7 +74,7 @@ pull-secret from
 
    ```bash
    oc port-forward -n kubeatlas deploy/kubeatlas 8080:8080 &
-   curl -s "http://127.0.0.1:8080/api/v1alpha1/resources/<ns>/Route/<name>/outgoing" | jq .
+   curl -s "http://127.0.0.1:8080/api/v1/resources/<ns>/Route/<name>/outgoing" | jq .
    ```
 
    The response includes a `ROUTES_TO` edge to the backing Service —
@@ -95,10 +95,10 @@ sourcing. If your cluster pulls from a mirror, override
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --namespace kubeatlas --create-namespace \
   --set image.repository=registry.example.com/mirror/lithastra/kubeatlas \
-  --set image.tag=v0.1.0
+  --set image.tag=v1.0.0
 ```
 
 If you intend to expose the UI via an OCP Route, the chart does not

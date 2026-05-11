@@ -34,7 +34,7 @@ Apply [`helm/kubeatlas/examples/ingress-nginx-f5.yaml`](https://github.com/litha
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --namespace kubeatlas --create-namespace \
   --values helm/kubeatlas/examples/ingress-nginx-f5.yaml
 ```

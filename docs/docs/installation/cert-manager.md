@@ -42,7 +42,7 @@ references it. The resulting Secret is wired into the Ingress's
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --namespace kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.acknowledgeNoBuiltinAuth=true \
@@ -85,7 +85,7 @@ EOF
 
 # 2. Helm install with cert-manager mode.
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --namespace kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.acknowledgeNoBuiltinAuth=true \
@@ -106,7 +106,7 @@ but can be overridden to `Issuer` when the issuer is namespaced.
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --namespace kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.acknowledgeNoBuiltinAuth=true \
@@ -117,17 +117,17 @@ helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
   --set ingress.certManager.issuerKind=ClusterIssuer
 ```
 
-### Bring-your-own Secret (Phase 1 path)
+### Bring-your-own Secret
 
-The chart's `ingress.tls` array still works exactly as it did in
-Phase 1. The schema enforces that `ingress.tls` and
+The chart's `ingress.tls` array — the v0.1.0-era path — still
+works unchanged. The schema enforces that `ingress.tls` and
 `ingress.certManager.enabled=true` are mutually exclusive, so
 mixing modes fails fast at `helm install` time rather than
 silently ignoring one.
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --namespace kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.acknowledgeNoBuiltinAuth=true \

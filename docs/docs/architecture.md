@@ -5,10 +5,10 @@ title: Architecture
 
 # Architecture
 
-This page summarises the design as it stands in v0.1.0. Components
-that are deferred to v1.0 (Tier 2 storage, Rego/Wasm extractors,
-multi-cluster, etc.) are called out inline and tracked on the
-[Roadmap](./roadmap.md).
+This page summarises the design as it stands in v1.0.0. Multi-
+cluster federation and the Headlamp plugin remain deferred to
+v1.1 and are called out inline; everything else from the Phase 2
+plan is shipped.
 
 ## Six design principles
 
@@ -19,15 +19,19 @@ multi-cluster, etc.) are called out inline and tracked on the
 2. **Offline-friendly.** The graph is built from data the cluster
    already exposes; no external services are contacted at runtime, no
    telemetry is reported, no API keys are needed.
-3. **Zero data dependency at v0.1.0.** Tier 1 storage is in-memory.
-   PostgreSQL + Apache AGE (Tier 2) is opt-in, and arrives in v1.0
-   (see the [Roadmap](./roadmap.md)).
-4. **CRD-friendly.** The discovery layer is GVR-driven. Adding a
-   custom resource means appending one entry to the registry; the
-   informer pipeline handles it like any other kind.
+3. **Zero-config by default, persistent on demand.** Tier 1 storage
+   is in-memory and remains the default for first-install simplicity.
+   Tier 2 (PostgreSQL + Apache AGE) is opt-in via one Helm flag and
+   uses the embedded CloudNativePG sub-chart for a single-command
+   install.
+4. **CRD-friendly.** The discovery layer is GVR-driven, with dynamic
+   CRD discovery from v1.0 — new CRDs become per-CRD informers at
+   runtime, and a [Rego rule pack](./concepts/rego-rules.md) can
+   teach the graph their edges without a rebuild.
 5. **Two form factors, one engine.** The same Go binary serves the
-   CLI (`-once` mode) and — from Phase 1 — a long-running server with
-   REST + WebSocket endpoints. The Web UI consumes those endpoints.
+   CLI (`-once` mode, `export` subcommand) and a long-running server
+   with REST + WebSocket endpoints. The Web UI consumes those
+   endpoints.
 6. **Pre-aggregate on the server.** Cluster-, namespace-, workload-,
    and resource-level views are computed server-side. Clients receive
    ready-to-render JSON instead of having to traverse the full graph.
@@ -58,9 +62,20 @@ multi-cluster, etc.) are called out inline and tracked on the
                                                    │ JSON
                                                    ▼
                                 ┌────────────────────────────────┐
-                                │  CLI (-once)  /  REST (Phase 1)│
+                                │  CLI (-once / export)  /  REST │
+                                │   /api/v1alpha1/* + /api/v1/*  │
                                 └────────────────────────────────┘
 ```
+
+From v1.0 the GraphStore interface has a Tier 2 implementation
+backed by PostgreSQL + Apache AGE in `pkg/store/postgres`. Reads
+that need graph traversal (blast-radius, orphan/cycle detection)
+go through a recursive CTE on the `edges` table; vertex + edge
+writes are double-written to both the SQL tables and the AGE
+graph so future graph-pattern queries can use the latter. CRD
+discovery is dynamic — `pkg/crd` walks the cluster's CRD list,
+registers per-CRD informers at runtime, and routes their events
+through the Rego rule pack engine in `pkg/extractor/rego`.
 
 ### Data acquisition (`pkg/discovery`)
 
@@ -82,9 +97,9 @@ same pair of resources coexist (for example, a Service that both
 A `storetest.Run(t, factory)` suite locks down the contract: any
 backend that passes it is a drop-in replacement.
 
-### Edge extraction (`pkg/extractor`)
+### Edge extraction (`pkg/extractor` + `pkg/extractor/rego`)
 
-Eight built-in edge types cover the Phase 0 / v0.1.0 scope:
+Ten built-in edge types cover the core Kubernetes resources:
 
 | Type | Source field |
 |---|---|
@@ -96,9 +111,15 @@ Eight built-in edge types cover the Phase 0 / v0.1.0 scope:
 | `USES_SERVICEACCOUNT` | `spec.template.spec.serviceAccountName` (or implicit `default`) |
 | `ROUTES_TO` | `Ingress.spec.rules[].http.paths[].backend.service.name`, `HTTPRoute.spec.rules[].backendRefs[].name` |
 | `ATTACHED_TO` | `HTTPRoute.spec.parentRefs[].name` |
+| `BINDS_SUBJECT` | `RoleBinding`/`ClusterRoleBinding` → subject (ServiceAccount, User, Group) |
+| `BINDS_ROLE` | `RoleBinding`/`ClusterRoleBinding` → bound `Role`/`ClusterRole` |
 
-Extractors are stateless and never call back into the store — the
-informer is responsible for writing what they return.
+Built-in extractors are stateless and never call back into the
+store — the informer is responsible for writing what they return.
+Additional edge types come from any loaded
+[Rego rule packs](./concepts/rego-rules.md), which run inside a
+sandbox (`evaluateWithGuards` — 100 ms eval timeout, panic
+recovery) and write through the same Upsert path.
 
 ### Aggregation (`pkg/aggregator`)
 
@@ -108,39 +129,67 @@ Pre-aggregation produces ready-to-render summaries:
   a `children_summary` of resource kinds.
 - **Namespace level** — one node per workload (Deployment, StatefulSet,
   DaemonSet, Job, CronJob, Service, Ingress) inside the namespace.
-- **Workload / Resource levels** — added in Phase 1 W5.
+- **Workload / Resource levels** — single-workload + one-hop
+  neighbour views; the resource level powers the Web UI's
+  resource-detail page.
 
 This shape lets the Web UI render a useful overview without ever
 materialising the full graph in the browser.
 
-## What v0.1.0 ships on top of the engine
+### Graph analysis (`pkg/graph/analysis`)
+
+Three composed queries that share the `Direction` enum on the
+`GraphStore.Traverse` interface method:
+
+- **Blast radius** — `Traverse(Direction=Incoming, MaxDepth=5)`
+  returns the transitive set of resources affected by a target.
+  See [Blast radius](./concepts/blast-radius.md).
+- **Orphans** — `Snapshot` + per-resource `ListIncoming`, applying
+  the top-level whitelist + standalone-Pod special case.
+- **Cycles** — Tarjan's SCC on the edges table; returns every SCC
+  of size ≥ 2.
+
+## What v1.0 ships on top of the engine
 
 - **`pkg/api`** — REST endpoints for graph queries (`GET
-  /api/v1alpha1/graph` at four levels: cluster / namespace /
-  workload / resource), a single-resource detail endpoint, search,
-  health / readiness / metrics, and a WebSocket watch endpoint
-  (`/api/v1alpha1/watch`). All served by the same binary.
-- **`web/`** — React 19 + TypeScript + MUI v5 Web UI,
-  technology-stack-aligned with Headlamp so a v1.0 Headlamp plugin
-  is a port rather than a rewrite. Cytoscape topology view at the
-  cluster, namespace, and workload levels; Mermaid neighbour view
-  at the single-resource level; a DataGrid resource list with
-  namespace filtering. Bundled into the Go binary via `//go:embed`
-  so the Helm-installed Pod serves the UI on the same port as the
-  API.
+  /api/v1/graph` at four levels), single-resource detail with v1
+  enrichment fields, search, RBAC graph, blast-radius, orphans,
+  cycles, health / readiness / metrics, WebSocket watch. The
+  frozen `/api/v1alpha1/*` surface is served from the same
+  handlers — see [API versioning](./concepts/api-versioning.md).
+- **`pkg/store/postgres`** — Tier 2 backend on PostgreSQL ≥ 14
+  with the Apache AGE extension. Migration framework, double-
+  write Upsert, recursive-CTE traversal. Embedded mode uses the
+  CloudNativePG sub-chart with auto-provisioned credentials.
+- **`pkg/extractor/rego`** — OPA SDK v1 (`v1/rego` import path)
+  with module loading, GVK routing, an `(UID, ResourceVersion,
+  RuleHash)`-keyed LRU cache, and the `evaluateWithGuards`
+  sandbox (100 ms timeout + panic recovery). Loads rule packs
+  from local directories or signed OCI artifacts.
+- **`pkg/crd`** — dynamic CRD discovery + OpenShift detector +
+  embedded openshift rule pack.
+- **`web/`** — React 19 + TypeScript + MUI v5 Web UI. Cytoscape
+  topology view at cluster / namespace / workload levels; the
+  resource-detail page renders the v1 enrichment fields as
+  badges. Mermaid neighbour view stays for backward compat (its
+  Cytoscape replacement is a v1.1 target).
 - **`helm/`** — installable chart with secure defaults baked in:
   ClusterIP-only Service, Ingress disabled by default, a Helm
   `values.schema.json` gate that requires explicit
   `acknowledgeNoBuiltinAuth=true` before exposing KubeAtlas, an
-  RBAC ClusterRole hard-coded to `[get, list, watch]`, and a Pod
-  that runs as non-root with a read-only root filesystem.
+  RBAC ClusterRole hard-coded to `[get, list, watch]`, a Pod
+  that runs as non-root with a read-only root filesystem, opt-in
+  Tier 2 persistence, opt-in cert-manager TLS integration.
 - **Distribution** — multi-arch container image on
   `ghcr.io/lithastra/kubeatlas`, four-platform binaries, Helm Chart
   published as an OCI artifact at
-  `oci://ghcr.io/lithastra/charts/kubeatlas`.
+  `oci://ghcr.io/lithastra/charts/kubeatlas`, cosign-signed,
+  SBOM-attached.
 
-For what's deliberately out of scope for v0.1.0 and what's planned
-for v1.0, see the [Roadmap](./roadmap.md).
+For what's deferred to v1.1 (multi-cluster, Headlamp plugin,
+Cytoscape consolidation, dark mode, historical diff), see the
+[Roadmap](./roadmap.md).
 
-The Phase 0 engine stays frozen across v0.x: only additive changes.
-No PoC-era field is renamed and no signature is changed.
+The v0.1.0 API surface and the `graph.Resource`/`graph.Edge`
+shapes stay frozen across v1.x: only additive changes. CI's
+`api-compat-check` enforces this on every PR.

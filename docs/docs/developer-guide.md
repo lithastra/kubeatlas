@@ -82,12 +82,14 @@ bash test/verify/phase0.sh
 
 ## Two run modes
 
-The CLI has two modes today:
+The CLI has three modes:
 
-| Flag | Behaviour |
+| Flag / subcommand | Behaviour |
 |---|---|
+| *(default)* | Start an informer + REST + WebSocket server and run until `Ctrl-C`. This is what the Helm chart runs in the Pod. |
 | `-once` | Walk every API resource the cluster exposes, build the graph, write JSON to stdout and DOT to `output/kubeatlas.dot`, exit. The PoC-era path; useful for one-off dumps. |
-| *(default)* | Start an informer that streams add/update/delete events into the in-memory store and run until `Ctrl-C`. There is no API surface yet (see Phase 1 for that), so this mode is mostly useful for development and for verifying the watch pipeline is healthy. |
+| `export --format=dot` | Same as `-once` but emits only DOT (to stdout or `--output`) and supports `--namespace` filtering + a `--title` override. See [CLI reference](./cli-reference.md). |
+| `rules-test --pack=...` | Offline Rego rule-pack evaluator — load a pack from a directory or OCI ref, evaluate samples, report per-fixture edges. Used by rule-pack contributors before publishing. |
 
 ## Adding a new edge type — a worked example
 

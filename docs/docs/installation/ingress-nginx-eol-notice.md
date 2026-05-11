@@ -5,15 +5,15 @@ sidebar_position: 99
 
 # Why we don't ship ingress-nginx examples
 
-KubeAtlas v0.1.0 ships example values for **F5 NGINX Ingress
+KubeAtlas ships example values for **F5 NGINX Ingress
 Controller** (`nginxinc/kubernetes-ingress`), **Traefik**, and **AWS
 ALB** — but not for the **community** `kubernetes/ingress-nginx`
 project.
 
 That community project announced retirement in late 2025; from
-**March 2026** it stops receiving new releases, bug fixes, and CVE
+**March 2026** it stopped receiving new releases, bug fixes, and CVE
 patches ([Kubernetes blog](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/)).
-Pointing v0.1.0 users at it would point them at a dead-end.
+Pointing users at it would point them at a dead-end.
 
 KubeAtlas itself doesn't care about your Ingress flavour — the
 chart just needs an `ingressClassName` that maps to a controller
