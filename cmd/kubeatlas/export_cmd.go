@@ -80,7 +80,7 @@ func runExport(args []string) int {
 			fmt.Fprintf(os.Stderr, "export: %v\n", err)
 			return 1
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		out = f
 	}
 	if _, err := io.WriteString(out, dot); err != nil {

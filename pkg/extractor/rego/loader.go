@@ -61,7 +61,7 @@ func LoadRulePackFromOCI(ctx context.Context, ref string) (*RulePack, error) {
 	if err != nil {
 		return nil, fmt.Errorf("LoadRulePackFromOCI: tempdir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	if err := pullOCIArtifact(ctx, ref, tmpDir); err != nil {
 		return nil, fmt.Errorf("LoadRulePackFromOCI %s: %w", ref, err)

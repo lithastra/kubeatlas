@@ -96,7 +96,11 @@ func diffPaths(base, cur map[string]any) []string {
 			out = append(out, fmt.Sprintf("path removed: %s", path))
 			continue
 		}
-		for method := range ops.(map[string]any) {
+		opsMap, ok := ops.(map[string]any)
+		if !ok {
+			continue
+		}
+		for method := range opsMap {
 			if _, ok := curOps[method]; !ok {
 				out = append(out, fmt.Sprintf("method removed: %s %s",
 					strings.ToUpper(method), path))

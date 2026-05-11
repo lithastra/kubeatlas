@@ -56,7 +56,7 @@ func pullOCIArtifact(ctx context.Context, ref, destDir string) error {
 	if err != nil {
 		return fmt.Errorf("create file store at %q: %w", destDir, err)
 	}
-	defer dst.Close()
+	defer func() { _ = dst.Close() }()
 
 	if _, err := oras.Copy(ctx, repo, tag, dst, tag, oras.DefaultCopyOptions); err != nil {
 		return fmt.Errorf("oras copy %s:%s: %w", repoRef, tag, err)
