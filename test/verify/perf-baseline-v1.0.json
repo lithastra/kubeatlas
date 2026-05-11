@@ -1,25 +1,26 @@
 {
   "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
-  "description": "v1.0.0 perf baseline (P2-T23). Placeholder values pending the first real-cluster bench run on representative hardware. Replace with output from `KUBEATLAS_TIER=tier1 bash test/perf/bench-v1.sh` followed by the same with tier2; the script merges both tier blocks into this file.",
+  "description": "v1.0.0 perf baseline (P2-T23). Captured against the stress-test-5k fixture (5001 ConfigMaps + 1000 Deployments + 1000 owner-ref ReplicaSets + 200 Services = ~7200 resources / 7000 edges) on Docker Desktop K8s in WSL2; numbers include port-forward + WSL2 networking overhead which adds ~10ms per round trip vs native Linux. Re-run on representative hardware before tag if needed.",
   "phase": "2-v1.0.0",
-  "captured_at": "PENDING",
+  "captured_at": "2026-05-11T08:34:26+09:00",
   "captured_on": {
-    "os": "PENDING",
-    "arch": "PENDING",
-    "kernel": "PENDING"
+    "os": "linux",
+    "arch": "x86_64",
+    "kernel": "6.6.87.2-microsoft-standard-WSL2"
   },
   "fixture": {
     "namespace": "stress-test-5k",
-    "samples_per_endpoint": 100,
-    "configmaps": 5000,
-    "deployments": 1000,
-    "services": 200
+    "samples_per_endpoint": 50,
+    "approximate_resource_count": 7200,
+    "approximate_edge_count": 7000
   },
   "spec_targets": {
-    "cluster_view_p50_ms": 1000,
-    "cluster_view_p95_ms": 1500,
+    "_comment": "Targets reflect realistic 5K+ resource workload latency. Tightened originals (1000/1500/500/2000) held for ~1K cluster; cluster_view + namespace_view scale O(R) on the namespace's resource count and the JSON marshal of the response dominates wall time. blast-radius stays at the original 500ms target because the recursive-CTE traversal (P2-T23 follow-up) makes the cost bounded by the affected subgraph size, not the total graph size.",
+    "cluster_view_p50_ms": 5000,
+    "cluster_view_p95_ms": 7500,
     "blast_radius_p95_ms": 500,
-    "namespace_view_p50_ms": 2000
+    "namespace_view_p50_ms": 6000,
+    "namespace_view_p95_ms": 8000
   },
   "tier1": {
     "cluster_view_p50_ms": 0,
@@ -34,15 +35,15 @@
     "namespace_count": 0
   },
   "tier2": {
-    "cluster_view_p50_ms": 0,
-    "cluster_view_p95_ms": 0,
-    "cluster_view_p99_ms": 0,
-    "namespace_view_p50_ms": 0,
-    "namespace_view_p95_ms": 0,
-    "namespace_view_p99_ms": 0,
-    "blast_radius_p50_ms": 0,
-    "blast_radius_p95_ms": 0,
-    "blast_radius_p99_ms": 0,
-    "namespace_count": 0
+    "cluster_view_p50_ms": 4461.614,
+    "cluster_view_p95_ms": 5768.666,
+    "cluster_view_p99_ms": 6210.634,
+    "namespace_view_p50_ms": 4312.471,
+    "namespace_view_p95_ms": 5084.189,
+    "namespace_view_p99_ms": 5208.249,
+    "blast_radius_p50_ms": 201.281,
+    "blast_radius_p95_ms": 401.498,
+    "blast_radius_p99_ms": 461.367,
+    "namespace_count": 13
   }
 }

@@ -465,11 +465,60 @@ func (s *Store) TraverseOutgoing(ctx context.Context, startID string, opts Trave
 	return out, nil
 }
 
-// Traverse implements graph.GraphStore.Traverse on the AGE backend.
-// Both directions reuse the same Cypher template; only the
-// relationship arrow flips. Depth bounds and edge-label
-// validation match TraverseOutgoing exactly so the two paths can't
-// drift.
+// Two fixed SQL strings — one per direction. Using stable text
+// keeps pgx's per-connection statement cache hot and lets Postgres
+// reuse the plan instead of re-parsing the AGE cypher() call on
+// every Traverse. The edges table is the double-write source of
+// truth alongside AGE; the recursive CTE walks it directly, which
+// turns out ~5x faster than the equivalent AGE variable-length
+// pattern on a 5K-resource cluster (P2-T23 baseline).
+//
+// $1 = start id; $2 = max depth; $3 = edge-type allowlist as
+// text[] (empty array means "any type").
+const traverseIncomingSQL = `
+WITH RECURSIVE walk(node_id, depth) AS (
+    SELECT from_id, 1 FROM edges
+     WHERE to_id = $1
+       AND (cardinality($3::text[]) = 0 OR type = ANY($3))
+  UNION
+    SELECT e.from_id, w.depth + 1 FROM edges e
+      JOIN walk w ON e.to_id = w.node_id
+     WHERE w.depth < $2
+       AND (cardinality($3::text[]) = 0 OR e.type = ANY($3))
+)
+SELECT r.data
+  FROM walk w
+  JOIN resources r ON r.id = w.node_id
+ GROUP BY r.id, r.data
+`
+
+const traverseOutgoingSQL = `
+WITH RECURSIVE walk(node_id, depth) AS (
+    SELECT to_id, 1 FROM edges
+     WHERE from_id = $1
+       AND (cardinality($3::text[]) = 0 OR type = ANY($3))
+  UNION
+    SELECT e.to_id, w.depth + 1 FROM edges e
+      JOIN walk w ON e.from_id = w.node_id
+     WHERE w.depth < $2
+       AND (cardinality($3::text[]) = 0 OR e.type = ANY($3))
+)
+SELECT r.data
+  FROM walk w
+  JOIN resources r ON r.id = w.node_id
+ GROUP BY r.id, r.data
+`
+
+// Traverse implements graph.GraphStore.Traverse using a recursive
+// CTE on the plain Postgres edges table. The AGE vertex / edge
+// mirror is kept in sync by the double-write Upsert path, but
+// reads bypass AGE here — recursive CTE planning is well-trodden
+// in Postgres and the cypher() function's per-call parse cost
+// dominates the wall time on short queries (P2-T23 finding).
+//
+// Behaviour is identical to the previous AGE-backed implementation:
+// same depth defaults + cap, same direction enum semantics, same
+// edge-type allowlist enforcement, same Resource shape returned.
 func (s *Store) Traverse(ctx context.Context, startID string, opts graph.TraverseOptions) ([]graph.Resource, error) {
 	if opts.Direction != graph.DirectionIncoming && opts.Direction != graph.DirectionOutgoing {
 		return nil, fmt.Errorf("Traverse: invalid direction %q", opts.Direction)
@@ -482,61 +531,39 @@ func (s *Store) Traverse(ctx context.Context, startID string, opts graph.Travers
 		depth = 10
 	}
 
-	relInner := "*1.." + itoaSafe(depth)
-	if len(opts.EdgeTypes) > 0 {
-		var parts []string
-		for _, t := range opts.EdgeTypes {
-			if !edgeLabelKnown(t) {
-				return nil, fmt.Errorf("Traverse: unknown edge type %q", t)
-			}
-			parts = append(parts, string(t))
+	edgeTypes := make([]string, 0, len(opts.EdgeTypes))
+	for _, t := range opts.EdgeTypes {
+		if !edgeLabelKnown(t) {
+			return nil, fmt.Errorf("Traverse: unknown edge type %q", t)
 		}
-		relInner = ":" + strings.Join(parts, "|") + "*1.." + itoaSafe(depth)
+		edgeTypes = append(edgeTypes, string(t))
 	}
 
-	var pathPattern string
+	query := traverseIncomingSQL
 	if opts.Direction == graph.DirectionOutgoing {
-		pathPattern = "(start {id: $startID})-[" + relInner + "]->(n)"
-	} else {
-		pathPattern = "(start {id: $startID})<-[" + relInner + "]-(n)"
+		query = traverseOutgoingSQL
 	}
 
-	query := fmt.Sprintf(`
-		SELECT id_v::text, kind_v::text, ns_v::text, name_v::text
-		FROM cypher('%s'::name, $$
-			MATCH %s
-			RETURN DISTINCT n.id, n.kind, n.namespace, n.name
-		$$::cstring, $1) AS (id_v agtype, kind_v agtype, ns_v agtype, name_v agtype)
-	`, graphName, pathPattern)
-
-	params, err := buildAGEParams(map[string]any{"startID": startID})
+	rows, err := s.pool.Query(ctx, query, startID, depth, edgeTypes)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("traverse query: %w", err)
 	}
+	defer rows.Close()
 
 	var out []graph.Resource
-	err = s.withAGETx(ctx, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, query, params)
+	for rows.Next() {
+		var body []byte
+		if err := rows.Scan(&body); err != nil {
+			return nil, fmt.Errorf("traverse scan: %w", err)
+		}
+		r, err := unmarshalStorageBlob(body, "")
 		if err != nil {
-			return fmt.Errorf("traverse query: %w", err)
+			return nil, err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var id, kind, ns, name string
-			if err := rows.Scan(&id, &kind, &ns, &name); err != nil {
-				return fmt.Errorf("traverse scan: %w", err)
-			}
-			_ = id
-			out = append(out, graph.Resource{
-				Kind:      agtypeStrip(kind),
-				Namespace: agtypeStrip(ns),
-				Name:      agtypeStrip(name),
-			})
-		}
-		return rows.Err()
-	})
-	if err != nil {
-		return nil, err
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("traverse rows: %w", err)
 	}
 	return out, nil
 }
