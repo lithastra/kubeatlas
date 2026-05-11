@@ -18,12 +18,19 @@ name: E2E OpenShift Local (CRC)
 # block, per the workflow-injection guidance.
 
 on:
-  schedule:
-    - cron: '0 4 * * 1'
+  # NOTE: macos-14-large runners are PAID even on public repos
+  # (~$0.32/min × ~30 min/run ≈ $10/run). The schedule + tag-push
+  # triggers used to fire automatically and were the dominant Actions
+  # spend; both are commented out so the workflow only runs when an
+  # operator manually dispatches it from the Actions UI. Re-enable
+  # them if you have a paid Actions budget and want the
+  # weekly/per-tag coverage.
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*.*.*'
+  # schedule:
+  #   - cron: '0 4 * * 1'
+  # push:
+  #   tags:
+  #     - 'v*.*.*'
 
 permissions:
   contents: read
