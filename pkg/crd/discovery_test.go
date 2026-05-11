@@ -66,12 +66,6 @@ func (r *recordingRego) EvaluateForResource(_ context.Context, res graph.Resourc
 	return out, nil
 }
 
-func (r *recordingRego) callCount() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.calls)
-}
-
 func (r *recordingRego) callsForKind(kind string) []graph.Resource {
 	r.mu.Lock()
 	defer r.mu.Unlock()

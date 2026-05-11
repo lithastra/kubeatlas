@@ -55,12 +55,6 @@ func (s *Server) openAPISpecFor(version string) map[string]any {
 	}
 }
 
-// openAPISpec is kept as a v1alpha1-only convenience for the
-// existing test suite.
-func (s *Server) openAPISpec() map[string]any {
-	return s.openAPISpecFor(APIVersionV1Alpha1)
-}
-
 // OpenAPISpecV1Alpha1 exposes the frozen v1alpha1 spec to
 // out-of-process tooling — specifically the
 // tools/api-compat-check dumper, which CI uses to detect any
@@ -74,13 +68,6 @@ func (s *Server) OpenAPISpecV1Alpha1() map[string]any {
 // OpenAPISpecV1Alpha1.
 func (s *Server) OpenAPISpecV1() map[string]any {
 	return s.openAPISpecFor(APIVersionV1)
-}
-
-// openAPIPaths walks the route table and builds an OpenAPI paths
-// object for the v1alpha1 surface. Kept for compatibility with
-// existing tests; new callers should use openAPIPathsFor.
-func (s *Server) openAPIPaths() map[string]any {
-	return s.openAPIPathsFor(APIVersionV1Alpha1)
 }
 
 // openAPIPathsFor builds the paths object for a specific API
@@ -244,13 +231,6 @@ func operationID(r RouteInfo) string {
 	return strings.ToLower(r.Method) + "_" + clean
 }
 
-// openAPIComponents returns the v1alpha1 components/schemas. Kept
-// as a convenience alias; new callers should use
-// openAPIComponentsFor.
-func openAPIComponents() map[string]any {
-	return openAPIComponentsFor(APIVersionV1Alpha1)
-}
-
 // openAPIComponentsFor returns the components/schemas section
 // scoped to one API version. v1 carries the GA enrichment fields
 // (blastRadiusCount, isOrphan, inCycle) on a sibling
@@ -259,7 +239,10 @@ func openAPIComponents() map[string]any {
 func openAPIComponentsFor(version string) map[string]any {
 	c := openAPIComponentsBase()
 	if version == APIVersionV1 {
-		schemas := c["schemas"].(map[string]any)
+		schemas, ok := c["schemas"].(map[string]any)
+		if !ok {
+			return c
+		}
 		schemas["ResourceDetailResponseV1"] = map[string]any{
 			"type":        "object",
 			"description": "v1-only superset of ResourceDetailResponse with graph-analysis enrichment fields. v1alpha1 omits these for byte-identical compat with the Phase 1 shape.",

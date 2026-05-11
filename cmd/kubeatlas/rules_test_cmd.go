@@ -152,18 +152,18 @@ type sampleResult struct {
 }
 
 func (r rulesTestReport) printText(w *os.File) {
-	fmt.Fprintf(w, "rule pack: %s v%s\n", r.Pack, r.Version)
-	fmt.Fprintf(w, "samples:   %d\n\n", len(r.Samples))
+	_, _ = fmt.Fprintf(w, "rule pack: %s v%s\n", r.Pack, r.Version)
+	_, _ = fmt.Fprintf(w, "samples:   %d\n\n", len(r.Samples))
 	for _, s := range r.Samples {
 		switch {
 		case s.Error != "":
-			fmt.Fprintf(w, "  ✗ %s — %s\n", s.File, s.Error)
+			_, _ = fmt.Fprintf(w, "  ✗ %s — %s\n", s.File, s.Error)
 		case len(s.Edges) == 0:
-			fmt.Fprintf(w, "  ✗ %s — no edges produced\n", s.File)
+			_, _ = fmt.Fprintf(w, "  ✗ %s — no edges produced\n", s.File)
 		default:
-			fmt.Fprintf(w, "  ✓ %s — %d edge(s)\n", s.File, len(s.Edges))
+			_, _ = fmt.Fprintf(w, "  ✓ %s — %d edge(s)\n", s.File, len(s.Edges))
 			for _, e := range s.Edges {
-				fmt.Fprintf(w, "      %-20s %s -> %s\n", e.Type, e.From, e.To)
+				_, _ = fmt.Fprintf(w, "      %-20s %s -> %s\n", e.Type, e.From, e.To)
 			}
 		}
 	}
