@@ -54,29 +54,39 @@ func (NamespaceAggregator) Aggregate(ctx context.Context, store graph.GraphStore
 		return nil, errors.New("namespace level requires Scope.Namespace")
 	}
 
-	all, err := store.Snapshot(ctx)
+	// Pushdown path (P3-T0a, May 2026): the old implementation called
+	// store.Snapshot which materialised every Resource in the entire
+	// store (typically 10× the size of the target namespace) just to
+	// throw away everything outside scope.Namespace. NamespaceSubgraph
+	// returns only the in-namespace resources + in-namespace edges in
+	// one round-trip, cutting per-call heap allocation and the API
+	// pod's OOM risk on multi-namespace clusters.
+	//
+	// K8s OwnerReferences point to same-namespace resources by spec
+	// rule (cluster-scoped owners excepted), so the owner-chain walk
+	// below runs correctly against the subgraph without ever fetching
+	// the rest of the store.
+	sub, err := store.NamespaceSubgraph(ctx, scope.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
 	// Build a quick UID → resource index for owner-chain walking.
-	byUID := make(map[string]graph.Resource, len(all.Resources))
-	byID := make(map[string]graph.Resource, len(all.Resources))
-	for _, r := range all.Resources {
+	// Every resource in the subgraph is in scope.Namespace already.
+	byUID := make(map[string]graph.Resource, len(sub.Resources))
+	byID := make(map[string]graph.Resource, len(sub.Resources))
+	for _, r := range sub.Resources {
 		if r.UID != "" {
 			byUID[string(r.UID)] = r
 		}
 		byID[r.ID()] = r
 	}
 
-	// Resources in the target namespace (cluster-scoped resources are
-	// not included).
-	nsRes := make([]graph.Resource, 0, len(all.Resources))
-	for _, r := range all.Resources {
-		if r.Namespace == scope.Namespace {
-			nsRes = append(nsRes, r)
-		}
-	}
+	// nsRes is every resource the aggregator's downstream loops
+	// iterate over. Identical to sub.Resources now that the store
+	// has done the namespace filter; kept as a named slice so the
+	// rest of the function reads the same as before the refactor.
+	nsRes := sub.Resources
 
 	view := &View{Level: LevelNamespace, Nodes: []Node{}, Edges: []AEdge{}}
 
@@ -146,7 +156,7 @@ func (NamespaceAggregator) Aggregate(ctx context.Context, store graph.GraphStore
 		from, to string
 		t        graph.EdgeType
 	}]int)
-	for _, e := range all.Edges {
+	for _, e := range sub.Edges {
 		from := normalizeEndpoint(e.From, byID, byUID, workloads, visible)
 		to := normalizeEndpoint(e.To, byID, byUID, workloads, visible)
 		if from == "" || to == "" {
