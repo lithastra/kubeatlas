@@ -218,6 +218,88 @@ func (s *Store) Traverse(_ context.Context, startID string, opts graph.TraverseO
 	return out, nil
 }
 
+// KindCountsByNamespace walks the resource map once and tallies
+// counts by (namespace, kind). Cluster-scoped resources land in the
+// empty-string namespace bucket.
+//
+// This is the in-process equivalent of the postgres GROUP BY query
+// added in the same change. It allocates only the result maps, not
+// the per-resource structs Snapshot would clone — that is the whole
+// point of the pushdown.
+func (s *Store) KindCountsByNamespace(_ context.Context) (map[string]map[string]int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]map[string]int)
+	for _, r := range s.resources {
+		bucket := out[r.Namespace]
+		if bucket == nil {
+			bucket = make(map[string]int)
+			out[r.Namespace] = bucket
+		}
+		bucket[r.Kind]++
+	}
+	return out, nil
+}
+
+// CrossNamespaceEdgeCounts walks every outgoing adjacency list once
+// and tallies counts by (from-ns, to-ns). Edges whose endpoint is not
+// present as a resource row are skipped — they cannot be assigned a
+// namespace and would otherwise crash the aggregator with empty
+// strings on both sides.
+func (s *Store) CrossNamespaceEdgeCounts(_ context.Context) (map[graph.NamespacePair]int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[graph.NamespacePair]int)
+	for fromID, peers := range s.outgoing {
+		fromRes, fromOK := s.resources[fromID]
+		if !fromOK {
+			continue
+		}
+		for k := range peers {
+			toRes, toOK := s.resources[k.other]
+			if !toOK {
+				continue
+			}
+			out[graph.NamespacePair{From: fromRes.Namespace, To: toRes.Namespace}]++
+		}
+	}
+	return out, nil
+}
+
+// NamespaceSubgraph returns the resources in namespace ns plus the
+// edges whose endpoints are both in that namespace. The owner-chain
+// rule in K8s keeps OwnerReferences in-namespace (cluster-scoped
+// owners excepted), so the namespace aggregator's owner-walk runs
+// correctly against the subgraph without ever touching the rest of
+// the store.
+func (s *Store) NamespaceSubgraph(_ context.Context, ns string) (*graph.Graph, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	g := &graph.Graph{Resources: make([]graph.Resource, 0), Edges: make([]graph.Edge, 0)}
+	inNS := make(map[string]struct{})
+	for _, r := range s.resources {
+		if r.Namespace != ns {
+			continue
+		}
+		g.Resources = append(g.Resources, r)
+		inNS[r.ID()] = struct{}{}
+	}
+	// Edges where both endpoints are in the requested namespace.
+	// Iterating outgoing avoids double-counting (incoming mirrors it).
+	for fromID, peers := range s.outgoing {
+		if _, ok := inNS[fromID]; !ok {
+			continue
+		}
+		for k, e := range peers {
+			if _, ok := inNS[k.other]; !ok {
+				continue
+			}
+			g.Edges = append(g.Edges, e)
+		}
+	}
+	return g, nil
+}
+
 func edgeTypeSet(ts []graph.EdgeType) map[graph.EdgeType]bool {
 	if len(ts) == 0 {
 		return nil

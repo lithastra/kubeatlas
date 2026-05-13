@@ -305,6 +305,137 @@ func (s *Store) Snapshot(ctx context.Context) (*graph.Graph, error) {
 	return &graph.Graph{Resources: resources, Edges: edges}, nil
 }
 
+// KindCountsByNamespace executes one GROUP BY query against the
+// resources table, returning the per-(namespace, kind) counts the
+// cluster-level aggregator needs.
+//
+// This replaces Snapshot+Go-side counting for cluster_view. On a 6K-
+// resource cluster the old path allocated 50-200 MB per request (a
+// full Resource struct including Raw payload per row) and OOM-killed
+// the API pod under modest concurrent load. This path returns ~100
+// rows of (text, text, bigint) — single-digit MB of allocation, even
+// on real clusters with 10K+ resources.
+//
+// Cluster-scoped resources (Resource.Namespace == "") are bucketed
+// under the empty-string key, matching the in-memory implementation
+// and the contract test.
+func (s *Store) KindCountsByNamespace(ctx context.Context) (map[string]map[string]int, error) {
+	const sql = `
+		SELECT
+			COALESCE(data->>'namespace', '') AS ns,
+			COALESCE(data->>'kind', '')      AS kind,
+			COUNT(*)                         AS cnt
+		FROM resources
+		GROUP BY data->>'namespace', data->>'kind'
+	`
+	rows, err := s.pool.Query(ctx, sql)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.KindCountsByNamespace: query: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]map[string]int)
+	for rows.Next() {
+		var ns, kind string
+		var cnt int64
+		if err := rows.Scan(&ns, &kind, &cnt); err != nil {
+			return nil, fmt.Errorf("postgres.KindCountsByNamespace: scan: %w", err)
+		}
+		bucket := out[ns]
+		if bucket == nil {
+			bucket = make(map[string]int)
+			out[ns] = bucket
+		}
+		bucket[kind] = int(cnt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres.KindCountsByNamespace: rows: %w", err)
+	}
+	return out, nil
+}
+
+// CrossNamespaceEdgeCounts executes one GROUP BY query that joins
+// edges to both endpoints to bucket every edge into (from-ns, to-ns).
+// Edges whose endpoint is missing from resources are dropped by the
+// inner joins — matching the in-memory implementation's "skip
+// dangling" rule and the contract test.
+//
+// Cluster_view does not differentiate edge types, so type is folded
+// into the count rather than appearing in the key.
+func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context) (map[graph.NamespacePair]int, error) {
+	const sql = `
+		SELECT
+			COALESCE(r1.data->>'namespace', '') AS from_ns,
+			COALESCE(r2.data->>'namespace', '') AS to_ns,
+			COUNT(*)                            AS cnt
+		FROM edges e
+		JOIN resources r1 ON r1.id = e.from_id
+		JOIN resources r2 ON r2.id = e.to_id
+		GROUP BY r1.data->>'namespace', r2.data->>'namespace'
+	`
+	rows, err := s.pool.Query(ctx, sql)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: query: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[graph.NamespacePair]int)
+	for rows.Next() {
+		var fromNs, toNs string
+		var cnt int64
+		if err := rows.Scan(&fromNs, &toNs, &cnt); err != nil {
+			return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: scan: %w", err)
+		}
+		out[graph.NamespacePair{From: fromNs, To: toNs}] = int(cnt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: rows: %w", err)
+	}
+	return out, nil
+}
+
+// NamespaceSubgraph returns the resources in namespace ns plus the
+// edges whose endpoints are both in that namespace.
+//
+// Two SQL queries (not in a transaction; same isolation contract as
+// Snapshot). The resource fetch uses idx_resources_namespace; the
+// edge fetch joins to the resources table on both endpoints so PG
+// can filter by namespace before deserialising the JSONB blob — the
+// crucial bit, because the old code path's Snapshot deserialised
+// every resource row regardless.
+//
+// stress-test-5k contains ~6K resources in a single namespace, so
+// this query is still O(R-in-ns) and the namespace_view response is
+// still large for that fixture. That is intrinsic to "return every
+// resource in this namespace"; the OOM fix is that we no longer
+// also fetch the 1K resources outside the namespace.
+func (s *Store) NamespaceSubgraph(ctx context.Context, ns string) (*graph.Graph, error) {
+	const resourcesSQL = `SELECT data FROM resources WHERE data->>'namespace' = $1`
+	rRows, err := s.pool.Query(ctx, resourcesSQL, ns)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.NamespaceSubgraph: resources query: %w", err)
+	}
+	resources, err := scanResources(rRows)
+	rRows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("postgres.NamespaceSubgraph: resources scan: %w", err)
+	}
+	const edgesSQL = `
+		SELECT e.from_id, e.to_id, e.type
+		FROM edges e
+		JOIN resources r1 ON r1.id = e.from_id AND r1.data->>'namespace' = $1
+		JOIN resources r2 ON r2.id = e.to_id   AND r2.data->>'namespace' = $1
+	`
+	eRows, err := s.pool.Query(ctx, edgesSQL, ns)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.NamespaceSubgraph: edges query: %w", err)
+	}
+	edges, err := scanEdges(eRows)
+	eRows.Close()
+	if err != nil {
+		return nil, fmt.Errorf("postgres.NamespaceSubgraph: edges scan: %w", err)
+	}
+	return &graph.Graph{Resources: resources, Edges: edges}, nil
+}
+
 // truncateAll wipes resources, edges, and the AGE graph contents
 // without dropping the schema. Test-only helper used by the
 // contract suite to give each sub-test a clean store while sharing

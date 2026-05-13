@@ -15,52 +15,56 @@ type ClusterAggregator struct{}
 
 func (ClusterAggregator) Level() Level { return LevelCluster }
 
+// clusterScopedBucket is the namespace label the cluster view uses
+// for resources without a Namespace (Resource.Namespace == ""). The
+// GraphStore pushdown methods return the empty string for these
+// resources; the aggregator relabels to "_cluster" so the View
+// presents a stable, non-empty node ID to the UI.
+//
+// Anti-pattern guarded: do not do this relabel inside the GraphStore
+// pushdown methods. The store returns raw data; presentation is the
+// aggregator's job. Pushing this into KindCountsByNamespace would
+// hide cluster-scoped vs ns="_cluster" (an unusable but legal name)
+// from the store layer.
+const clusterScopedBucket = "_cluster"
+
 func (ClusterAggregator) Aggregate(ctx context.Context, store graph.GraphStore, _ Scope) (*View, error) {
-	snap, err := store.Snapshot(ctx)
+	// Pushdown path (P3-T0a, May 2026): the old implementation called
+	// store.Snapshot, which materialised every Resource (including
+	// the full Raw K8s payload) into Go heap on every request — 50-
+	// 200 MB per call on a 6-7K resource cluster and an OOM-kill of
+	// the API pod under modest concurrent load. The new path uses
+	// two GROUP BY queries that return ~100 + ~50 small rows.
+	nsKinds, err := store.KindCountsByNamespace(ctx)
+	if err != nil {
+		return nil, err
+	}
+	edgeCounts, err := store.CrossNamespaceEdgeCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Pass 1: bucket resources by namespace, count Kind frequencies.
-	nsKinds := make(map[string]map[string]int) // ns -> kind -> count
-	for _, r := range snap.Resources {
-		ns := nsKey(r)
-		if nsKinds[ns] == nil {
-			nsKinds[ns] = make(map[string]int)
-		}
-		nsKinds[ns][r.Kind]++
+	// Relabel the cluster-scoped bucket. KindCountsByNamespace returns
+	// resources with empty-string Namespace under the "" key; the
+	// View exposes them as "_cluster".
+	if cs, ok := nsKinds[""]; ok {
+		nsKinds[clusterScopedBucket] = cs
+		delete(nsKinds, "")
 	}
 
-	// Build a fast lookup ns(ID) so we don't re-parse ids during pass 2.
-	nsOf := make(map[string]string, len(snap.Resources))
-	for _, r := range snap.Resources {
-		nsOf[r.ID()] = nsKey(r)
-	}
-
-	// Pass 2: fold edges into (from-ns, to-ns) pairs.
-	type edgeKey struct{ from, to string }
-	edgeCounts := make(map[edgeKey]int)
-	for _, e := range snap.Edges {
-		from := nsOf[e.From]
-		to := nsOf[e.To]
-		if from == "" || to == "" {
-			continue
-		}
-		edgeCounts[edgeKey{from, to}]++
-	}
-
-	// Per-namespace edge in/out totals (counting cross-ns only? the
-	// spec example shows 0/0 for petclinic which suggests in/out count
-	// only edges crossing namespace boundaries — same-ns edges fold
-	// inside the namespace node and aren't visible at cluster level).
+	// Per-namespace edge in/out totals (cross-ns only — same-ns edges
+	// fold inside the namespace node and aren't visible at cluster
+	// level).
 	in := make(map[string]int)
 	out := make(map[string]int)
 	for k, c := range edgeCounts {
-		if k.from == k.to {
+		if k.From == k.To {
 			continue
 		}
-		out[k.from] += c
-		in[k.to] += c
+		from := bucketize(k.From)
+		to := bucketize(k.To)
+		out[from] += c
+		in[to] += c
 	}
 
 	// Initialise to non-nil empty slices so JSON encoding emits []
@@ -83,12 +87,20 @@ func (ClusterAggregator) Aggregate(ctx context.Context, store graph.GraphStore, 
 
 	// Emit aggregated edges only for cross-namespace pairs, sorted
 	// (from, to) for deterministic output.
-	keys := make([]edgeKey, 0, len(edgeCounts))
-	for k := range edgeCounts {
-		if k.from == k.to {
+	type pair struct{ from, to string }
+	keys := make([]pair, 0, len(edgeCounts))
+	bucketedCounts := make(map[pair]int, len(edgeCounts))
+	for k, c := range edgeCounts {
+		from := bucketize(k.From)
+		to := bucketize(k.To)
+		if from == to {
 			continue
 		}
-		keys = append(keys, k)
+		p := pair{from, to}
+		if _, seen := bucketedCounts[p]; !seen {
+			keys = append(keys, p)
+		}
+		bucketedCounts[p] += c
 	}
 	sort.Slice(keys, func(i, j int) bool {
 		if keys[i].from != keys[j].from {
@@ -100,20 +112,21 @@ func (ClusterAggregator) Aggregate(ctx context.Context, store graph.GraphStore, 
 		view.Edges = append(view.Edges, AEdge{
 			From:  k.from,
 			To:    k.to,
-			Count: edgeCounts[k],
+			Count: bucketedCounts[k],
 		})
 	}
 
 	return view, nil
 }
 
-// nsKey returns the bucket name for a resource: its Namespace, or
-// "_cluster" for cluster-scoped resources.
-func nsKey(r graph.Resource) string {
-	if r.Namespace == "" {
-		return "_cluster"
+// bucketize applies the cluster-scoped relabel rule to a raw
+// namespace string from the store. Used for edge endpoints —
+// resource counts are relabeled in bulk on the nsKinds map.
+func bucketize(ns string) string {
+	if ns == "" {
+		return clusterScopedBucket
 	}
-	return r.Namespace
+	return ns
 }
 
 func sortedKeys[V any](m map[string]V) []string {

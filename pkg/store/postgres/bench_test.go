@@ -10,7 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/lithastra/kubeatlas/pkg/aggregator"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // Shared across benchmark invocations so Go's b.N auto-scaling does
@@ -203,4 +205,149 @@ func BenchmarkUpsert1000Resources(b *testing.B) {
 			}
 		}
 	}
+}
+
+// seedClusterFixture builds a fixture sized to match Phase 2's
+// stress-5k-resources.sh shape (~7K resources, ~7-8K edges), but
+// inside the postgres store so cluster + namespace aggregator
+// benchmarks measure the actual store.Snapshot() round-trip cost.
+//
+// Per namespace: 1 Deployment, 1 ReplicaSet, 10 Pods (owner chain to
+// the Deployment via the RS), 1 Service, 17 ConfigMaps referenced by
+// the Deployment = 30 resources. Edges: pod→rs (10), rs→dep (1),
+// dep→cm (17), svc→pod (10) = 38 in-ns edges. Plus one cross-ns
+// edge per namespace (svc → next-ns Deployment) so the cluster
+// aggregator has non-trivial cross-ns edge counts to fold.
+//
+// Truncates the store before seeding so the bench is deterministic
+// regardless of which test ran before it.
+func seedClusterFixture(b *testing.B, store *Store, namespaces int) {
+	b.Helper()
+	ctx := context.Background()
+	if err := store.truncateAll(ctx); err != nil {
+		b.Fatalf("seedClusterFixture: truncate: %v", err)
+	}
+	for i := 0; i < namespaces; i++ {
+		ns := fmt.Sprintf("ns-%03d", i)
+		depUID := types.UID(ns + "-dep")
+		rsUID := types.UID(ns + "-rs")
+		dep := graph.Resource{Kind: "Deployment", Namespace: ns, Name: "api", UID: depUID,
+			Labels: map[string]string{"app": "api"}}
+		rs := graph.Resource{Kind: "ReplicaSet", Namespace: ns, Name: "api-rs", UID: rsUID,
+			OwnerReferences: []graph.OwnerRef{{Kind: "Deployment", Name: "api", UID: depUID}}}
+		svc := graph.Resource{Kind: "Service", Namespace: ns, Name: "api-svc"}
+		// Seed Deployment, RS, Service first so OwnerReferences lookup
+		// during Pod upsert resolves the UID chain.
+		for _, r := range []graph.Resource{dep, rs, svc} {
+			if err := store.UpsertResource(ctx, r); err != nil {
+				b.Fatalf("seedClusterFixture: upsert %s: %v", r.ID(), err)
+			}
+		}
+		pods := make([]graph.Resource, 10)
+		for j := range pods {
+			pods[j] = graph.Resource{
+				Kind: "Pod", Namespace: ns, Name: fmt.Sprintf("api-%d", j),
+				UID:             types.UID(fmt.Sprintf("%s-p%d", ns, j)),
+				OwnerReferences: []graph.OwnerRef{{Kind: "ReplicaSet", Name: "api-rs", UID: rsUID}},
+			}
+			if err := store.UpsertResource(ctx, pods[j]); err != nil {
+				b.Fatalf("seedClusterFixture: upsert pod %d: %v", j, err)
+			}
+		}
+		cms := make([]graph.Resource, 17)
+		for j := range cms {
+			cms[j] = graph.Resource{
+				Kind: "ConfigMap", Namespace: ns, Name: fmt.Sprintf("cm-%02d", j),
+			}
+			if err := store.UpsertResource(ctx, cms[j]); err != nil {
+				b.Fatalf("seedClusterFixture: upsert cm %d: %v", j, err)
+			}
+		}
+		// Owner-chain edges + Deployment→ConfigMap envFrom edges +
+		// Service→Pod selector edges. Mirrors the extractor output
+		// shape in pkg/extractor for these kinds.
+		for _, e := range edgesForNamespace(ns, dep, rs, svc, pods, cms) {
+			if err := store.UpsertEdge(ctx, e); err != nil {
+				b.Fatalf("seedClusterFixture: upsert edge %s→%s: %v", e.From, e.To, e.Type)
+			}
+		}
+	}
+	// Cross-namespace edges: ns[i].svc → ns[i+1].dep, so the cluster
+	// aggregator has non-trivial cross-ns edges to fold.
+	for i := 0; i < namespaces-1; i++ {
+		from := fmt.Sprintf("ns-%03d/Service/api-svc", i)
+		to := fmt.Sprintf("ns-%03d/Deployment/api", i+1)
+		if err := store.UpsertEdge(ctx, graph.Edge{
+			From: from, To: to, Type: graph.EdgeType("ROUTES_TO"),
+		}); err != nil {
+			b.Fatalf("seedClusterFixture: cross-ns edge %d: %v", i, err)
+		}
+	}
+}
+
+func edgesForNamespace(ns string, dep, rs, svc graph.Resource, pods, cms []graph.Resource) []graph.Edge {
+	edges := make([]graph.Edge, 0, len(pods)+1+len(cms)+len(pods))
+	for _, p := range pods {
+		edges = append(edges, graph.Edge{From: p.ID(), To: rs.ID(), Type: graph.EdgeTypeOwns})
+	}
+	edges = append(edges, graph.Edge{From: rs.ID(), To: dep.ID(), Type: graph.EdgeTypeOwns})
+	for _, cm := range cms {
+		edges = append(edges, graph.Edge{From: dep.ID(), To: cm.ID(), Type: graph.EdgeTypeUsesConfigMap})
+	}
+	for _, p := range pods {
+		edges = append(edges, graph.Edge{From: svc.ID(), To: p.ID(), Type: graph.EdgeTypeSelects})
+	}
+	_ = ns // reserved for future per-ns variation; keeps signature future-proof
+	return edges
+}
+
+// BenchmarkP3T0aBaseline_Postgres captures the v1.0 baseline cost of
+// cluster + namespace aggregation against a postgres-backed store on
+// THIS hardware, before P3-T0a-v2 pushdown work. Pair this with the
+// after-bench in the same file to get a hard before/after delta —
+// the perf-baseline-v1.0.json numbers were captured on a different
+// run with port-forward + WSL2 networking overhead included.
+//
+// Fixture size: 200 namespaces × 30 resources = 6000 resources,
+// + 200 cross-ns edges + ~7600 in-ns edges. Comparable to the
+// stress-5k-resources.sh fixture used in Phase 2's bench-v1.sh.
+//
+// Seed cost (~13s at 200 namespaces × 30 × ~2.2ms per UpsertResource)
+// is amortised across both sub-benchmarks so `go test -bench` does
+// not pay for it twice.
+func BenchmarkP3T0aBaseline_Postgres(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping testcontainers benchmark in -short mode")
+	}
+	store := sharedBenchStore(b)
+	const namespaces = 200
+	seedClusterFixture(b, store, namespaces)
+	ctx := context.Background()
+
+	b.Run("ClusterAggregator", func(b *testing.B) {
+		agg := aggregator.ClusterAggregator{}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			view, err := agg.Aggregate(ctx, store, aggregator.Scope{})
+			if err != nil {
+				b.Fatalf("Aggregate: %v", err)
+			}
+			if len(view.Nodes) != namespaces {
+				b.Fatalf("cluster view: got %d nodes, want %d", len(view.Nodes), namespaces)
+			}
+		}
+	})
+
+	b.Run("NamespaceAggregator", func(b *testing.B) {
+		agg := aggregator.NamespaceAggregator{}
+		scope := aggregator.Scope{Namespace: "ns-100"}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := agg.Aggregate(ctx, store, scope); err != nil {
+				b.Fatalf("Aggregate: %v", err)
+			}
+		}
+	})
 }

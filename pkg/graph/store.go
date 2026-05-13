@@ -34,6 +34,51 @@ type GraphStore interface {
 	// (DirectionOutgoing) explicitly rather than relying on a
 	// per-method default.
 	Traverse(ctx context.Context, startID string, opts TraverseOptions) ([]Resource, error)
+
+	// KindCountsByNamespace returns counts of resources grouped by
+	// (namespace, kind). Cluster-scoped resources are bucketed under
+	// the empty-string namespace key. Used by the cluster-level
+	// aggregator to avoid materialising every Resource just to count
+	// them — the alternative (Snapshot + Go-side counting) allocates
+	// O(R) full Resource structs per request and OOM-kills the API
+	// pod on real clusters around 5K-7K resources.
+	//
+	// The returned map is owned by the caller and safe to mutate.
+	// Implementations must return non-nil maps; an empty store
+	// returns an empty (non-nil) outer map.
+	KindCountsByNamespace(ctx context.Context) (map[string]map[string]int, error)
+
+	// CrossNamespaceEdgeCounts returns counts of edges grouped by
+	// (from-namespace, to-namespace). Same-namespace pairs are
+	// included; callers that only want cross-namespace edges should
+	// filter where key.From != key.To. Edge type is intentionally not
+	// part of the key because the cluster-level view collapses all
+	// edge types into a single "from-ns → to-ns" arrow.
+	//
+	// Endpoints whose resource row is missing (dangling edges) are
+	// dropped — they cannot be assigned a namespace bucket.
+	//
+	// The returned map is owned by the caller and safe to mutate.
+	CrossNamespaceEdgeCounts(ctx context.Context) (map[NamespacePair]int, error)
+
+	// NamespaceSubgraph returns every resource in namespace ns plus
+	// every edge whose endpoints are both in that namespace. Cross-
+	// namespace edges and resources in other namespaces are not
+	// included, matching the namespace-level aggregator's existing
+	// visible-set rule (an edge is emitted only if both endpoints
+	// are visible in the namespace view).
+	//
+	// Used by the namespace-level aggregator to avoid materialising
+	// the full Snapshot just to filter it down to one namespace.
+	NamespaceSubgraph(ctx context.Context, ns string) (*Graph, error)
+}
+
+// NamespacePair keys the result of CrossNamespaceEdgeCounts. From and
+// To are namespace names; the empty string represents cluster-scoped
+// resources (matching the convention in KindCountsByNamespace).
+type NamespacePair struct {
+	From string
+	To   string
 }
 
 // Direction names a graph traversal direction. Anti-pattern from

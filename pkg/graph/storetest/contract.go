@@ -363,4 +363,196 @@ func Run(t *testing.T, factory Factory) {
 			t.Errorf("isolated node: incoming=%d outgoing=%d, want 0,0", len(in), len(out))
 		}
 	})
+
+	// ---------------------------------------------------------------
+	// P3-T0a pushdown methods (May 2026). These three methods power
+	// cluster + namespace aggregation without materialising the
+	// entire store via Snapshot — see the godoc on each method on
+	// pkg/graph/store.go for why.
+	// ---------------------------------------------------------------
+
+	t.Run("KindCountsByNamespace empty store returns empty non-nil map", func(t *testing.T) {
+		s := factory(t)
+		got, err := s.KindCountsByNamespace(context.Background())
+		if err != nil {
+			t.Fatalf("KindCountsByNamespace: %v", err)
+		}
+		if got == nil {
+			t.Fatal("expected non-nil empty map, got nil")
+		}
+		if len(got) != 0 {
+			t.Errorf("expected 0 entries, got %d", len(got))
+		}
+	})
+
+	t.Run("KindCountsByNamespace tallies by (namespace, kind)", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		// 2 Deployments + 3 Pods in demo; 1 Deployment in other;
+		// 2 cluster-scoped (Namespace ""); empty kind never appears.
+		fixture := []graph.Resource{
+			{Kind: "Deployment", Namespace: "demo", Name: "a"},
+			{Kind: "Deployment", Namespace: "demo", Name: "b"},
+			{Kind: "Pod", Namespace: "demo", Name: "p1"},
+			{Kind: "Pod", Namespace: "demo", Name: "p2"},
+			{Kind: "Pod", Namespace: "demo", Name: "p3"},
+			{Kind: "Deployment", Namespace: "other", Name: "c"},
+			{Kind: "ClusterRole", Namespace: "", Name: "cluster-admin"},
+			{Kind: "ClusterRole", Namespace: "", Name: "view"},
+		}
+		for _, r := range fixture {
+			if err := s.UpsertResource(ctx, r); err != nil {
+				t.Fatalf("UpsertResource %s: %v", r.ID(), err)
+			}
+		}
+		got, err := s.KindCountsByNamespace(ctx)
+		if err != nil {
+			t.Fatalf("KindCountsByNamespace: %v", err)
+		}
+		want := map[string]map[string]int{
+			"demo":  {"Deployment": 2, "Pod": 3},
+			"other": {"Deployment": 1},
+			"":      {"ClusterRole": 2},
+		}
+		for ns, kinds := range want {
+			gotBucket, ok := got[ns]
+			if !ok {
+				t.Errorf("missing bucket for ns=%q", ns)
+				continue
+			}
+			for k, n := range kinds {
+				if gotBucket[k] != n {
+					t.Errorf("ns=%q kind=%q got %d want %d", ns, k, gotBucket[k], n)
+				}
+			}
+		}
+		// And no spurious entries.
+		for ns := range got {
+			if _, ok := want[ns]; !ok {
+				t.Errorf("unexpected ns bucket %q in result", ns)
+			}
+		}
+	})
+
+	t.Run("CrossNamespaceEdgeCounts groups by (from-ns, to-ns)", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		// Resources spread across two namespaces.
+		demoDep := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "web"}
+		demoCM1 := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "cfg1"}
+		demoCM2 := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "cfg2"}
+		otherSvc := graph.Resource{Kind: "Service", Namespace: "other", Name: "api"}
+		for _, r := range []graph.Resource{demoDep, demoCM1, demoCM2, otherSvc} {
+			if err := s.UpsertResource(ctx, r); err != nil {
+				t.Fatalf("UpsertResource: %v", err)
+			}
+		}
+		// 2 same-ns edges in demo, 1 cross-ns edge other → demo.
+		edges := []graph.Edge{
+			{From: demoDep.ID(), To: demoCM1.ID(), Type: "USES_CONFIGMAP"},
+			{From: demoDep.ID(), To: demoCM2.ID(), Type: "USES_CONFIGMAP"},
+			{From: otherSvc.ID(), To: demoDep.ID(), Type: "ROUTES_TO"},
+		}
+		for _, e := range edges {
+			if err := s.UpsertEdge(ctx, e); err != nil {
+				t.Fatalf("UpsertEdge: %v", err)
+			}
+		}
+		// Edge with missing endpoint — must be dropped, not counted.
+		if err := s.UpsertEdge(ctx, graph.Edge{
+			From: demoDep.ID(),
+			To:   "ghost/ConfigMap/missing",
+			Type: "USES_CONFIGMAP",
+		}); err != nil {
+			t.Fatalf("UpsertEdge dangling: %v", err)
+		}
+		got, err := s.CrossNamespaceEdgeCounts(ctx)
+		if err != nil {
+			t.Fatalf("CrossNamespaceEdgeCounts: %v", err)
+		}
+		want := map[graph.NamespacePair]int{
+			{From: "demo", To: "demo"}:   2,
+			{From: "other", To: "demo"}:  1,
+		}
+		for k, want := range want {
+			if got[k] != want {
+				t.Errorf("pair %+v: got %d want %d", k, got[k], want)
+			}
+		}
+		// Dangling edge must not appear under any namespace pair.
+		for k := range got {
+			if _, ok := want[k]; !ok {
+				t.Errorf("unexpected pair in result: %+v", k)
+			}
+		}
+	})
+
+	t.Run("NamespaceSubgraph returns only in-namespace resources and edges", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		demoDep := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "web"}
+		demoCM := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "cfg"}
+		otherSvc := graph.Resource{Kind: "Service", Namespace: "other", Name: "api"}
+		for _, r := range []graph.Resource{demoDep, demoCM, otherSvc} {
+			if err := s.UpsertResource(ctx, r); err != nil {
+				t.Fatalf("UpsertResource: %v", err)
+			}
+		}
+		// One in-ns edge + one cross-ns edge.
+		if err := s.UpsertEdge(ctx, graph.Edge{From: demoDep.ID(), To: demoCM.ID(), Type: "USES_CONFIGMAP"}); err != nil {
+			t.Fatalf("UpsertEdge: %v", err)
+		}
+		if err := s.UpsertEdge(ctx, graph.Edge{From: otherSvc.ID(), To: demoDep.ID(), Type: "ROUTES_TO"}); err != nil {
+			t.Fatalf("UpsertEdge: %v", err)
+		}
+		g, err := s.NamespaceSubgraph(ctx, "demo")
+		if err != nil {
+			t.Fatalf("NamespaceSubgraph: %v", err)
+		}
+		if g == nil {
+			t.Fatal("expected non-nil Graph, got nil")
+		}
+		// Resources: only the two demo resources.
+		gotIDs := make(map[string]bool, len(g.Resources))
+		for _, r := range g.Resources {
+			gotIDs[r.ID()] = true
+		}
+		wantIDs := map[string]bool{demoDep.ID(): true, demoCM.ID(): true}
+		for id := range wantIDs {
+			if !gotIDs[id] {
+				t.Errorf("missing resource %s in subgraph", id)
+			}
+		}
+		for id := range gotIDs {
+			if !wantIDs[id] {
+				t.Errorf("unexpected resource %s in subgraph (cross-ns leakage)", id)
+			}
+		}
+		// Edges: only the in-ns edge; cross-ns must be dropped because
+		// the otherSvc endpoint is not in the demo namespace.
+		if len(g.Edges) != 1 {
+			t.Fatalf("expected 1 edge in subgraph, got %d: %+v", len(g.Edges), g.Edges)
+		}
+		if g.Edges[0].From != demoDep.ID() || g.Edges[0].To != demoCM.ID() {
+			t.Errorf("got edge %+v, want %s → %s", g.Edges[0], demoDep.ID(), demoCM.ID())
+		}
+	})
+
+	t.Run("NamespaceSubgraph on empty namespace returns empty non-nil graph", func(t *testing.T) {
+		s := factory(t)
+		// Seed something in a different ns to prove the filter works.
+		_ = s.UpsertResource(context.Background(), graph.Resource{
+			Kind: "Pod", Namespace: "other", Name: "p",
+		})
+		g, err := s.NamespaceSubgraph(context.Background(), "demo")
+		if err != nil {
+			t.Fatalf("NamespaceSubgraph: %v", err)
+		}
+		if g == nil {
+			t.Fatal("expected non-nil Graph, got nil")
+		}
+		if len(g.Resources) != 0 || len(g.Edges) != 0 {
+			t.Errorf("expected empty subgraph, got resources=%d edges=%d", len(g.Resources), len(g.Edges))
+		}
+	})
 }
