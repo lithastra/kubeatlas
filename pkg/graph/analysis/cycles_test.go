@@ -141,6 +141,164 @@ func TestDetectCycles_DanglingEdgesIgnored(t *testing.T) {
 	}
 }
 
+// TestDetectCycles_TriangleHasUnknownCategory verifies that a
+// "plain" cycle (no Secret member, no opt-in annotation) gets
+// Category=unknown — the default bucket that verifiers / the
+// future GitHub Action treat as actionable noise.
+func TestDetectCycles_TriangleHasUnknownCategory(t *testing.T) {
+	s := memory.New()
+	ctx := context.Background()
+	a := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "a"}
+	b := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "b"}
+	c := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "c"}
+	for _, r := range []graph.Resource{a, b, c} {
+		_ = s.UpsertResource(ctx, r)
+	}
+	_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeUsesConfigMap})
+	_ = s.UpsertEdge(ctx, graph.Edge{From: b.ID(), To: c.ID(), Type: graph.EdgeTypeUsesConfigMap})
+	_ = s.UpsertEdge(ctx, graph.Edge{From: c.ID(), To: a.ID(), Type: graph.EdgeTypeUsesConfigMap})
+
+	got, err := analysis.DetectCycles(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 cycle, got %d", len(got))
+	}
+	if got[0].Category != analysis.CycleCategoryUnknown {
+		t.Errorf("expected category=unknown, got %q", got[0].Category)
+	}
+}
+
+// TestDetectCycles_BootstrapCertCategorized verifies the
+// "controller owns its own cert Secret AND consumes it" 2-cycle
+// is recognised — this is the shape the Phase 2 verifier (and
+// every cert-manager / CNPG / kyverno install) emits.
+func TestDetectCycles_BootstrapCertCategorized(t *testing.T) {
+	s := memory.New()
+	ctx := context.Background()
+	// Webhook Deployment owns a TLS Secret (via OwnerReferences)
+	// AND consumes the same Secret (USES_SECRET edge). Tarjan sees
+	// a 2-cycle; the classifier should see "bootstrap-cert".
+	dep := graph.Resource{Kind: "Deployment", Namespace: "cnpg-system", Name: "cnpg-controller"}
+	sec := graph.Resource{
+		Kind: "Secret", Namespace: "cnpg-system", Name: "cnpg-webhook-cert",
+		OwnerReferences: []graph.OwnerRef{{Kind: "Deployment", Name: "cnpg-controller"}},
+	}
+	for _, r := range []graph.Resource{dep, sec} {
+		_ = s.UpsertResource(ctx, r)
+	}
+	_ = s.UpsertEdge(ctx, graph.Edge{From: dep.ID(), To: sec.ID(), Type: graph.EdgeTypeUsesSecret})
+	_ = s.UpsertEdge(ctx, graph.Edge{From: sec.ID(), To: dep.ID(), Type: graph.EdgeTypeOwns})
+
+	got, err := analysis.DetectCycles(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 cycle, got %d: %+v", len(got), got)
+	}
+	if got[0].Category != analysis.CycleCategoryBootstrapCert {
+		t.Errorf("expected category=bootstrap-cert, got %q", got[0].Category)
+	}
+}
+
+// TestDetectCycles_BootstrapCertRequiresSecret verifies the
+// classifier is strict: a 2-cycle that happens to have an
+// ownerRef between non-Secret members must NOT be tagged as
+// bootstrap-cert (it could be a real ownership-loop bug).
+func TestDetectCycles_BootstrapCertRequiresSecret(t *testing.T) {
+	s := memory.New()
+	ctx := context.Background()
+	// Two Deployments referencing each other; one names the other
+	// in OwnerReferences. No Secret involved.
+	a := graph.Resource{
+		Kind: "Deployment", Namespace: "demo", Name: "a",
+		OwnerReferences: []graph.OwnerRef{{Kind: "Deployment", Name: "b"}},
+	}
+	b := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "b"}
+	for _, r := range []graph.Resource{a, b} {
+		_ = s.UpsertResource(ctx, r)
+	}
+	_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
+	_ = s.UpsertEdge(ctx, graph.Edge{From: b.ID(), To: a.ID(), Type: graph.EdgeTypeOwns})
+
+	got, err := analysis.DetectCycles(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 cycle, got %d", len(got))
+	}
+	if got[0].Category == analysis.CycleCategoryBootstrapCert {
+		t.Errorf("non-Secret cycle wrongly tagged bootstrap-cert: %+v", got[0])
+	}
+}
+
+// TestDetectCycles_IntentionalCategorized verifies that a single
+// annotated member is enough to flip the whole cycle out of the
+// "unknown" bucket. The contract is intentionally lenient: in
+// multi-team setups, only one owner of the cycle needs to opt in.
+func TestDetectCycles_IntentionalCategorized(t *testing.T) {
+	s := memory.New()
+	ctx := context.Background()
+	// 3-cycle A→B→C→A; only A carries the opt-in annotation.
+	a := graph.Resource{
+		Kind: "ConfigMap", Namespace: "demo", Name: "a",
+		Annotations: map[string]string{"kubeatlas.io/intentional-cycle": "true"},
+	}
+	b := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "b"}
+	c := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "c"}
+	for _, r := range []graph.Resource{a, b, c} {
+		_ = s.UpsertResource(ctx, r)
+	}
+	_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeUsesConfigMap})
+	_ = s.UpsertEdge(ctx, graph.Edge{From: b.ID(), To: c.ID(), Type: graph.EdgeTypeUsesConfigMap})
+	_ = s.UpsertEdge(ctx, graph.Edge{From: c.ID(), To: a.ID(), Type: graph.EdgeTypeUsesConfigMap})
+
+	got, err := analysis.DetectCycles(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 cycle, got %d", len(got))
+	}
+	if got[0].Category != analysis.CycleCategoryIntentional {
+		t.Errorf("expected category=intentional, got %q", got[0].Category)
+	}
+}
+
+// TestDetectCycles_BootstrapCertWinsOverIntentional verifies
+// classifier precedence: bootstrap-cert takes priority over
+// intentional even if the Secret happens to carry the annotation.
+// Rationale: bootstrap-cert is structurally certain (it can only
+// be what the name implies); intentional is a more generic opt-out.
+// Reporting the structural category gives the operator more useful
+// information.
+func TestDetectCycles_BootstrapCertWinsOverIntentional(t *testing.T) {
+	s := memory.New()
+	ctx := context.Background()
+	dep := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "ctrl"}
+	sec := graph.Resource{
+		Kind: "Secret", Namespace: "demo", Name: "ctrl-cert",
+		OwnerReferences: []graph.OwnerRef{{Kind: "Deployment", Name: "ctrl"}},
+		Annotations:     map[string]string{"kubeatlas.io/intentional-cycle": "true"},
+	}
+	for _, r := range []graph.Resource{dep, sec} {
+		_ = s.UpsertResource(ctx, r)
+	}
+	_ = s.UpsertEdge(ctx, graph.Edge{From: dep.ID(), To: sec.ID(), Type: graph.EdgeTypeUsesSecret})
+	_ = s.UpsertEdge(ctx, graph.Edge{From: sec.ID(), To: dep.ID(), Type: graph.EdgeTypeOwns})
+
+	got, err := analysis.DetectCycles(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Category != analysis.CycleCategoryBootstrapCert {
+		t.Errorf("precedence: expected bootstrap-cert (structural), got %q", got[0].Category)
+	}
+}
+
 func TestDetectCycles_LargeGraphFinishesUnderBudget(t *testing.T) {
 	// Performance gate from the playbook: 5K-resource graph with
 	// 5K edges must finish DetectCycles under 200ms. We seed a

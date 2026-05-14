@@ -433,8 +433,13 @@ func openAPIComponentsBase() map[string]any {
 				"type": "object",
 				"properties": map[string]any{
 					"members": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Resource"}},
+					"category": map[string]any{
+						"type":        "string",
+						"enum":        []any{"bootstrap-cert", "intentional", "unknown"},
+						"description": "Cycle shape classification. bootstrap-cert: 2-cycle where one member is a Secret owned by the other (cert-manager / CNPG / kyverno bootstrap pattern, benign). intentional: any member carries the kubeatlas.io/intentional-cycle=true annotation. unknown: every other cycle — verifiers and the GitHub Action treat this as actionable. Clients should treat unrecognised values as 'unknown'.",
+					},
 				},
-				"required": []any{"members"},
+				"required": []any{"members", "category"},
 			},
 			"CyclesResponse": map[string]any{
 				"type": "object",

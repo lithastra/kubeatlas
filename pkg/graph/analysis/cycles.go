@@ -14,13 +14,124 @@ import (
 // Members is sorted by ID so consumers can diff successive runs
 // without re-sorting.
 //
-// In a healthy K8s graph this list is empty. A non-empty result
-// is almost always a config error: ConfigMaps that reference each
-// other through annotations, OwnerReferences that loop (informer
-// bug or malicious mutation), Service selectors that pick up
-// their own backing Pod's labels in pathological setups, etc.
+// In a healthy K8s graph the unknown-category list is empty. A
+// non-empty unknown result is almost always a config error:
+// ConfigMaps that reference each other through annotations,
+// OwnerReferences that loop (informer bug or malicious mutation),
+// Service selectors that pick up their own backing Pod's labels in
+// pathological setups, etc.
+//
+// Category was added in P3-T0b (May 2026) so verifiers and the
+// GitHub Action (F-202) can map cycle severity reliably without
+// the regex-style filtering that phase2.sh used through Phase 2.
 type CycleReport struct {
-	Members []graph.Resource `json:"members"`
+	Members  []graph.Resource `json:"members"`
+	Category CycleCategory    `json:"category"`
+}
+
+// CycleCategory classifies a detected cycle by its real-world
+// shape. The enum is intentionally small in v1.0.1 — additional
+// categories (mtls-mesh, gitops-flux, ...) land in v1.2 once we
+// have data on which patterns merit a dedicated bucket vs.
+// staying in "unknown".
+//
+// Wire-format enum strings are stable across versions. The JSON
+// shape is "<bucket>" (lowercase, hyphenated). Clients should
+// treat unrecognised values as "unknown" rather than erroring.
+type CycleCategory string
+
+const (
+	// CycleCategoryBootstrapCert tags the common "controller owns
+	// its own webhook cert Secret AND consumes that Secret" pattern
+	// that cert-manager, CNPG, kyverno, etc. all emit. Real cycle,
+	// benign at the operational level — operators ship them this
+	// way on purpose. Shape: 2-member SCC, one member is
+	// Kind=Secret with an OwnerReferences entry naming the other
+	// member. This shape match mirrors the JQ filter in
+	// test/verify/phase2.sh verbatim so swapping the verifier to
+	// rely on Category produces zero behavioural drift.
+	CycleCategoryBootstrapCert CycleCategory = "bootstrap-cert"
+
+	// CycleCategoryIntentional tags a cycle the operator explicitly
+	// declared. Any member carrying
+	// metadata.annotations["kubeatlas.io/intentional-cycle"] = "true"
+	// suffices — one annotated node in the cycle is enough; we do
+	// not require all members to opt in (it would be unergonomic
+	// in multi-team setups where the cycle spans owners).
+	CycleCategoryIntentional CycleCategory = "intentional"
+
+	// CycleCategoryUnknown tags every cycle that does not match a
+	// specific category yet. Verifiers should gate on unknown count
+	// staying ≤ Phase 2 baseline; the GitHub Action maps unknown
+	// → high-severity PR comment.
+	CycleCategoryUnknown CycleCategory = "unknown"
+)
+
+// intentionalCycleAnnotation is the annotation key operators set
+// to opt a deliberate cycle out of the "unknown" bucket. Kept as a
+// named constant so an audit can grep for callers (extractor,
+// classifier, docs).
+const intentionalCycleAnnotation = "kubeatlas.io/intentional-cycle"
+
+// classifyCycle picks the most-specific category that matches the
+// given cycle. The precedence is bootstrap-cert > intentional >
+// unknown — bootstrap-cert is structurally unmistakable, the
+// annotation is a fallback opt-out for everything else.
+//
+// Anti-pattern guarded: the classifier is purely a function of the
+// cycle's own Resources. It does not consult the GraphStore again
+// to fetch fresh annotations. DetectCycles already operates on a
+// store.Snapshot, so the annotations on Members are the same ones
+// the cycle was detected from — re-fetching would just widen the
+// race window.
+func classifyCycle(members []graph.Resource) CycleCategory {
+	if isBootstrapCertCycle(members) {
+		return CycleCategoryBootstrapCert
+	}
+	for _, r := range members {
+		if r.Annotations[intentionalCycleAnnotation] == "true" {
+			return CycleCategoryIntentional
+		}
+	}
+	return CycleCategoryUnknown
+}
+
+// isBootstrapCertCycle returns true when members forms the
+// "controller owns its own cert Secret + consumes it" 2-cycle
+// shape that test/verify/phase2.sh has been special-casing via JQ
+// since Phase 2. The JQ check is:
+//
+//	(members[0].kind == "Secret" &&
+//	 members[0].ownerReferences[*].name contains members[1].name)
+//	|| (mirror with [1] and [0] swapped)
+//
+// This Go implementation matches that semantics byte-for-byte so
+// the verifier can swap from JQ-filtering to category-checking
+// without changing which cycles get accepted as benign.
+//
+// Note: matching is on owner name, not UID. UID would be stronger
+// but introduces a divergence from the Phase 2 verifier. If a
+// future version wants UID-based matching, change phase2.sh first
+// and only then this function — the two must stay aligned.
+func isBootstrapCertCycle(members []graph.Resource) bool {
+	if len(members) != 2 {
+		return false
+	}
+	return secretOwnsName(members[0], members[1]) || secretOwnsName(members[1], members[0])
+}
+
+// secretOwnsName reports whether maybeSecret is Kind=Secret and
+// lists owner.Name among its OwnerReferences.
+func secretOwnsName(maybeSecret, owner graph.Resource) bool {
+	if maybeSecret.Kind != "Secret" {
+		return false
+	}
+	for _, ref := range maybeSecret.OwnerReferences {
+		if ref.Name == owner.Name {
+			return true
+		}
+	}
+	return false
 }
 
 // DetectCycles returns every strongly connected component with at
@@ -94,7 +205,10 @@ func DetectCycles(ctx context.Context, store graph.GraphStore) ([]CycleReport, e
 			members = append(members, resources[idx])
 		}
 		sortByID(members)
-		out = append(out, CycleReport{Members: members})
+		out = append(out, CycleReport{
+			Members:  members,
+			Category: classifyCycle(members),
+		})
 	}
 	return out, nil
 }
