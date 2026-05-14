@@ -105,7 +105,8 @@ GET /api/v1/cycles
       "members": [
         { "kind": "ConfigMap", "namespace": "demo", "name": "a" },
         { "kind": "ConfigMap", "namespace": "demo", "name": "b" }
-      ]
+      ],
+      "category": "unknown"
     }
   ],
   "count": 1
@@ -114,6 +115,31 @@ GET /api/v1/cycles
 
 Members within a cycle are sorted by ID for diff stability;
 multiple disjoint cycles each get their own object.
+
+### Cycle categories
+
+Real K8s clusters carry a handful of cycles that are
+operationally benign — most commonly a webhook controller that
+owns its own TLS Secret AND consumes the same Secret to terminate
+TLS on its webhook. Tarjan sees these as cycles (because they
+are), but treating them as actionable would spam every
+dashboard. v1.0.1 onwards each cycle is tagged with a
+`category` field so verifiers and CI gates can branch:
+
+| Category | Meaning | Action |
+|---|---|---|
+| `bootstrap-cert` | 2-member cycle where one member is a `Secret` owned (via `ownerReferences`) by the other. Pattern shipped by cert-manager / CNPG / kyverno / kubeatlas itself. | Treat as benign. Exclude from "real cycle" counters. |
+| `intentional` | Any member carries `metadata.annotations["kubeatlas.io/intentional-cycle"] = "true"`. The operator has declared the cycle is deliberate. One annotated member is enough — useful in multi-team setups. | Treat as benign. Audit the annotation if it shows up unexpectedly. |
+| `unknown` | Every other cycle. | **Actionable**: investigate. Usually means a recent extractor or operator change introduced a real dependency loop. |
+
+Precedence: `bootstrap-cert` > `intentional` > `unknown`. A
+Secret in a 2-cycle that *also* carries the
+`intentional-cycle` annotation is reported as `bootstrap-cert`
+because the structural match is more specific.
+
+Clients should treat any future / unrecognised category value as
+`unknown` — the enum is append-only and adding categories
+(e.g. `mtls-mesh`, `gitops-flux`) is not a breaking change.
 
 ### Algorithm
 

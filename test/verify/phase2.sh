@@ -544,6 +544,33 @@ if (( real_cycles > 0 )); then
 fi
 pass "no unexpected cycles (total=${cycles_count}, benign bootstrap-cert=${benign_count})"
 
+# Double-track assertion (P3-T0b, May 2026): the server now classifies
+# each cycle into bootstrap-cert / intentional / unknown via the
+# Category field. As an equivalence check during the v1.0.1 sprint we
+# verify the server's classifier agrees with the JQ shape-match above:
+#   * server bootstrap-cert count == JQ benign_count  (no drift)
+#   * server unknown count        == real_cycles      (no drift)
+#   * every cycle has non-empty Category               (schema gate)
+# A future commit (v1.2) drops the JQ double-track and gates only on
+# Category — until then this assertion is the bridge.
+missing_category=$(jq '[.cycles[] | select(.category == null or .category == "")] | length' <<<"${cycles_body}")
+if (( missing_category > 0 )); then
+  fail "cycles endpoint returned ${missing_category} cycle(s) with empty category: ${cycles_body}"
+fi
+server_bootstrap=$(jq '[.cycles[] | select(.category == "bootstrap-cert")] | length' <<<"${cycles_body}")
+server_intentional=$(jq '[.cycles[] | select(.category == "intentional")] | length' <<<"${cycles_body}")
+server_unknown=$(jq '[.cycles[] | select(.category == "unknown")] | length' <<<"${cycles_body}")
+if (( server_bootstrap != benign_count )); then
+  fail "category drift: server reports ${server_bootstrap} bootstrap-cert vs JQ shape-match ${benign_count}: ${cycles_body}"
+fi
+# real_cycles is "non-benign" — which under the new classifier should
+# be the sum of intentional + unknown. Intentional may be 0 on a
+# stock CI cluster (nothing annotated), so this assertion is exact.
+if (( server_intentional + server_unknown != real_cycles )); then
+  fail "category drift: server intentional(${server_intentional}) + unknown(${server_unknown}) != JQ real_cycles(${real_cycles}): ${cycles_body}"
+fi
+pass "category double-track agrees (bootstrap-cert=${server_bootstrap}, intentional=${server_intentional}, unknown=${server_unknown})"
+
 # ----- Part 5 (M6.3): chaos suite + post-chaos re-verify ------------
 #
 # Each scenario is invoked with the port-forward env exported so

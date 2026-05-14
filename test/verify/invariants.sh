@@ -105,6 +105,14 @@ phase2() {
   check_json "phase2: /api/v1/cycles" \
     "${KUBEATLAS_URL}/api/v1/cycles" '.cycles'
 
+  # P3-T0b invariant (May 2026): every cycle returned by the API
+  # carries a non-empty Category field. The JQ expression
+  # selects cycles where category is null or empty; the filter
+  # must yield zero rows for the invariant to hold.
+  check_json "phase2: every cycle has non-empty .category" \
+    "${KUBEATLAS_URL}/api/v1/cycles" \
+    '(.cycles | map(select(.category == null or .category == "")) | length) | select(. == 0)'
+
   # /metrics exposes the rego counters (P2-T11/T13 invariant).
   metrics=$(curl -fsS --max-time 10 "${KUBEATLAS_URL}/metrics" 2>/dev/null) \
     || { fail_inv "phase2: /metrics fetch failed"; return; }
