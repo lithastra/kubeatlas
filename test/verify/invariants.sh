@@ -61,6 +61,26 @@ check_json() {
   pass_inv "${label}"
 }
 
+# Asserts a jq expression evaluates truthy against a local JSON file.
+# Used for file-shape invariants that don't go through the HTTP
+# surface — currently the perf-baseline tier-non-zero gate added by
+# P3-T0c (May 2026) to catch accidental resets of the captured
+# numbers back to zero placeholders.
+check_file_jq() {
+  local label="$1"
+  local file="$2"
+  local jq_expr="$3"
+  if [[ ! -f "${file}" ]]; then
+    fail_inv "${label}: file missing (${file})"
+    return
+  fi
+  if ! jq -e "${jq_expr}" "${file}" >/dev/null 2>&1; then
+    fail_inv "${label}: jq expression \"${jq_expr}\" did not match in ${file}"
+    return
+  fi
+  pass_inv "${label}"
+}
+
 # --- phase1 invariants (v0.1.0 surface) -----------------------------
 phase1() {
   check_json "phase1: /healthz" \
@@ -112,6 +132,18 @@ phase2() {
   check_json "phase2: every cycle has non-empty .category" \
     "${KUBEATLAS_URL}/api/v1/cycles" \
     '(.cycles | map(select(.category == null or .category == "")) | length) | select(. == 0)'
+
+  # P3-T0c invariant (May 2026): perf-baseline-v1.0.json carries
+  # non-zero numbers for BOTH tier1 and tier2 — defends against an
+  # accidental reset of the captured values back to the zero
+  # placeholders shipped with the schema. Phase 2 captured tier2;
+  # Phase 3 P3-T0c captured tier1.
+  check_file_jq "phase2: perf-baseline tier1 cluster_view_p95_ms > 0" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/perf-baseline-v1.0.json" \
+    '.tier1.cluster_view_p95_ms > 0'
+  check_file_jq "phase2: perf-baseline tier2 cluster_view_p95_ms > 0" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/perf-baseline-v1.0.json" \
+    '.tier2.cluster_view_p95_ms > 0'
 
   # /metrics exposes the rego counters (P2-T11/T13 invariant).
   metrics=$(curl -fsS --max-time 10 "${KUBEATLAS_URL}/metrics" 2>/dev/null) \

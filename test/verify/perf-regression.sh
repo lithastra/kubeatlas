@@ -39,7 +39,10 @@ for tier in tier1 tier2; do
   cur_block=$(jq -c  ".${tier}" "${CURRENT}")
   [[ "${base_block}" == "null" || "${cur_block}" == "null" ]] && continue
 
-  for metric in $(jq -r 'keys[]' <<<"${base_block}"); do
+  # Only compare numeric fields. P3-T0c added per-tier captured_at /
+  # captured_on metadata to each tier block; those are strings/objects,
+  # not measurements, and would otherwise produce noisy ✓ lines.
+  for metric in $(jq -r 'to_entries | map(select(.value | type == "number")) | .[].key' <<<"${base_block}"); do
     base=$(jq -r ".${metric}" <<<"${base_block}")
     cur=$(jq -r  ".${metric}" <<<"${cur_block}")
     # Skip zero-baseline placeholders + non-numeric values.
