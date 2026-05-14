@@ -1,6 +1,6 @@
 {
   "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
-  "description": "v1.0.0 perf baseline (P2-T23). Captured against the stress-test-5k fixture (5001 ConfigMaps + 1000 Deployments + 1000 owner-ref ReplicaSets + 200 Services = ~7200 resources / 7000 edges) on Docker Desktop K8s in WSL2; numbers include port-forward + WSL2 networking overhead which adds ~10ms per round trip vs native Linux. Re-run on representative hardware before tag if needed.",
+  "description": "v1.0.0 perf baseline (P2-T23). Captured against the stress-test-5k fixture (5001 ConfigMaps + 1000 Deployments + 1000 owner-ref ReplicaSets + 200 Services = ~7200 resources / 7000 edges) on Docker Desktop K8s in WSL2; numbers include port-forward + WSL2 networking overhead which adds ~10ms per round trip vs native Linux. Re-run on representative hardware before tag if needed. tier1 数据由 Phase 3 P3-T0c（v1.0.1 sprint）补齐；tier2 数据由 Phase 2 P2-T23 录制。",
   "phase": "2-v1.0.0",
   "captured_at": "2026-05-11T08:34:26+09:00",
   "captured_on": {
@@ -10,7 +10,7 @@
   },
   "fixture": {
     "namespace": "stress-test-5k",
-    "samples_per_endpoint": 50,
+    "samples_per_endpoint": 100,
     "approximate_resource_count": 7200,
     "approximate_edge_count": 7000
   },
@@ -23,16 +23,22 @@
     "namespace_view_p95_ms": 8000
   },
   "tier1": {
-    "cluster_view_p50_ms": 0,
-    "cluster_view_p95_ms": 0,
-    "cluster_view_p99_ms": 0,
-    "namespace_view_p50_ms": 0,
-    "namespace_view_p95_ms": 0,
-    "namespace_view_p99_ms": 0,
-    "blast_radius_p50_ms": 0,
-    "blast_radius_p95_ms": 0,
-    "blast_radius_p99_ms": 0,
-    "namespace_count": 0
+    "cluster_view_p50_ms": 5.179,
+    "cluster_view_p95_ms": 10.020,
+    "cluster_view_p99_ms": 10.920,
+    "namespace_view_p50_ms": 24.282,
+    "namespace_view_p95_ms": 38.053,
+    "namespace_view_p99_ms": 38.978,
+    "blast_radius_p50_ms": 0.528,
+    "blast_radius_p95_ms": 0.680,
+    "blast_radius_p99_ms": 0.761,
+    "namespace_count": 13,
+    "captured_at": "2026-05-14T19:16:35+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2"
+    }
   },
   "tier2": {
     "cluster_view_p50_ms": 4461.614,

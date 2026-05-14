@@ -114,36 +114,50 @@ tier_block=$(cat <<JSON
   "blast_radius_p50_ms": ${blast_p50},
   "blast_radius_p95_ms": ${blast_p95},
   "blast_radius_p99_ms": ${blast_p99},
-  "namespace_count": ${ns_count}
+  "namespace_count": ${ns_count},
+  "captured_at": "$(date -Iseconds)",
+  "captured_on": {
+    "os": "$(uname -s | tr '[:upper:]' '[:lower:]')",
+    "arch": "$(uname -m)",
+    "kernel": "$(uname -r)"
+  }
 }
 JSON
 )
 
+# Merge rules (P3-T0c, May 2026): tier1 and tier2 are typically
+# captured on different days against different binaries. The
+# block above carries its own captured_at + captured_on so each
+# tier's provenance survives a bench re-run on the OTHER tier.
+#
+# Top-level fields fall into two buckets:
+#   * "bench-time facts"  ($schema, phase, fixture)     — always set
+#   * "human-authored"     (description, spec_targets)   — preserve
+#                                                          if present
+# The // operator returns the right side only when the left is null
+# or missing, so re-running bench-v1.sh against an already-edited
+# file does not silently undo Phase 2's spec_targets relaxation or
+# any P3-T0c timeline note in description.
 merged=$(jq -n \
   --argjson existing "${existing}" \
   --arg tier "${KUBEATLAS_TIER}" \
   --argjson tier_block "${tier_block}" \
-  --arg captured_at "$(date -Iseconds)" \
-  --arg os "$(uname -s | tr '[:upper:]' '[:lower:]')" \
-  --arg arch "$(uname -m)" \
-  --arg kernel "$(uname -r)" \
   --arg ns "${NS}" \
   --argjson samples "${SAMPLES}" \
   '
   $existing
   + {
     "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
-    description: "v1.0.0 perf baseline (P2-T23). Captured against the stress-test-5k fixture across both Tier 1 and Tier 2 backends.",
     phase: "2-v1.0.0",
-    captured_at: $captured_at,
-    captured_on: { os: $os, arch: $arch, kernel: $kernel },
-    fixture: { namespace: $ns, samples_per_endpoint: $samples },
-    spec_targets: {
+    fixture: (($existing.fixture // {}) + { namespace: $ns, samples_per_endpoint: $samples }),
+    description: ($existing.description
+      // "v1.0.0 perf baseline (P2-T23). Captured against the stress-test-5k fixture across both Tier 1 and Tier 2 backends."),
+    spec_targets: ($existing.spec_targets // {
       cluster_view_p50_ms: 1000,
       cluster_view_p95_ms: 1500,
       blast_radius_p95_ms: 500,
       namespace_view_p50_ms: 2000
-    }
+    })
   }
   | .[$tier] = $tier_block
   ')
