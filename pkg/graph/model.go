@@ -67,6 +67,24 @@ const (
 	// whether to render dangling endpoints.
 	EdgeTypeBindsSubject EdgeType = "BINDS_SUBJECT"
 	EdgeTypeBindsRole    EdgeType = "BINDS_ROLE"
+
+	// Phase 3 P3-T1 NetworkPolicy edges (F-109).
+	//
+	// EdgeTypeSelectsNP is named with the _NP suffix to disambiguate
+	// from EdgeTypeSelects which carries Service.spec.selector ->
+	// Pod semantics. NetworkPolicy.spec.podSelector matches Pods in
+	// the same namespace; the edge from the NetworkPolicy to each
+	// matched Pod uses this type.
+	//
+	// EdgeTypeAllowsFrom / EdgeTypeAllowsTo model spec.ingress[].from
+	// and spec.egress[].to. The edges describe declared traffic
+	// permissions only — KubeAtlas reflects what the spec says, not
+	// what the CNI actually enforces (anti-pattern guard:
+	// modelling NetworkPolicy *effects* belongs to the CNI, not
+	// KubeAtlas; see invariant on "topology, not runtime").
+	EdgeTypeSelectsNP  EdgeType = "SELECTS_NP"
+	EdgeTypeAllowsFrom EdgeType = "ALLOWS_FROM"
+	EdgeTypeAllowsTo   EdgeType = "ALLOWS_TO"
 )
 
 // AllEdgeTypes is the canonical edge-type list. Adding a new type
@@ -85,6 +103,9 @@ var AllEdgeTypes = []EdgeType{
 	EdgeTypeAttachedTo,
 	EdgeTypeBindsSubject,
 	EdgeTypeBindsRole,
+	EdgeTypeSelectsNP,
+	EdgeTypeAllowsFrom,
+	EdgeTypeAllowsTo,
 }
 
 // Edge represents a directed dependency between two resources.

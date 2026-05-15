@@ -45,6 +45,10 @@ var CoreGVRs = []schema.GroupVersionResource{
 
 	// networking.k8s.io/v1.
 	{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
+	// P3-T1 (F-109) — NetworkPolicy edges (SELECTS_NP / ALLOWS_FROM /
+	// ALLOWS_TO) need the policy itself as a graph node before the
+	// extractor can resolve its podSelector + peers.
+	{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"},
 
 	// gateway.networking.k8s.io/v1 (optional CRDs; filtered at startup
 	// when the Gateway API group is not installed).

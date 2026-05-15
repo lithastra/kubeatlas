@@ -42,7 +42,9 @@ func New() *Registry {
 // Phase 0 contributed the first eight (OWNS through ATTACHED_TO);
 // Phase 2 P2-T14 added the two RBAC extractors so SA -> RoleBinding
 // -> Role chains land in the graph the same way OwnerReference
-// chains do.
+// chains do; Phase 3 P3-T1 added the three NetworkPolicy
+// extractors so a NetworkPolicy's podSelector + ingress/egress
+// declarations appear as graph edges (F-109).
 func Default() *Registry {
 	r := New()
 	r.Register(&OwnsExtractor{})
@@ -55,6 +57,9 @@ func Default() *Registry {
 	r.Register(&AttachedExtractor{})
 	r.Register(&BindsSubjectExtractor{})
 	r.Register(&BindsRoleExtractor{})
+	r.Register(&SelectsNPExtractor{})
+	r.Register(&AllowsFromExtractor{})
+	r.Register(&AllowsToExtractor{})
 	return r
 }
 
