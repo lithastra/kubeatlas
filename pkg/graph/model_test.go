@@ -87,8 +87,8 @@ func TestEdgeType_ConstantValues(t *testing.T) {
 }
 
 func TestAllEdgeTypes_CoversAllConstants(t *testing.T) {
-	if len(AllEdgeTypes) != 10 {
-		t.Fatalf("AllEdgeTypes length = %d, want 10 (8 Phase 0 + 2 Phase 2 RBAC)", len(AllEdgeTypes))
+	if len(AllEdgeTypes) != 13 {
+		t.Fatalf("AllEdgeTypes length = %d, want 13 (8 Phase 0 + 2 Phase 2 RBAC + 3 Phase 3 NetworkPolicy)", len(AllEdgeTypes))
 	}
 	seen := make(map[EdgeType]bool, len(AllEdgeTypes))
 	for _, t := range AllEdgeTypes {
@@ -99,6 +99,7 @@ func TestAllEdgeTypes_CoversAllConstants(t *testing.T) {
 		EdgeTypeMountsVolume, EdgeTypeSelects, EdgeTypeUsesServiceAccount,
 		EdgeTypeRoutesTo, EdgeTypeAttachedTo,
 		EdgeTypeBindsSubject, EdgeTypeBindsRole,
+		EdgeTypeSelectsNP, EdgeTypeAllowsFrom, EdgeTypeAllowsTo,
 	} {
 		if !seen[want] {
 			t.Errorf("AllEdgeTypes missing %q", want)

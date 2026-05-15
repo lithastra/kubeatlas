@@ -90,12 +90,13 @@ func TestFilterAvailableGVRs_PropagatesTransientError(t *testing.T) {
 
 func TestCoreGVRs_HasExpectedShape(t *testing.T) {
 	// Sanity: the registry must include the 16 Phase 0 GVRs (15 core +
-	// ServiceAccount) plus the 4 RBAC GVRs added in P2-T14
-	// (Role/RoleBinding/ClusterRole/ClusterRoleBinding). The exact
+	// ServiceAccount), the 4 RBAC GVRs added in P2-T14
+	// (Role/RoleBinding/ClusterRole/ClusterRoleBinding), and the
+	// 1 Phase 3 P3-T1 GVR (networkpolicies for F-109). The exact
 	// list shifts with cluster API availability at runtime, but the
 	// registry itself is stable.
-	if len(kdiscovery.CoreGVRs) != 20 {
-		t.Errorf("CoreGVRs length = %d, want 20", len(kdiscovery.CoreGVRs))
+	if len(kdiscovery.CoreGVRs) != 21 {
+		t.Errorf("CoreGVRs length = %d, want 21", len(kdiscovery.CoreGVRs))
 	}
 	required := map[string]bool{
 		"namespaces": true, "pods": true, "services": true,
@@ -115,6 +116,8 @@ func TestCoreGVRs_HasExpectedShape(t *testing.T) {
 		"rolebindings":        true,
 		"clusterroles":        true,
 		"clusterrolebindings": true,
+		// P3-T1 (F-109): NetworkPolicy edge extraction
+		"networkpolicies": true,
 	}
 	seen := make(map[string]bool, len(kdiscovery.CoreGVRs))
 	for _, gvr := range kdiscovery.CoreGVRs {
