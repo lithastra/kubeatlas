@@ -1,6 +1,9 @@
 package graph
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // GraphStore is the persistence-agnostic interface for storing and
 // querying the dependency graph.
@@ -71,6 +74,28 @@ type GraphStore interface {
 	// Used by the namespace-level aggregator to avoid materialising
 	// the full Snapshot just to filter it down to one namespace.
 	NamespaceSubgraph(ctx context.Context, ns string) (*Graph, error)
+
+	// Snapshot history (F-111 / P3-T2). The Tier 2 (postgres)
+	// backend persists these durably; the Tier 1 (memory) backend
+	// keeps only a small bounded ring buffer for test support —
+	// snapshots are a Tier 2 feature (invariant 2.2) and the
+	// /api/v1/snapshots endpoints return 503 on Tier 1.
+
+	// AppendEvent records one observed add/update/delete in the
+	// append-only event stream. The store assigns ResourceEvent.ID
+	// and (when zero) ResourceEvent.Timestamp; callers leave both
+	// zero. Never updates or deletes an existing row — a correction
+	// is a compensating event.
+	AppendEvent(ctx context.Context, e ResourceEvent) error
+
+	// WriteSnapshotMeta records one periodic full-sync marker. The
+	// store assigns SnapshotMeta.ID and (when zero) Timestamp.
+	WriteSnapshotMeta(ctx context.Context, m SnapshotMeta) error
+
+	// QueryEvents returns every ResourceEvent whose Timestamp falls
+	// in [from, to], ordered oldest-first. An empty namespace
+	// matches every namespace; a non-empty namespace filters to it.
+	QueryEvents(ctx context.Context, namespace string, from, to time.Time) ([]ResourceEvent, error)
 }
 
 // NamespacePair keys the result of CrossNamespaceEdgeCounts. From and

@@ -25,7 +25,10 @@
     "SELECTS": "Selects",
     "USES_SERVICEACCOUNT": "Uses ServiceAccount",
     "ROUTES_TO": "Routes to",
-    "ATTACHED_TO": "Attached to"
+    "ATTACHED_TO": "Attached to",
+    "SELECTS_NP": "Selects (NetworkPolicy)",
+    "ALLOWS_FROM": "Allows from",
+    "ALLOWS_TO": "Allows to"
   },
   "level": {
     "cluster": "Cluster",

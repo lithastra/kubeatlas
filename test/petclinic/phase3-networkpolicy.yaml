@@ -1,0 +1,111 @@
+# Phase 3 P3-T1 (F-109) NetworkPolicy verification fixture.
+#
+# Layered on base.yaml — references the workloads base.yaml creates
+# in the `petclinic` namespace:
+#   - Deployment   api        (label app=api)
+#   - StatefulSet  postgres   (label app=postgres)
+#   - DaemonSet    fluentbit  (label app=fluentbit)
+#
+# Exercises all three F-109 edge types so test/verify/phase3.sh
+# part-1 can assert against them:
+#   SELECTS_NP  — NetworkPolicy podSelector -> matched workloads
+#   ALLOWS_FROM — spec.ingress[].from[] peers
+#   ALLOWS_TO   — spec.egress[].to[] peers
+#
+# Run via: test/petclinic/run.sh phase3-netpol  (applies base first)
+#
+# KNOWN TIMING NOTE for verifiers: SELECTS_NP / ALLOWS_* edges are
+# (re)derived only when the NetworkPolicy itself is processed by the
+# extractor (informer.go handleUpsert — edges rooted at r). A workload
+# created/synced AFTER the NetworkPolicy is missed until the next
+# informer resync (~5 min) or any NetworkPolicy update. This is the
+# pre-existing reverse-edge staleness the informer flags as deferred
+# "P0-T15" work; it affects Service SELECTS identically. A verify
+# script that needs deterministic counts should either wait for a
+# resync or `kubectl annotate` the NetworkPolicy to force immediate
+# re-extraction against the full snapshot.
+#
+# Anti-pattern coverage built into the fixture:
+#   - api-allow declares policyTypes explicitly; the extractor
+#     refuses implicit inference, so the ALLOWS_* edges only fire
+#     because Ingress/Egress are listed.
+#   - monitoring-ingress uses a namespaceSelector-only peer, so the
+#     ALLOWS_FROM edge target is the Namespace itself, not its pods.
+---
+# A namespace labelled so monitoring-ingress's namespaceSelector
+# resolves to a real Namespace node.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petclinic-monitoring
+  labels:
+    app.kubernetes.io/part-of: petclinic
+    monitoring: "true"
+---
+# 1. default-deny — empty podSelector selects every Pod / workload
+#    in the namespace. Verifies SELECTS_NP fans out. No ingress /
+#    egress rules, so no ALLOWS_* edges.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: petclinic
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# 2. api-allow — selects the api Deployment; permits ingress from
+#    postgres-labelled pods and egress to the same. Exercises
+#    ALLOWS_FROM + ALLOWS_TO with podSelector-only peers (targets
+#    are Pods/workloads in the policy's own namespace).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-allow
+  namespace: petclinic
+spec:
+  podSelector:
+    matchLabels:
+      app: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# 3. monitoring-ingress — selects fluentbit; permits ingress from
+#    any pod in namespaces labelled monitoring=true. The peer is
+#    namespaceSelector-only, so the ALLOWS_FROM edge target is the
+#    petclinic-monitoring Namespace node.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-ingress
+  namespace: petclinic
+spec:
+  podSelector:
+    matchLabels:
+      app: fluentbit
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              monitoring: "true"

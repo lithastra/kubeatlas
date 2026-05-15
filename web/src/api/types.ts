@@ -14,7 +14,11 @@ export type EdgeType =
   | 'SELECTS'
   | 'USES_SERVICEACCOUNT'
   | 'ROUTES_TO'
-  | 'ATTACHED_TO';
+  | 'ATTACHED_TO'
+  // Phase 3 P3-T1 (F-109) NetworkPolicy edge types.
+  | 'SELECTS_NP'
+  | 'ALLOWS_FROM'
+  | 'ALLOWS_TO';
 
 export interface ViewNode {
   id: string;
@@ -82,4 +86,21 @@ export interface SearchResponse {
   matches: Resource[];
   total: number;
   truncated: boolean;
+}
+
+// Body of GET /api/v1/networkpolicy/{ns}/{name}/selected — the Pods
+// and workloads a NetworkPolicy's spec.podSelector matches (F-109).
+export interface NetworkPolicySelectedResponse {
+  networkPolicy: Resource;
+  selected: Resource[];
+  count: number;
+}
+
+// Body of GET /api/v1/networkpolicy/{ns}/{name}/allow-graph — the
+// declared ingress sources (allowFrom) and egress destinations
+// (allowTo) of a NetworkPolicy (F-109).
+export interface NetworkPolicyAllowGraphResponse {
+  networkPolicy: Resource;
+  allowFrom: Resource[];
+  allowTo: Resource[];
 }

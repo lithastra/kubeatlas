@@ -10,8 +10,10 @@ import (
 	"testing/fstest"
 )
 
-// expectedVertexLabels mirrors migrate/001_initial.sql in sorted form;
-// keep both in lock-step. Adding a kind = update both places + bump
+// expectedVertexLabels mirrors the AGE vertex labels created across
+// migrate/001_initial.sql (core kinds) and migrate/004_networkpolicy
+// _labels.sql (NetworkPolicy), in sorted form; keep this list in
+// lock-step. Adding a kind = update both places + bump
 // currentSchemaVersion if the kind is also expected to backfill.
 var expectedVertexLabels = []string{
 	"ClusterRole",
@@ -25,6 +27,7 @@ var expectedVertexLabels = []string{
 	"Ingress",
 	"Job",
 	"Namespace",
+	"NetworkPolicy", // migrate/004 (P3-T1, F-109)
 	"Node",
 	"PersistentVolume",
 	"PersistentVolumeClaim",
@@ -38,7 +41,13 @@ var expectedVertexLabels = []string{
 	"StatefulSet",
 }
 
+// expectedEdgeLabels mirrors the AGE edge labels created across
+// migrate/001_initial.sql (8 Phase 0 types), migrate/002_rbac_labels
+// .sql (BINDS_SUBJECT / BINDS_ROLE) and migrate/004_networkpolicy
+// _labels.sql (SELECTS_NP / ALLOWS_FROM / ALLOWS_TO), sorted.
 var expectedEdgeLabels = []string{
+	"ALLOWS_FROM", // migrate/004 (P3-T1, F-109)
+	"ALLOWS_TO",   // migrate/004 (P3-T1, F-109)
 	"ATTACHED_TO",
 	"BINDS_ROLE",
 	"BINDS_SUBJECT",
@@ -46,6 +55,7 @@ var expectedEdgeLabels = []string{
 	"OWNS",
 	"ROUTES_TO",
 	"SELECTS",
+	"SELECTS_NP", // migrate/004 (P3-T1, F-109)
 	"USES_CONFIGMAP",
 	"USES_SECRET",
 	"USES_SERVICEACCOUNT",

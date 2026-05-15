@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { Edge, Resource } from '../api/types';
 import { NeighborView } from './NeighborView';
+import { NetworkPolicyView } from './NetworkPolicyView';
 
 export interface ResourceDetailPanelProps {
   resource: Resource;
@@ -61,6 +62,17 @@ export function ResourceDetailPanel({ resource, incoming, outgoing, mermaidText 
         <EdgeTable title={t('list.column.kind') + ' ← Incoming'} edges={incoming} otherEnd="from" />
         <EdgeTable title={t('list.column.kind') + ' → Outgoing'} edges={outgoing} otherEnd="to" />
       </Stack>
+
+      {/* F-109: a dedicated NetworkPolicy view — selected pods +
+          declared ingress/egress peers. Only for NetworkPolicy
+          resources; the edge tables above already surface SELECTS_NP
+          edges on the Pod side ("which NP applies to me"). */}
+      {resource.kind === 'NetworkPolicy' && (
+        <>
+          <Divider />
+          <NetworkPolicyView namespace={resource.namespace} name={resource.name} />
+        </>
+      )}
 
       <Divider />
 
