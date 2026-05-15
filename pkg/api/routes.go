@@ -197,6 +197,30 @@ func (s *Server) Routes() []RouteInfo {
 		},
 		{
 			Method:      "GET",
+			Pattern:     "/api/v1alpha1/networkpolicy/{namespace}/{name}/selected",
+			Summary:     "Pods a NetworkPolicy's podSelector selects",
+			Description: "Returns every Pod (and Pod-template-carrying workload) in the policy's namespace that spec.podSelector matches, resolved from the SELECTS_NP edges. P3-T1 (F-109).",
+			PathParams: []ParamSpec{
+				{Name: "namespace", Required: true, Type: "string"},
+				{Name: "name", Required: true, Description: "NetworkPolicy name", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Selected pods", SchemaRef: "NetworkPolicySelectedResponse"},
+			handler:  s.handleNetworkPolicySelected,
+		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1alpha1/networkpolicy/{namespace}/{name}/allow-graph",
+			Summary:     "Declared ingress sources and egress destinations of a NetworkPolicy",
+			Description: "Returns the ALLOWS_FROM (spec.ingress[].from[]) and ALLOWS_TO (spec.egress[].to[]) targets — Pods, workloads, and Namespaces the policy declares as permitted peers. Declarative topology only; reflects the spec, not CNI enforcement. P3-T1 (F-109).",
+			PathParams: []ParamSpec{
+				{Name: "namespace", Required: true, Type: "string"},
+				{Name: "name", Required: true, Description: "NetworkPolicy name", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Allow-from / allow-to subgraph", SchemaRef: "NetworkPolicyAllowGraphResponse"},
+			handler:  s.handleNetworkPolicyAllowGraph,
+		},
+		{
+			Method:      "GET",
 			Pattern:     "/api/v1alpha1/blast-radius/{namespace}/{kind}/{name}",
 			Summary:     "Transitive set of resources affected by changes to this resource",
 			Description: "Returns every resource reachable by walking incoming edges from the target — i.e. everything that would be impacted if this resource were deleted or broken. Use the underscore '_' as namespace for cluster-scoped resources. P2-T15 (F-110).",

@@ -475,6 +475,24 @@ func openAPIComponentsBase() map[string]any {
 				},
 				"required": []any{"source", "affected", "count", "maxDepth"},
 			},
+			"NetworkPolicySelectedResponse": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"networkPolicy": map[string]any{"$ref": "#/components/schemas/Resource"},
+					"selected":      map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Resource"}},
+					"count":         map[string]any{"type": "integer"},
+				},
+				"required": []any{"networkPolicy", "selected", "count"},
+			},
+			"NetworkPolicyAllowGraphResponse": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"networkPolicy": map[string]any{"$ref": "#/components/schemas/Resource"},
+					"allowFrom":     map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Resource"}},
+					"allowTo":       map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Resource"}},
+				},
+				"required": []any{"networkPolicy", "allowFrom", "allowTo"},
+			},
 		},
 	}
 }
