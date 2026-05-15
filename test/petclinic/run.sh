@@ -2,10 +2,11 @@
 # test/petclinic/run.sh - PetClinic incremental deployer.
 #
 # Usage:
-#   test/petclinic/run.sh base     # apply base.yaml + wait for pods
-#   test/petclinic/run.sh phase1   # base + multi-namespace + 1000-node stress
-#   test/petclinic/run.sh status   # show resources in the namespace
-#   test/petclinic/run.sh clean    # delete every petclinic-* namespace
+#   test/petclinic/run.sh base           # apply base.yaml + wait for pods
+#   test/petclinic/run.sh phase1         # base + multi-namespace + 1000-node stress
+#   test/petclinic/run.sh phase3-netpol  # base + F-109 NetworkPolicy fixture
+#   test/petclinic/run.sh status         # show resources in the namespace
+#   test/petclinic/run.sh clean          # delete every petclinic-* namespace
 set -euo pipefail
 
 PHASE="${1:-base}"
@@ -34,8 +35,19 @@ deploy_phase1() {
   echo "  curl -w '%{time_total}s\\n' -o /dev/null -s 'localhost:8080/api/v1alpha1/graph?level=namespace&namespace=petclinic-stress'"
 }
 
+deploy_phase3_netpol() {
+  deploy_base
+  echo "→ Applying Phase 3 NetworkPolicy fixture (F-109 / P3-T1)"
+  kubectl apply -f "${DIR}/phase3-networkpolicy.yaml"
+  echo
+  echo "Suggested F-109 checks:"
+  echo "  curl -s localhost:8080/api/v1/networkpolicy/petclinic/default-deny/selected | jq"
+  echo "  curl -s localhost:8080/api/v1/networkpolicy/petclinic/api-allow/allow-graph | jq"
+}
+
 clean() {
-  kubectl delete namespace petclinic petclinic-staging petclinic-stress --ignore-not-found
+  kubectl delete namespace petclinic petclinic-staging petclinic-stress \
+    petclinic-monitoring --ignore-not-found
 }
 
 status() {
@@ -43,11 +55,12 @@ status() {
 }
 
 case "${PHASE}" in
-  base)   deploy_base ;;
-  phase1) deploy_phase1 ;;
-  clean)  clean ;;
-  status) status ;;
-  *) echo "Usage: $0 [base|phase1|status|clean]" >&2; exit 1 ;;
+  base)          deploy_base ;;
+  phase1)        deploy_phase1 ;;
+  phase3-netpol) deploy_phase3_netpol ;;
+  clean)         clean ;;
+  status)        status ;;
+  *) echo "Usage: $0 [base|phase1|phase3-netpol|status|clean]" >&2; exit 1 ;;
 esac
 
 echo "✓ '${PHASE}' done"

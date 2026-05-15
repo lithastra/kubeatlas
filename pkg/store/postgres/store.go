@@ -436,13 +436,21 @@ func (s *Store) NamespaceSubgraph(ctx context.Context, ns string) (*graph.Graph,
 	return &graph.Graph{Resources: resources, Edges: edges}, nil
 }
 
-// truncateAll wipes resources, edges, and the AGE graph contents
-// without dropping the schema. Test-only helper used by the
-// contract suite to give each sub-test a clean store while sharing
-// a single container.
+// truncateAll wipes resources, edges, the snapshot-history tables,
+// and the AGE graph contents without dropping the schema. Test-only
+// helper used by the contract suite to give each sub-test a clean
+// store while sharing a single container.
+//
+// resource_events / snapshot_meta are included so P3-T2 snapshot
+// contract sub-tests don't see events leaked from earlier sub-tests.
+// RESTART IDENTITY resets the BIGSERIAL counters so event IDs are
+// deterministic per sub-test.
 func (s *Store) truncateAll(ctx context.Context) error {
 	return s.withAGETx(ctx, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `TRUNCATE public.resources, public.edges`); err != nil {
+		if _, err := tx.Exec(ctx,
+			`TRUNCATE public.resources, public.edges,
+			          public.resource_events, public.snapshot_meta
+			 RESTART IDENTITY`); err != nil {
 			return fmt.Errorf("postgres.truncateAll: pg: %w", err)
 		}
 		const cypherClear = `

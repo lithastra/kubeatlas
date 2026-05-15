@@ -1,7 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { fetchJSON } from './client';
-import type { Level, ResourceDetailResponse, View } from './types';
+import type {
+  Level,
+  NetworkPolicyAllowGraphResponse,
+  NetworkPolicySelectedResponse,
+  ResourceDetailResponse,
+  View,
+} from './types';
 
 // Query params accepted by GET /api/v1alpha1/graph. Only `level` is
 // always required; the rest depend on which level is being requested.
@@ -66,6 +72,34 @@ export function useResource(p: ResourceParams) {
     queryKey: ['resource', p],
     queryFn: ({ signal }) => fetchJSON<ResourceDetailResponse>(resourceURL(p), { signal }),
     enabled,
+  });
+}
+
+// NetworkPolicy detail hooks (F-109 / P3-T1). Both fire only for an
+// actual NetworkPolicy resource — ResourcePage passes enabled=false
+// for every other kind so the hooks can be called unconditionally.
+
+function networkPolicyURL(namespace: string, name: string, sub: string): string {
+  return `${apiBase}/networkpolicy/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/${sub}`;
+}
+
+// useNetworkPolicySelected wraps GET /networkpolicy/{ns}/{name}/selected.
+export function useNetworkPolicySelected(namespace: string, name: string, enabled: boolean) {
+  return useQuery<NetworkPolicySelectedResponse>({
+    queryKey: ['networkpolicy-selected', namespace, name],
+    queryFn: ({ signal }) =>
+      fetchJSON<NetworkPolicySelectedResponse>(networkPolicyURL(namespace, name, 'selected'), { signal }),
+    enabled: enabled && Boolean(namespace && name),
+  });
+}
+
+// useNetworkPolicyAllowGraph wraps GET /networkpolicy/{ns}/{name}/allow-graph.
+export function useNetworkPolicyAllowGraph(namespace: string, name: string, enabled: boolean) {
+  return useQuery<NetworkPolicyAllowGraphResponse>({
+    queryKey: ['networkpolicy-allow-graph', namespace, name],
+    queryFn: ({ signal }) =>
+      fetchJSON<NetworkPolicyAllowGraphResponse>(networkPolicyURL(namespace, name, 'allow-graph'), { signal }),
+    enabled: enabled && Boolean(namespace && name),
   });
 }
 

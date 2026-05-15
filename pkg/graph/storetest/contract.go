@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
@@ -553,6 +554,166 @@ func Run(t *testing.T, factory Factory) {
 		}
 		if len(g.Resources) != 0 || len(g.Edges) != 0 {
 			t.Errorf("expected empty subgraph, got resources=%d edges=%d", len(g.Resources), len(g.Edges))
+		}
+	})
+
+	// ---------------------------------------------------------------
+	// P3-T2 snapshot history (F-111). AppendEvent / WriteSnapshotMeta
+	// / QueryEvents. Event counts stay well under the memory store's
+	// maxMemoryEvents (1000) ring-buffer cap so these cases hold for
+	// both the durable postgres backend and the bounded memory stub.
+	// ---------------------------------------------------------------
+
+	t.Run("QueryEvents empty store returns empty non-nil slice", func(t *testing.T) {
+		s := factory(t)
+		got, err := s.QueryEvents(context.Background(),
+			"", time.Unix(0, 0), time.Now().Add(time.Hour))
+		if err != nil {
+			t.Fatalf("QueryEvents: %v", err)
+		}
+		if got == nil {
+			t.Fatal("expected non-nil empty slice, got nil")
+		}
+		if len(got) != 0 {
+			t.Errorf("expected 0 events, got %d", len(got))
+		}
+	})
+
+	t.Run("AppendEvent then QueryEvents round-trips the event", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		ts := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+		ev := graph.ResourceEvent{
+			Timestamp:       ts,
+			Namespace:       "demo",
+			Kind:            "Deployment",
+			UID:             "uid-1",
+			Name:            "api",
+			EventType:       graph.EventTypeAdd,
+			ResourceVersion: "100",
+			Data:            map[string]any{"replicas": float64(3)},
+		}
+		if err := s.AppendEvent(ctx, ev); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+		got, err := s.QueryEvents(ctx, "demo", ts.Add(-time.Minute), ts.Add(time.Minute))
+		if err != nil {
+			t.Fatalf("QueryEvents: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("expected 1 event, got %d", len(got))
+		}
+		g := got[0]
+		if g.Kind != "Deployment" || g.Name != "api" || g.EventType != graph.EventTypeAdd {
+			t.Errorf("event round-trip mismatch: %+v", g)
+		}
+		if g.ID == 0 {
+			t.Error("store must assign a non-zero event ID")
+		}
+		// Data is a JSONB round-trip; the value must survive.
+		if g.Data["replicas"] != float64(3) {
+			t.Errorf("Data not preserved: %+v", g.Data)
+		}
+	})
+
+	t.Run("QueryEvents filters by namespace", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		ts := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+		for _, ns := range []string{"demo", "demo", "other"} {
+			if err := s.AppendEvent(ctx, graph.ResourceEvent{
+				Timestamp: ts, Namespace: ns, Kind: "Pod", Name: "p",
+				EventType: graph.EventTypeUpdate,
+			}); err != nil {
+				t.Fatalf("AppendEvent: %v", err)
+			}
+		}
+		demo, err := s.QueryEvents(ctx, "demo", ts.Add(-time.Minute), ts.Add(time.Minute))
+		if err != nil {
+			t.Fatalf("QueryEvents demo: %v", err)
+		}
+		if len(demo) != 2 {
+			t.Errorf("namespace=demo: got %d events, want 2", len(demo))
+		}
+		all, err := s.QueryEvents(ctx, "", ts.Add(-time.Minute), ts.Add(time.Minute))
+		if err != nil {
+			t.Fatalf("QueryEvents all: %v", err)
+		}
+		if len(all) != 3 {
+			t.Errorf("namespace='' (all): got %d events, want 3", len(all))
+		}
+	})
+
+	t.Run("QueryEvents filters by time window", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		base := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+		// Three events at T+0, T+10m, T+20m.
+		for i, off := range []time.Duration{0, 10 * time.Minute, 20 * time.Minute} {
+			if err := s.AppendEvent(ctx, graph.ResourceEvent{
+				Timestamp: base.Add(off), Namespace: "demo", Kind: "Pod",
+				Name: string(rune('a' + i)), EventType: graph.EventTypeAdd,
+			}); err != nil {
+				t.Fatalf("AppendEvent: %v", err)
+			}
+		}
+		// Window [T+5m, T+15m] should catch only the middle event.
+		got, err := s.QueryEvents(ctx, "demo", base.Add(5*time.Minute), base.Add(15*time.Minute))
+		if err != nil {
+			t.Fatalf("QueryEvents: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("window [T+5m,T+15m]: got %d events, want 1", len(got))
+		}
+		if got[0].Name != "b" {
+			t.Errorf("expected the T+10m event 'b', got %q", got[0].Name)
+		}
+	})
+
+	t.Run("QueryEvents returns events oldest-first", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		base := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
+		// Insert out of chronological order; QueryEvents must sort.
+		for _, off := range []time.Duration{20 * time.Minute, 0, 10 * time.Minute} {
+			if err := s.AppendEvent(ctx, graph.ResourceEvent{
+				Timestamp: base.Add(off), Namespace: "demo", Kind: "Pod",
+				Name: "p", EventType: graph.EventTypeAdd,
+			}); err != nil {
+				t.Fatalf("AppendEvent: %v", err)
+			}
+		}
+		got, err := s.QueryEvents(ctx, "demo", base.Add(-time.Hour), base.Add(time.Hour))
+		if err != nil {
+			t.Fatalf("QueryEvents: %v", err)
+		}
+		if len(got) != 3 {
+			t.Fatalf("got %d events, want 3", len(got))
+		}
+		for i := 1; i < len(got); i++ {
+			if got[i].Timestamp.Before(got[i-1].Timestamp) {
+				t.Errorf("events not oldest-first at index %d: %v before %v",
+					i, got[i].Timestamp, got[i-1].Timestamp)
+			}
+		}
+	})
+
+	t.Run("WriteSnapshotMeta accepts each trigger kind", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		for _, trig := range []graph.SnapshotTrigger{
+			graph.SnapshotTriggerPeriodic,
+			graph.SnapshotTriggerManual,
+			graph.SnapshotTriggerStartup,
+		} {
+			if err := s.WriteSnapshotMeta(ctx, graph.SnapshotMeta{
+				ResourceCount: 42,
+				EdgeCount:     17,
+				DurationMS:    123,
+				Trigger:       trig,
+			}); err != nil {
+				t.Errorf("WriteSnapshotMeta(%s): %v", trig, err)
+			}
 		}
 	})
 }

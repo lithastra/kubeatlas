@@ -3,10 +3,21 @@ package memory
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
+
+// maxMemoryEvents bounds the snapshot-history ring buffer. Snapshots
+// are a Tier 2 feature (invariant 2.2); the memory store keeps only
+// this small window so upper-layer code (the P3-T3 snapshot writer)
+// can be unit-tested against the memory backend without standing up
+// PostgreSQL. It is deliberately NOT a Tier 1 snapshot feature — the
+// /api/v1/snapshots endpoints return 503 on Tier 1, and a 1000-event
+// lossy buffer is useless as real history.
+const maxMemoryEvents = 1000
 
 // Store is the in-memory implementation of graph.GraphStore.
 //
@@ -18,6 +29,15 @@ type Store struct {
 	resources map[string]graph.Resource         // id -> Resource
 	outgoing  map[string]map[edgeKey]graph.Edge // from -> (to, type) -> Edge
 	incoming  map[string]map[edgeKey]graph.Edge // to   -> (from, type) -> Edge
+
+	// Snapshot-history ring buffers (test-support stub — see
+	// maxMemoryEvents). events keeps the most recent maxMemoryEvents
+	// ResourceEvents; snapshotMeta keeps markers under the same cap.
+	// eventSeq is the monotonic ID source; it keeps climbing even as
+	// the oldest events are dropped.
+	events       []graph.ResourceEvent
+	snapshotMeta []graph.SnapshotMeta
+	eventSeq     int64
 }
 
 // edgeKey identifies an edge within an adjacency map. The (other-end,
@@ -298,6 +318,75 @@ func (s *Store) NamespaceSubgraph(_ context.Context, ns string) (*graph.Graph, e
 		}
 	}
 	return g, nil
+}
+
+// AppendEvent records one ResourceEvent in the bounded ring buffer.
+// The store assigns a monotonic ID and, when the caller leaves it
+// zero, a now() Timestamp. When the buffer is full the oldest event
+// is dropped — lossy by design (see maxMemoryEvents).
+func (s *Store) AppendEvent(_ context.Context, e graph.ResourceEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventSeq++
+	e.ID = s.eventSeq
+	if e.Timestamp.IsZero() {
+		e.Timestamp = time.Now()
+	}
+	s.events = append(s.events, e)
+	if len(s.events) > maxMemoryEvents {
+		// Drop the oldest. Re-slice onto a fresh backing array so the
+		// dropped event isn't pinned in memory by the slice header.
+		s.events = append([]graph.ResourceEvent(nil), s.events[len(s.events)-maxMemoryEvents:]...)
+	}
+	return nil
+}
+
+// WriteSnapshotMeta records one SnapshotMeta marker, bounded under
+// the same cap as the event ring buffer.
+func (s *Store) WriteSnapshotMeta(_ context.Context, m graph.SnapshotMeta) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.eventSeq++
+	m.ID = s.eventSeq
+	if m.Timestamp.IsZero() {
+		m.Timestamp = time.Now()
+	}
+	s.snapshotMeta = append(s.snapshotMeta, m)
+	if len(s.snapshotMeta) > maxMemoryEvents {
+		s.snapshotMeta = append([]graph.SnapshotMeta(nil), s.snapshotMeta[len(s.snapshotMeta)-maxMemoryEvents:]...)
+	}
+	return nil
+}
+
+// QueryEvents returns the buffered events in [from, to], oldest
+// first. An empty namespace matches every namespace. Results are
+// copied so callers cannot mutate the buffer.
+//
+// The ring buffer is in append order, which is usually but not
+// always chronological (a caller may AppendEvent with an explicit
+// out-of-order Timestamp). The result is sorted by (Timestamp, ID)
+// so the oldest-first contract holds regardless — matching the
+// postgres backend's ORDER BY ts ASC, id ASC.
+func (s *Store) QueryEvents(_ context.Context, namespace string, from, to time.Time) ([]graph.ResourceEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]graph.ResourceEvent, 0)
+	for _, e := range s.events {
+		if namespace != "" && e.Namespace != namespace {
+			continue
+		}
+		if e.Timestamp.Before(from) || e.Timestamp.After(to) {
+			continue
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].Timestamp.Equal(out[j].Timestamp) {
+			return out[i].Timestamp.Before(out[j].Timestamp)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
 }
 
 func edgeTypeSet(ts []graph.EdgeType) map[graph.EdgeType]bool {
