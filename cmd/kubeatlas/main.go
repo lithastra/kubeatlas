@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"log/slog"
 
@@ -180,9 +181,9 @@ func loadStoreConfig() store.Config {
 	return cfg
 }
 
-// loadSnapshotConfig reads the F-111 snapshot-writer settings from
-// the environment. The Helm chart sets these when snapshots.enabled
-// is true; the schema in values.schema.json rejects the
+// loadSnapshotConfig reads the F-111 snapshot settings from the
+// environment. The Helm chart sets these when snapshots.enabled is
+// true; the schema in values.schema.json rejects the
 // enabled-without-persistence combination so a Tier 1 install never
 // reaches this code with enabled=true (invariant 2.2).
 //
@@ -191,7 +192,11 @@ func loadStoreConfig() store.Config {
 //	KUBEATLAS_SNAPSHOTS_ENABLED     "true" enables the writer
 //	KUBEATLAS_SNAPSHOTS_QUEUE_SIZE  int; 0 / unset -> snapshot.DefaultQueueSize
 //	KUBEATLAS_SNAPSHOTS_WORKERS     int; 0 / unset -> snapshot.DefaultWorkers
-func loadSnapshotConfig() (enabled bool, cfg snapshot.Config) {
+//	KUBEATLAS_SNAPSHOTS_RETENTION   "7d" / "24h" / ...; unset -> 7d
+//
+// A malformed retention string is fatal — a typo'd Helm value
+// should fail loudly at startup, not silently default.
+func loadSnapshotConfig() (enabled bool, cfg snapshot.Config, retention time.Duration) {
 	enabled = os.Getenv("KUBEATLAS_SNAPSHOTS_ENABLED") == "true"
 	if v, err := strconv.Atoi(os.Getenv("KUBEATLAS_SNAPSHOTS_QUEUE_SIZE")); err == nil {
 		cfg.QueueSize = v
@@ -199,7 +204,11 @@ func loadSnapshotConfig() (enabled bool, cfg snapshot.Config) {
 	if v, err := strconv.Atoi(os.Getenv("KUBEATLAS_SNAPSHOTS_WORKERS")); err == nil {
 		cfg.Workers = v
 	}
-	return enabled, cfg
+	retention, err := snapshot.ParseRetention(os.Getenv("KUBEATLAS_SNAPSHOTS_RETENTION"))
+	if err != nil {
+		log.Fatalf("KUBEATLAS_SNAPSHOTS_RETENTION: %v", err)
+	}
+	return enabled, cfg, retention
 }
 
 func main() {
@@ -385,7 +394,7 @@ func runWatch(rulePackExtras []string) {
 	// log and skip rather than spin up a writer behind the lossy
 	// Tier 1 ring buffer (invariant 2.2).
 	var snapWriter *snapshot.Writer
-	if snapEnabled, snapCfg := loadSnapshotConfig(); snapEnabled {
+	if snapEnabled, snapCfg, snapRetention := loadSnapshotConfig(); snapEnabled {
 		if storeCfg.Backend != store.BackendPostgres {
 			slog.Warn("KUBEATLAS_SNAPSHOTS_ENABLED set but backend is not postgres; " +
 				"snapshots require Tier 2 — skipping snapshot writer (invariant 2.2)")
@@ -394,6 +403,13 @@ func runWatch(rulePackExtras []string) {
 			snapWriter.Start(ctx)
 			slog.Info("snapshot writer started",
 				"queueSize", snapCfg.QueueSize, "workers", snapCfg.Workers)
+
+			// Retention worker: hourly prune of resource_events rows
+			// older than the retention window. Best-effort background
+			// sweep — runs in its own goroutine, stopped by ctx; not
+			// one of the three critical components below.
+			go snapshot.NewRetainer(graphStore, snapRetention).Start(ctx)
+			slog.Info("snapshot retention worker started", "retention", snapRetention)
 		}
 	}
 

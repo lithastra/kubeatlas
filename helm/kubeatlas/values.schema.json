@@ -327,7 +327,12 @@
       "properties": {
         "enabled":   { "type": "boolean" },
         "queueSize": { "type": "integer", "minimum": 1 },
-        "workers":   { "type": "integer", "minimum": 1, "maximum": 64 }
+        "workers":   { "type": "integer", "minimum": 1, "maximum": 64 },
+        "retention": {
+          "description": "How long resource_events rows are kept. Day suffix (\"7d\") or any Go duration (\"24h\").",
+          "type": "string",
+          "pattern": "^[0-9]+d$|^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        }
       }
     },
     "extraLabels": { "type": "object" }

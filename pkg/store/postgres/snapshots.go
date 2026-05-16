@@ -95,6 +95,49 @@ func (s *Store) WriteSnapshotMeta(ctx context.Context, m graph.SnapshotMeta) err
 	return nil
 }
 
+// pruneBatchSize bounds how many resource_events rows a single
+// DELETE statement removes. Retention prunes can span millions of
+// rows; an unbounded DELETE would hold a lock on the whole table
+// for the duration. 10K keeps each statement short while still
+// draining a large backlog in a handful of iterations.
+const pruneBatchSize = 10000
+
+// PruneEventsBefore deletes resource_events rows older than cutoff
+// in pruneBatchSize-row batches, looping until none remain. Returns
+// the total deleted.
+//
+// The batch DELETE uses a ctid sub-select (Postgres DELETE has no
+// LIMIT clause): each statement removes at most pruneBatchSize of
+// the matching rows. idx_events_ts from migrate/005 makes the
+// `ts < cutoff` scan an index range scan.
+func (s *Store) PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	const sql = `
+		DELETE FROM resource_events
+		WHERE ctid IN (
+			SELECT ctid FROM resource_events
+			WHERE ts < $1
+			LIMIT $2
+		)
+	`
+	var total int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+		tag, err := s.pool.Exec(ctx, sql, cutoff, pruneBatchSize)
+		if err != nil {
+			return total, fmt.Errorf("postgres.PruneEventsBefore: delete batch: %w", err)
+		}
+		n := tag.RowsAffected()
+		total += n
+		if n < pruneBatchSize {
+			// Last batch — fewer rows than the cap means the
+			// matching set is exhausted.
+			return total, nil
+		}
+	}
+}
+
 // QueryEvents returns resource_events rows in [from, to], oldest
 // first. An empty namespace matches every namespace. The
 // idx_events_ns_ts / idx_events_ts indexes from migrate/005 cover

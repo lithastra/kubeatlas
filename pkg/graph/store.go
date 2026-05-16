@@ -96,6 +96,17 @@ type GraphStore interface {
 	// in [from, to], ordered oldest-first. An empty namespace
 	// matches every namespace; a non-empty namespace filters to it.
 	QueryEvents(ctx context.Context, namespace string, from, to time.Time) ([]ResourceEvent, error)
+
+	// PruneEventsBefore deletes every resource_events row older than
+	// cutoff and returns the number deleted. The F-111 retention
+	// worker calls it on a fixed cadence so the event stream does
+	// not grow without bound.
+	//
+	// Implementations MUST delete in bounded batches — a single
+	// unbounded DELETE on a multi-million-row table locks it for
+	// the duration. The call returns only when every expired row
+	// is gone (or ctx is cancelled).
+	PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 // NamespacePair keys the result of CrossNamespaceEdgeCounts. From and

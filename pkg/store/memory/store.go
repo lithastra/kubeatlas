@@ -389,6 +389,27 @@ func (s *Store) QueryEvents(_ context.Context, namespace string, from, to time.T
 	return out, nil
 }
 
+// PruneEventsBefore drops ring-buffer events older than cutoff and
+// returns the count removed. No batching is needed — the buffer is
+// capped at maxMemoryEvents, so this is always a small in-memory
+// filter. (Postgres batches because its table is unbounded; the
+// memory store is bounded by construction.)
+func (s *Store) PruneEventsBefore(_ context.Context, cutoff time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.events[:0:0]
+	var deleted int64
+	for _, e := range s.events {
+		if e.Timestamp.Before(cutoff) {
+			deleted++
+			continue
+		}
+		kept = append(kept, e)
+	}
+	s.events = kept
+	return deleted, nil
+}
+
 func edgeTypeSet(ts []graph.EdgeType) map[graph.EdgeType]bool {
 	if len(ts) == 0 {
 		return nil
