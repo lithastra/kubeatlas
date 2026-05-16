@@ -1,0 +1,66 @@
+# Krew plugin manifest for `kubectl atlas` (F-116 / P3-T10).
+#
+# This is the manifest submitted to https://github.com/kubernetes-sigs/krew-index
+# so operators can `kubectl krew install atlas`. The submission PR is
+# task P3-T16 (M9); this file is the prepared source.
+#
+# `version` and the per-platform `uri` / `sha256` are filled in at
+# release time — goreleaser builds the kubectl-atlas_<ver>_<os>_<arch>
+# archives (.goreleaser.yml) and the checksums.txt that supplies the
+# sha256 values. Until the first tagged release they are placeholders.
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: atlas
+spec:
+  version: v0.0.0
+  homepage: https://github.com/lithastra/kubeatlas
+  shortDescription: Open the KubeAtlas UI for a Kubernetes resource
+  description: |
+    kubectl-atlas opens the KubeAtlas web UI at the page for a
+    resource, namespace, or the whole cluster — a one-command jump
+    from the terminal to the dependency graph.
+
+        kubectl atlas deployment api -n petclinic
+        kubectl atlas namespace petclinic
+        kubectl atlas cluster
+
+    The UI base URL is resolved from --server, then the KUBEATLAS_URL
+    environment variable, then a kubectl port-forward to the
+    in-cluster KubeAtlas Service. The plugin is an entry point only;
+    it embeds no server code and installs nothing in the cluster.
+  caveats: |
+    Requires KubeAtlas to be installed in the cluster (or reachable
+    via --server / KUBEATLAS_URL). See
+    https://docs.kubeatlas.lithastra.com for installation.
+  platforms:
+    - selector:
+        matchLabels: { os: linux, arch: amd64 }
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_linux_amd64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-atlas
+    - selector:
+        matchLabels: { os: linux, arch: arm64 }
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_linux_arm64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-atlas
+    - selector:
+        matchLabels: { os: darwin, arch: amd64 }
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_darwin_amd64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-atlas
+    - selector:
+        matchLabels: { os: darwin, arch: arm64 }
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_darwin_arm64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-atlas
+    - selector:
+        matchLabels: { os: windows, arch: amd64 }
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_windows_amd64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-atlas.exe
+    - selector:
+        matchLabels: { os: windows, arch: arm64 }
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_windows_arm64.tar.gz
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      bin: kubectl-atlas.exe

@@ -107,6 +107,29 @@ go run ./cmd/kubeatlas -once -level=namespace -namespace=petclinic > /tmp/ns.jso
 
 See [the developer guide](https://docs.kubeatlas.lithastra.com/developer-guide).
 
+## kubectl plugin
+
+`kubectl-atlas` is a small plugin that jumps from the terminal to the
+KubeAtlas UI page for a resource:
+
+```bash
+kubectl atlas deployment api -n petclinic   # open the resource page
+kubectl atlas namespace petclinic           # open the namespace view
+kubectl atlas cluster                       # open the cluster view
+```
+
+It finds the UI from `--server`, then `KUBEATLAS_URL`, then a
+`kubectl port-forward` to the in-cluster Service. Install the latest
+release binary onto your `PATH`:
+
+```bash
+curl -L https://github.com/lithastra/kubeatlas/releases/latest/download/kubectl-atlas_$(uname -s)_$(uname -m).tar.gz \
+  | tar -xz kubectl-atlas && sudo install kubectl-atlas /usr/local/bin/
+```
+
+Once `kubectl krew` indexing lands (M9) it will also be installable
+with `kubectl krew install atlas`.
+
 ## Contributing
 
 We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the

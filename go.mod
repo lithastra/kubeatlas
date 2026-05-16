@@ -10,7 +10,9 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/open-policy-agent/opa v1.16.1
 	github.com/opencontainers/image-spec v1.1.1
+	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/sigstore/sigstore-go v1.1.4
+	github.com/spf13/cobra v1.10.2
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -136,7 +138,6 @@ require (
 	github.com/sigstore/sigstore v1.10.0 // indirect
 	github.com/sigstore/timestamp-authority/v2 v2.0.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.3 // indirect

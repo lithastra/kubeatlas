@@ -33,6 +33,21 @@ builds:
       - -X github.com/lithastra/kubeatlas/pkg/version.Commit={{.Commit}}
       - -X github.com/lithastra/kubeatlas/pkg/version.Date={{.Date}}
 
+  # kubectl-atlas is the F-116 kubectl plugin — a client-side entry
+  # point that opens the KubeAtlas UI. Unlike the server binary it
+  # also ships for windows: the plugin runs on the operator's
+  # workstation, not in-cluster. No embed_web tag (it has no UI to
+  # embed) and no version ldflags (it imports no pkg/version).
+  - id: kubectl-atlas
+    main: ./cmd/kubectl-atlas
+    binary: kubectl-atlas
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+
 archives:
   - id: kubeatlas
     ids: [kubeatlas]
@@ -41,6 +56,15 @@ archives:
       - LICENSE
       - README.md
       - docs/docs/quick-start.md
+
+  # A separate archive per platform for the kubectl plugin — the
+  # Krew manifest (plugins/atlas.yaml) points one entry at each.
+  - id: kubectl-atlas
+    ids: [kubectl-atlas]
+    name_template: "kubectl-atlas_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
 
 checksum:
   name_template: 'checksums.txt'
