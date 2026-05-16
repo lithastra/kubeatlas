@@ -397,7 +397,11 @@ func runWatch(rulePackExtras []string) {
 	// log and skip rather than spin up a writer behind the lossy
 	// Tier 1 ring buffer (invariant 2.2).
 	var snapWriter *snapshot.Writer
-	if snapEnabled, snapCfg, snapRetention := loadSnapshotConfig(); snapEnabled {
+	// snapRetention is lifted out of the if-init scope: the API
+	// server below also needs it (WithSnapshots caps the diff
+	// window at the retention limit).
+	snapEnabled, snapCfg, snapRetention := loadSnapshotConfig()
+	if snapEnabled {
 		if storeCfg.Backend != store.BackendPostgres {
 			slog.Warn("KUBEATLAS_SNAPSHOTS_ENABLED set but backend is not postgres; " +
 				"snapshots require Tier 2 — skipping snapshot writer (invariant 2.2)")
@@ -434,7 +438,9 @@ func runWatch(rulePackExtras []string) {
 		api.WithRegoMetrics(regoEngine.Metrics(), regoEngine.ModuleCount),
 	}
 	if snapWriter != nil {
-		apiOpts = append(apiOpts, api.WithSnapshotMetrics(snapWriter.Metrics(), snapWriter.QueueDepth))
+		apiOpts = append(apiOpts,
+			api.WithSnapshotMetrics(snapWriter.Metrics(), snapWriter.QueueDepth),
+			api.WithSnapshots(snapRetention))
 	}
 	srv := api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(), apiOpts...)
 

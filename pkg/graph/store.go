@@ -92,6 +92,10 @@ type GraphStore interface {
 	// store assigns SnapshotMeta.ID and (when zero) Timestamp.
 	WriteSnapshotMeta(ctx context.Context, m SnapshotMeta) error
 
+	// ListSnapshotMeta returns the recorded full-sync markers,
+	// most-recent first. Powers GET /api/v1/snapshots.
+	ListSnapshotMeta(ctx context.Context) ([]SnapshotMeta, error)
+
 	// QueryEvents returns every ResourceEvent whose Timestamp falls
 	// in [from, to], ordered oldest-first. An empty namespace
 	// matches every namespace; a non-empty namespace filters to it.

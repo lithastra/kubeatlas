@@ -138,6 +138,40 @@ func (s *Store) PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64,
 	}
 }
 
+// ListSnapshotMeta returns every snapshot_meta row, most-recent
+// first. snapshot_meta is small (one row per full-sync tick — a
+// few thousand a week), so this is an unbounded SELECT; if it ever
+// needs paging the API layer adds a LIMIT.
+func (s *Store) ListSnapshotMeta(ctx context.Context) ([]graph.SnapshotMeta, error) {
+	const sql = `
+		SELECT id, ts, cluster_id, resource_count, edge_count, duration_ms, trigger
+		FROM snapshot_meta
+		ORDER BY ts DESC, id DESC
+	`
+	rows, err := s.pool.Query(ctx, sql)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.ListSnapshotMeta: query: %w", err)
+	}
+	defer rows.Close()
+	out := make([]graph.SnapshotMeta, 0)
+	for rows.Next() {
+		var (
+			m    graph.SnapshotMeta
+			trig string
+		)
+		if err := rows.Scan(&m.ID, &m.Timestamp, &m.ClusterID,
+			&m.ResourceCount, &m.EdgeCount, &m.DurationMS, &trig); err != nil {
+			return nil, fmt.Errorf("postgres.ListSnapshotMeta: scan: %w", err)
+		}
+		m.Trigger = graph.SnapshotTrigger(trig)
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres.ListSnapshotMeta: rows: %w", err)
+	}
+	return out, nil
+}
+
 // QueryEvents returns resource_events rows in [from, to], oldest
 // first. An empty namespace matches every namespace. The
 // idx_events_ns_ts / idx_events_ts indexes from migrate/005 cover

@@ -389,6 +389,23 @@ func (s *Store) QueryEvents(_ context.Context, namespace string, from, to time.T
 	return out, nil
 }
 
+// ListSnapshotMeta returns the buffered snapshot markers,
+// most-recent first. Results are copied so callers cannot mutate
+// the buffer.
+func (s *Store) ListSnapshotMeta(_ context.Context) ([]graph.SnapshotMeta, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]graph.SnapshotMeta, len(s.snapshotMeta))
+	copy(out, s.snapshotMeta)
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].Timestamp.Equal(out[j].Timestamp) {
+			return out[i].Timestamp.After(out[j].Timestamp)
+		}
+		return out[i].ID > out[j].ID
+	})
+	return out, nil
+}
+
 // PruneEventsBefore drops ring-buffer events older than cutoff and
 // returns the count removed. No batching is needed — the buffer is
 // capped at maxMemoryEvents, so this is always a small in-memory

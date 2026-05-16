@@ -54,6 +54,16 @@ type Server struct {
 	snapshotMetrics    *snapshot.Metrics
 	snapshotQueueDepth func() int
 
+	// snapshotsEnabled + snapshotRetention drive the F-111
+	// /api/v1/snapshots endpoints. The API server cannot tell its
+	// store's tier on its own, so main.go calls WithSnapshots only
+	// when the snapshot feature is actually active (Tier 2 +
+	// snapshots.enabled). When false the snapshot handlers return
+	// 503 (invariant 2.2: no Tier 1 snapshots). snapshotRetention
+	// caps how wide a diff window the diff endpoint accepts.
+	snapshotsEnabled  bool
+	snapshotRetention time.Duration
+
 	// webFS, when non-nil, is mounted at "/" to serve the embedded
 	// Web UI bundle. Tests leave it nil so the catch-all static
 	// route stays inactive.
@@ -97,6 +107,18 @@ func WithSnapshotMetrics(m *snapshot.Metrics, queueDepth func() int) ServerOptio
 	return func(s *Server) {
 		s.snapshotMetrics = m
 		s.snapshotQueueDepth = queueDepth
+	}
+}
+
+// WithSnapshots marks the F-111 snapshot feature active and sets
+// the retention window. main.go calls it only on a Tier 2 install
+// with snapshots.enabled; without it the /api/v1/snapshots
+// endpoints return 503 (invariant 2.2). retention caps the diff
+// window — a diff wider than what the store retains is rejected.
+func WithSnapshots(retention time.Duration) ServerOption {
+	return func(s *Server) {
+		s.snapshotsEnabled = true
+		s.snapshotRetention = retention
 	}
 }
 

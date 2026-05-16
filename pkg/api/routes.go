@@ -196,6 +196,27 @@ func (s *Server) Routes() []RouteInfo {
 			handler:  s.handleOrphans,
 		},
 		{
+			Method:      "GET",
+			Pattern:     "/api/v1alpha1/snapshots",
+			Summary:     "List recorded full-sync snapshot markers",
+			Description: "Returns every snapshot_meta marker, most-recent first. Tier 2 only — a Tier 1 install (or snapshots.enabled=false) returns 503. P3-T5 (F-111).",
+			Response:    ResponseSpec{Description: "Snapshot markers", SchemaRef: "SnapshotListResponse"},
+			handler:     s.handleSnapshots,
+		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1alpha1/snapshots/diff",
+			Summary:     "Resource changes across a time window",
+			Description: "Returns resources added / removed / modified between `from` and `to`. Times accept 'now', a duration ('5m'/'1h'/'7d', read as ago), or RFC3339. The window may not exceed the retention limit. Tier 2 only — Tier 1 returns 503. P3-T5 (F-111).",
+			QueryParams: []ParamSpec{
+				{Name: "from", Required: true, Description: "Window start: 'now', a duration ('5m'), or RFC3339", Type: "string"},
+				{Name: "to", Description: "Window end; defaults to 'now'", Type: "string"},
+				{Name: "namespace", Description: "Restrict the diff to one namespace; empty = whole cluster", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Diff result", SchemaRef: "DiffResult"},
+			handler:  s.handleSnapshotDiff,
+		},
+		{
 			Method:      "POST",
 			Pattern:     "/api/_internal/snapshot/trigger",
 			Summary:     "Record a full-sync snapshot marker",
