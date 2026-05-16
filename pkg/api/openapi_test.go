@@ -81,7 +81,12 @@ func TestOpenAPI_PathsMatchRegisteredRoutes(t *testing.T) {
 	}
 }
 
-func TestOpenAPI_EveryRouteHasAGetOperation(t *testing.T) {
+func TestOpenAPI_EveryRouteHasAnOperation(t *testing.T) {
+	// Every path in the spec must carry at least one HTTP-method
+	// operation object. Most routes are GET; P3-T4 added the first
+	// POST (/api/_internal/snapshot/trigger), so this no longer
+	// hard-codes "get".
+	httpMethods := []string{"get", "post", "put", "patch", "delete"}
 	spec := pullSpec(t)
 	paths, _ := spec["paths"].(map[string]any)
 	for path, raw := range paths {
@@ -90,8 +95,15 @@ func TestOpenAPI_EveryRouteHasAGetOperation(t *testing.T) {
 			t.Errorf("path %q: not an object", path)
 			continue
 		}
-		if _, ok := entry["get"].(map[string]any); !ok {
-			t.Errorf("path %q: missing 'get' operation", path)
+		found := false
+		for _, m := range httpMethods {
+			if _, ok := entry[m].(map[string]any); ok {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("path %q: no HTTP-method operation", path)
 		}
 	}
 }

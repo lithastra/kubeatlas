@@ -271,6 +271,10 @@ snapshots:
   # "30d") or any Go duration ("24h", "168h"). A typo fails the
   # pod at startup rather than silently defaulting.
   retention: 7d
+  # Cron schedule for the periodic full-sync snapshot CronJob.
+  # Each tick records one snapshot_meta marker. Standard 5-field
+  # cron syntax.
+  fullSyncSchedule: "*/5 * * * *"
 
 # Extra labels applied to every resource the chart renders.
 extraLabels: {}

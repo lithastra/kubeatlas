@@ -196,6 +196,17 @@ func (s *Server) Routes() []RouteInfo {
 			handler:  s.handleOrphans,
 		},
 		{
+			Method:      "POST",
+			Pattern:     "/api/_internal/snapshot/trigger",
+			Summary:     "Record a full-sync snapshot marker",
+			Description: "Writes one snapshot_meta row anchoring the diff endpoint to a known full-sync point. Internal: served only on the ClusterIP Service, never exposed through Ingress. The F-111 CronJob is the intended caller. P3-T4 (F-111).",
+			QueryParams: []ParamSpec{
+				{Name: "trigger", Description: "Marker kind: periodic (CronJob) or manual (operator). Defaults to manual.", Type: "string", Enum: []string{"periodic", "manual"}},
+			},
+			Response: ResponseSpec{Description: "Snapshot marker recorded", SchemaRef: "SnapshotTriggerResponse"},
+			handler:  s.handleSnapshotTrigger,
+		},
+		{
 			Method:      "GET",
 			Pattern:     "/api/v1alpha1/networkpolicy/{namespace}/{name}/selected",
 			Summary:     "Pods a NetworkPolicy's podSelector selects",
