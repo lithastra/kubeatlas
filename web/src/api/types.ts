@@ -86,6 +86,30 @@ export interface SearchResponse {
   matches: Resource[];
   total: number;
   truncated: boolean;
+  // Present only when search ran as an unindexed Tier 1 linear scan.
+  warning?: string;
+}
+
+// One (value, frequency) pair within a LabelStat (F-114).
+export interface LabelValue {
+  value: string;
+  count: number;
+}
+
+// Per-key summary from GET /api/v1/labels: the label key, how many
+// resources carry it, and its most common values. `values` is capped
+// server-side, so `valueCount` may exceed `values.length`.
+export interface LabelStat {
+  key: string;
+  resourceCount: number;
+  valueCount: number;
+  values?: LabelValue[];
+}
+
+// Body of GET /api/v1/labels (F-114).
+export interface LabelsResponse {
+  labels: LabelStat[];
+  count: number;
 }
 
 // Body of GET /api/v1/networkpolicy/{ns}/{name}/selected — the Pods

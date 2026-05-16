@@ -16,6 +16,10 @@ export interface GraphParams {
   namespace?: string;
   kind?: string;
   name?: string;
+  // F-114 label filter. Each key/value becomes a `label.<key>=<value>`
+  // query param; the server AND-combines them. Honoured at cluster
+  // and namespace level.
+  labels?: Record<string, string>;
 }
 
 const apiBase = '/api/v1alpha1';
@@ -25,6 +29,9 @@ function graphURL(p: GraphParams): string {
   if (p.namespace) q.set('namespace', p.namespace);
   if (p.kind) q.set('kind', p.kind);
   if (p.name) q.set('name', p.name);
+  for (const [k, v] of Object.entries(p.labels ?? {})) {
+    if (k && v) q.set(`label.${k}`, v);
+  }
   return `${apiBase}/graph?${q.toString()}`;
 }
 

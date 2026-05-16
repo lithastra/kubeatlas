@@ -38,6 +38,10 @@
     "namespace": {
       "label": "Namespace",
       "all": "All namespaces"
+    },
+    "label": {
+      "key": "Label key",
+      "value": "Value"
     }
   },
   "action": {
