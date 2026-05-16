@@ -85,6 +85,18 @@ spec:
             # out of the rendered Deployment manifest.
             - name: PGCONN
               value: "postgres://$(PGUSER):$(PGPASSWORD)@$(PGHOST):$(PGPORT)/$(PGDATABASE)?sslmode=$(PGSSLMODE)"
+            {{- if .Values.snapshots.enabled }}
+            # F-111 snapshot writer (P3-T3). values.schema.json
+            # guarantees snapshots.enabled implies persistence.enabled
+            # (invariant 2.2), so these only render alongside the PG
+            # env above — the writer needs the Tier 2 event table.
+            - name: KUBEATLAS_SNAPSHOTS_ENABLED
+              value: "true"
+            - name: KUBEATLAS_SNAPSHOTS_QUEUE_SIZE
+              value: {{ .Values.snapshots.queueSize | quote }}
+            - name: KUBEATLAS_SNAPSHOTS_WORKERS
+              value: {{ .Values.snapshots.workers | quote }}
+            {{- end }}
           {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:

@@ -247,7 +247,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	writePrometheus(w, s.readiness, s.metrics, s.regoMetrics, s.regoModuleCount)
+	writePrometheus(w, s.readiness, s.metrics, s.regoMetrics, s.regoModuleCount,
+		s.snapshotMetrics, s.snapshotQueueDepth)
 }
 
 // pathParts pulls (namespace, kind, name) out of r.PathValue calls. The

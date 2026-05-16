@@ -247,5 +247,25 @@ rulePacks:
   #       - oci://ghcr.io/lithastra/rules/argo:0.2.0
   extras: []
 
+# Historical snapshots (F-111 / Tier 2 only).
+#
+# When enabled, KubeAtlas records every resource add/update/delete
+# into an append-only PostgreSQL event stream, so the diff endpoint
+# can answer "what changed in the last 5 minutes". The writer is
+# async — it never blocks the informer's hot path.
+#
+# Requires persistence.enabled=true: the event stream is a Tier 2
+# table. values.schema.json rejects snapshots.enabled=true without
+# persistence.enabled=true. The memory backend's small ring buffer
+# is a test stub, not a Tier 1 feature (guide invariant 2.2).
+snapshots:
+  enabled: false
+  # Writer queue capacity. The informer enqueues here; worker
+  # goroutines drain into PG. Overflow (oldest event dropped) only
+  # happens under sustained burst beyond what the workers absorb.
+  queueSize: 10000
+  # Concurrent writer goroutines draining the queue into PostgreSQL.
+  workers: 4
+
 # Extra labels applied to every resource the chart renders.
 extraLabels: {}

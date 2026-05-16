@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
+	"github.com/lithastra/kubeatlas/pkg/snapshot"
 )
 
 // metricsCounter tracks HTTP request counts by (method, status). It's
@@ -55,7 +56,7 @@ func (m *metricsCounter) snapshot() map[counterKey]uint64 {
 //
 // Write errors are ignored: a hung-up scraper isn't something /metrics
 // can do anything useful about.
-func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int) {
+func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int) {
 	p := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) }
 
 	p("# HELP kubeatlas_goroutines Number of currently running goroutines.\n")
@@ -115,5 +116,27 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, 
 		p("# HELP kubeatlas_rego_eval_panic_total Rego evaluations whose underlying OPA call panicked.\n")
 		p("# TYPE kubeatlas_rego_eval_panic_total counter\n")
 		p("kubeatlas_rego_eval_panic_total %d\n", s.EvalPanics)
+	}
+
+	// Phase 3 F-111 snapshot writer block — emitted only when main.go
+	// wired WithSnapshotMetrics, i.e. on a Tier 2 install with
+	// snapshots.enabled. A Tier 1 / snapshots-off scrape stays free
+	// of this block.
+	if snapMetrics != nil {
+		s := snapMetrics.Snapshot()
+		p("# HELP kubeatlas_snapshot_events_processed_total Resource events durably written to the snapshot stream.\n")
+		p("# TYPE kubeatlas_snapshot_events_processed_total counter\n")
+		p("kubeatlas_snapshot_events_processed_total %d\n", s.EventsProcessed)
+		p("# HELP kubeatlas_snapshot_write_failed_total Events dropped after the per-event retry budget was exhausted.\n")
+		p("# TYPE kubeatlas_snapshot_write_failed_total counter\n")
+		p("kubeatlas_snapshot_write_failed_total %d\n", s.WriteFailed)
+		p("# HELP kubeatlas_snapshot_queue_drop_total Events dropped at enqueue because the writer queue was full.\n")
+		p("# TYPE kubeatlas_snapshot_queue_drop_total counter\n")
+		p("kubeatlas_snapshot_queue_drop_total %d\n", s.QueueDropped)
+	}
+	if snapQueueDepth != nil {
+		p("# HELP kubeatlas_snapshot_queue_depth Events currently buffered in the snapshot writer queue.\n")
+		p("# TYPE kubeatlas_snapshot_queue_depth gauge\n")
+		p("kubeatlas_snapshot_queue_depth %d\n", snapQueueDepth())
 	}
 }

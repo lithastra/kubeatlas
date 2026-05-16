@@ -321,7 +321,39 @@
         }
       }
     },
+    "snapshots": {
+      "type": "object",
+      "description": "Historical snapshots (F-111 / Tier 2 only). Default-off. snapshots.enabled=true requires persistence.enabled=true — the event stream is a PostgreSQL table; enabling snapshots on a Tier 1 install is rejected (guide invariant 2.2). queueSize / workers tune the async writer.",
+      "properties": {
+        "enabled":   { "type": "boolean" },
+        "queueSize": { "type": "integer", "minimum": 1 },
+        "workers":   { "type": "integer", "minimum": 1, "maximum": 64 }
+      }
+    },
     "extraLabels": { "type": "object" }
   },
-  "required": ["image", "service", "ingress", "podSecurityContext", "securityContext", "persistence"]
+  "required": ["image", "service", "ingress", "podSecurityContext", "securityContext", "persistence"],
+  "allOf": [
+    {
+      "comment": "Snapshots (F-111) require Tier 2 — the event stream is a PostgreSQL table. snapshots.enabled=true without persistence.enabled=true is rejected (guide invariant 2.2: no Tier 1 snapshots).",
+      "if": {
+        "properties": {
+          "snapshots": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["snapshots"]
+      },
+      "then": {
+        "properties": {
+          "persistence": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["persistence"]
+      }
+    }
+  ]
 }
