@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
 
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
@@ -248,12 +249,13 @@ func yamlToResource(body []byte) (graph.Resource, error) {
 	apiVersion, _ := raw["apiVersion"].(string)
 
 	var (
-		ns, name string
-		labels   map[string]string
+		ns, name, uid string
+		labels        map[string]string
 	)
 	if md, ok := raw["metadata"].(map[string]any); ok {
 		ns, _ = md["namespace"].(string)
 		name, _ = md["name"].(string)
+		uid, _ = md["uid"].(string)
 		if rawLabels, ok := md["labels"].(map[string]any); ok {
 			labels = make(map[string]string, len(rawLabels))
 			for k, v := range rawLabels {
@@ -266,11 +268,22 @@ func yamlToResource(body []byte) (graph.Resource, error) {
 	if name == "" {
 		return graph.Resource{}, errors.New("missing or non-string .metadata.name")
 	}
+	// Sample YAML rarely carries metadata.uid. Synthesize a stable one
+	// from kind/namespace/name so two fixtures still get distinct
+	// engine cache keys (CacheKey is UID + resourceVersion + ruleHash):
+	// without this, two samples that route through the SAME .rego file
+	// — e.g. a pack that registers one module file under two GVK
+	// matches — would collide on the empty UID and the second sample
+	// would wrongly read the first's cached edges.
+	if uid == "" {
+		uid = kind + "/" + ns + "/" + name
+	}
 
 	return graph.Resource{
 		Kind:         kind,
 		Name:         name,
 		Namespace:    ns,
+		UID:          types.UID(uid),
 		Labels:       labels,
 		GroupVersion: apiVersion,
 		Raw:          raw,
