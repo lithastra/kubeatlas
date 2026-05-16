@@ -266,6 +266,11 @@ snapshots:
   queueSize: 10000
   # Concurrent writer goroutines draining the queue into PostgreSQL.
   workers: 4
+  # How long to keep resource_events rows. An hourly retention
+  # worker prunes anything older. Accepts a day suffix ("7d",
+  # "30d") or any Go duration ("24h", "168h"). A typo fails the
+  # pod at startup rather than silently defaulting.
+  retention: 7d
 
 # Extra labels applied to every resource the chart renders.
 extraLabels: {}

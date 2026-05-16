@@ -96,6 +96,8 @@ spec:
               value: {{ .Values.snapshots.queueSize | quote }}
             - name: KUBEATLAS_SNAPSHOTS_WORKERS
               value: {{ .Values.snapshots.workers | quote }}
+            - name: KUBEATLAS_SNAPSHOTS_RETENTION
+              value: {{ .Values.snapshots.retention | quote }}
             {{- end }}
           {{- end }}
           {{- with .Values.livenessProbe }}

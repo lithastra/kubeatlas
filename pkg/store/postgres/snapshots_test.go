@@ -145,6 +145,64 @@ func TestSnapshots_DeleteEventHasNilData(t *testing.T) {
 	}
 }
 
+// TestSnapshots_PruneBatchesLargeBacklog drives PruneEventsBefore
+// past its pruneBatchSize (10K) so the batching loop runs more than
+// one iteration. Seeding is done with a single generate_series
+// INSERT — appending 10K rows one-by-one would dominate the test.
+//
+// 10001 expired rows means the loop deletes 10000 in batch 1 and 1
+// in batch 2; a returned total of 10001 proves both that the loop
+// iterated and that it stopped cleanly. A handful of fresh rows
+// confirm the cutoff is honoured.
+func TestSnapshots_PruneBatchesLargeBacklog(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping testcontainers test in -short mode")
+	}
+	h := StartPostgresWithAGE(t)
+	ctx := context.Background()
+	s, err := New(ctx, Config{DSN: h.ConnStr})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(s.Close)
+
+	old := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	fresh := time.Now()
+
+	// 10001 expired rows in one statement.
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO resource_events (ts, namespace, kind, name, event_type)
+		SELECT $1, 'demo', 'Pod', 'old-' || g, 'add'
+		FROM generate_series(1, 10001) g
+	`, old); err != nil {
+		t.Fatalf("seed expired rows: %v", err)
+	}
+	// 3 fresh rows that must survive the prune.
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO resource_events (ts, namespace, kind, name, event_type)
+		SELECT $1, 'demo', 'Pod', 'new-' || g, 'add'
+		FROM generate_series(1, 3) g
+	`, fresh); err != nil {
+		t.Fatalf("seed fresh rows: %v", err)
+	}
+
+	deleted, err := s.PruneEventsBefore(ctx, fresh.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("PruneEventsBefore: %v", err)
+	}
+	if deleted != 10001 {
+		t.Errorf("deleted = %d, want 10001 (batch loop must drain the whole backlog)", deleted)
+	}
+
+	var remaining int64
+	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM resource_events`).Scan(&remaining); err != nil {
+		t.Fatalf("count remaining: %v", err)
+	}
+	if remaining != 3 {
+		t.Errorf("remaining = %d, want 3 (the fresh rows must survive)", remaining)
+	}
+}
+
 // TestSnapshots_InvalidEventTypeRejected confirms the CHECK
 // constraint in migrate/005 rejects an event_type outside the
 // {add,update,delete} set rather than silently storing garbage.

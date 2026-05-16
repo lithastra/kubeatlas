@@ -716,4 +716,47 @@ func Run(t *testing.T, factory Factory) {
 			}
 		}
 	})
+
+	t.Run("PruneEventsBefore deletes only events older than the cutoff", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		base := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
+		// Events at T+0, T+1h, T+2h.
+		for i, off := range []time.Duration{0, time.Hour, 2 * time.Hour} {
+			if err := s.AppendEvent(ctx, graph.ResourceEvent{
+				Timestamp: base.Add(off), Namespace: "demo", Kind: "Pod",
+				Name: string(rune('a' + i)), EventType: graph.EventTypeAdd,
+			}); err != nil {
+				t.Fatalf("AppendEvent: %v", err)
+			}
+		}
+		// Cutoff at T+90m: the T+0 and T+1h events are older, the
+		// T+2h event survives.
+		deleted, err := s.PruneEventsBefore(ctx, base.Add(90*time.Minute))
+		if err != nil {
+			t.Fatalf("PruneEventsBefore: %v", err)
+		}
+		if deleted != 2 {
+			t.Errorf("deleted = %d, want 2", deleted)
+		}
+		remaining, err := s.QueryEvents(ctx, "demo", base.Add(-time.Hour), base.Add(time.Hour*24))
+		if err != nil {
+			t.Fatalf("QueryEvents: %v", err)
+		}
+		if len(remaining) != 1 || remaining[0].Name != "c" {
+			t.Errorf("after prune got %d events %v, want only the T+2h event 'c'",
+				len(remaining), remaining)
+		}
+	})
+
+	t.Run("PruneEventsBefore on empty store deletes nothing", func(t *testing.T) {
+		s := factory(t)
+		deleted, err := s.PruneEventsBefore(context.Background(), time.Now())
+		if err != nil {
+			t.Fatalf("PruneEventsBefore: %v", err)
+		}
+		if deleted != 0 {
+			t.Errorf("deleted = %d, want 0 on an empty store", deleted)
+		}
+	})
 }
