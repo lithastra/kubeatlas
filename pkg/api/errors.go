@@ -26,6 +26,10 @@ const (
 	CodeNotFound        = "not_found"
 	CodeInvalidArgument = "invalid_argument"
 	CodeInternal        = "internal"
+	// CodeUnavailable marks a feature that is not active on this
+	// install — e.g. the F-111 snapshot endpoints on a Tier 1
+	// deployment (paired with HTTP 503).
+	CodeUnavailable = "unavailable"
 )
 
 // writeError serialises an ErrorResponse with the given HTTP status.

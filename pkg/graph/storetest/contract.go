@@ -759,4 +759,48 @@ func Run(t *testing.T, factory Factory) {
 			t.Errorf("deleted = %d, want 0 on an empty store", deleted)
 		}
 	})
+
+	t.Run("ListSnapshotMeta empty store returns empty non-nil slice", func(t *testing.T) {
+		s := factory(t)
+		got, err := s.ListSnapshotMeta(context.Background())
+		if err != nil {
+			t.Fatalf("ListSnapshotMeta: %v", err)
+		}
+		if got == nil {
+			t.Fatal("expected non-nil empty slice, got nil")
+		}
+		if len(got) != 0 {
+			t.Errorf("expected 0 markers, got %d", len(got))
+		}
+	})
+
+	t.Run("ListSnapshotMeta returns markers most-recent first", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		base := time.Date(2026, 5, 16, 9, 0, 0, 0, time.UTC)
+		// Write three markers out of chronological order; the list
+		// must come back newest-first regardless.
+		for _, off := range []time.Duration{time.Hour, 0, 2 * time.Hour} {
+			if err := s.WriteSnapshotMeta(ctx, graph.SnapshotMeta{
+				Timestamp:     base.Add(off),
+				ResourceCount: 10,
+				Trigger:       graph.SnapshotTriggerPeriodic,
+			}); err != nil {
+				t.Fatalf("WriteSnapshotMeta: %v", err)
+			}
+		}
+		got, err := s.ListSnapshotMeta(ctx)
+		if err != nil {
+			t.Fatalf("ListSnapshotMeta: %v", err)
+		}
+		if len(got) != 3 {
+			t.Fatalf("got %d markers, want 3", len(got))
+		}
+		for i := 1; i < len(got); i++ {
+			if got[i].Timestamp.After(got[i-1].Timestamp) {
+				t.Errorf("markers not newest-first at index %d: %v after %v",
+					i, got[i].Timestamp, got[i-1].Timestamp)
+			}
+		}
+	})
 }

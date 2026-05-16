@@ -24,7 +24,7 @@ import (
 // returns base URL + server + cleanup. Tests exercise the production
 // path so the middleware chain + routing are part of the contract
 // under test.
-func seedAndServe(t *testing.T, seed func(s graph.GraphStore)) (string, *api.Server, func()) {
+func seedAndServe(t *testing.T, seed func(s graph.GraphStore), opts ...api.ServerOption) (string, *api.Server, func()) {
 	t.Helper()
 
 	store := memory.New()
@@ -41,7 +41,7 @@ func seedAndServe(t *testing.T, seed func(s graph.GraphStore)) (string, *api.Ser
 		t.Fatalf("close: %v", err)
 	}
 
-	srv := api.New(addr, store, aggregator.NewRegistry())
+	srv := api.New(addr, store, aggregator.NewRegistry(), opts...)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

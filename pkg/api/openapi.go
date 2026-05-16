@@ -475,6 +475,50 @@ func openAPIComponentsBase() map[string]any {
 				},
 				"required": []any{"source", "affected", "count", "maxDepth"},
 			},
+			"SnapshotMeta": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":            map[string]any{"type": "integer"},
+					"ts":            map[string]any{"type": "string", "format": "date-time"},
+					"clusterId":     map[string]any{"type": "string"},
+					"resourceCount": map[string]any{"type": "integer"},
+					"edgeCount":     map[string]any{"type": "integer"},
+					"durationMs":    map[string]any{"type": "integer"},
+					"trigger":       map[string]any{"type": "string", "enum": []any{"periodic", "manual", "startup"}},
+				},
+				"required": []any{"id", "ts", "resourceCount", "edgeCount", "durationMs", "trigger"},
+			},
+			"SnapshotListResponse": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"snapshots": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/SnapshotMeta"}},
+					"count":     map[string]any{"type": "integer"},
+				},
+				"required": []any{"snapshots", "count"},
+			},
+			"DiffEntry": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"namespace": map[string]any{"type": "string"},
+					"kind":      map[string]any{"type": "string"},
+					"name":      map[string]any{"type": "string"},
+					"uid":       map[string]any{"type": "string"},
+					"eventType": map[string]any{"type": "string", "enum": []any{"add", "update", "delete"}},
+					"ts":        map[string]any{"type": "string", "format": "date-time"},
+				},
+				"required": []any{"namespace", "kind", "name", "eventType", "ts"},
+			},
+			"DiffResult": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"from":     map[string]any{"type": "string", "format": "date-time"},
+					"to":       map[string]any{"type": "string", "format": "date-time"},
+					"added":    map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/DiffEntry"}},
+					"removed":  map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/DiffEntry"}},
+					"modified": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/DiffEntry"}},
+				},
+				"required": []any{"from", "to", "added", "removed", "modified"},
+			},
 			"SnapshotTriggerResponse": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
