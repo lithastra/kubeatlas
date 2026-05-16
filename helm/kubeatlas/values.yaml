@@ -247,6 +247,30 @@ rulePacks:
   #       - oci://ghcr.io/lithastra/rules/argo:0.2.0
   extras: []
 
+  # Sigstore (cosign) signature verification for OCI rule packs
+  # (invariant 2.9). When true, every pack in `extras` must carry a
+  # valid keyless signature or the pod fails to start — verification
+  # failure is fatal, never "warn and continue".
+  #
+  # Default false in v1.1 so existing installs migrate gradually;
+  # v1.2 flips the default to true once every first-party pack ships
+  # signed. An air-gapped install with no path to the Sigstore trust
+  # root must leave this false (the only supported air-gap mode).
+  verifySignature: false
+
+  # Trusted signing identities for THIRD-PARTY packs — packs not
+  # published under ghcr.io/lithastra (those are pinned to the
+  # Lithastra release identity and cannot be widened here). Each
+  # entry is a keyless Fulcio identity. Only consulted when
+  # verifySignature is true.
+  #
+  # Example:
+  #   rulePacks:
+  #     trustedIdentities:
+  #       - issuer: https://token.actions.githubusercontent.com
+  #         identityRegexp: ^https://github\.com/acme/rules/.+@refs/tags/.+$
+  trustedIdentities: []
+
 # Historical snapshots (F-111 / Tier 2 only).
 #
 # When enabled, KubeAtlas records every resource add/update/delete

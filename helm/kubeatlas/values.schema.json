@@ -318,6 +318,28 @@
             "minLength": 1,
             "not": { "pattern": ":latest$" }
           }
+        },
+        "verifySignature": {
+          "description": "Verify the Sigstore (cosign) signature of every OCI rule pack. Failure is fatal (invariant 2.9). Default false in v1.1.",
+          "type": "boolean"
+        },
+        "trustedIdentities": {
+          "description": "Keyless Fulcio identities trusted to sign third-party rule packs. Only consulted when verifySignature is true; first-party (ghcr.io/lithastra) packs are pinned and ignore this list.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "issuer":         { "type": "string" },
+              "issuerRegexp":   { "type": "string" },
+              "identity":       { "type": "string" },
+              "identityRegexp": { "type": "string" }
+            },
+            "anyOf": [
+              { "required": ["issuer"] },
+              { "required": ["issuerRegexp"] }
+            ],
+            "additionalProperties": false
+          }
         }
       }
     },
