@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { useGraph } from '../api/graph';
 import type { Level } from '../api/types';
+import { LabelFilter } from '../components/LabelFilter';
 import { LevelTabs } from '../components/LevelTabs';
 import { NamespacePicker } from '../components/NamespacePicker';
 import { TopologyView } from '../components/TopologyView';
@@ -17,15 +18,17 @@ import { useAppSelector } from '../store';
 export function TopologyPage() {
   const { t } = useTranslation('translation');
   const [level, setLevel] = useState<Level>('cluster');
+  const [labelFilter, setLabelFilter] = useState<Record<string, string>>({});
   const namespace = useAppSelector((s) => s.filter.namespace);
 
   // useGraph decides whether to fire based on completeness of the
   // scope params — at cluster level it fires unconditionally, at
-  // namespace level it waits for a namespace pick.
+  // namespace level it waits for a namespace pick. The F-114 label
+  // filter rides along on both levels.
   const params =
     level === 'cluster'
-      ? { level: 'cluster' as const }
-      : { level: 'namespace' as const, namespace: namespace ?? undefined };
+      ? { level: 'cluster' as const, labels: labelFilter }
+      : { level: 'namespace' as const, namespace: namespace ?? undefined, labels: labelFilter };
 
   const { data, isLoading, isError, error } = useGraph(params);
 
@@ -49,6 +52,7 @@ export function TopologyPage() {
       <Typography variant="h4">{t('page.topology.title')}</Typography>
       <LevelTabs value={level} onChange={setLevel} disableWorkload disableResource />
       {level === 'namespace' && <NamespacePicker />}
+      <LabelFilter value={labelFilter} onChange={setLabelFilter} />
       {body}
     </Stack>
   );
