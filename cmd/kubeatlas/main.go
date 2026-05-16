@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/snapshot"
 	"github.com/lithastra/kubeatlas/pkg/store"
 	"github.com/lithastra/kubeatlas/pkg/store/postgres"
 	"github.com/lithastra/kubeatlas/pkg/version"
@@ -176,6 +178,28 @@ func loadStoreConfig() store.Config {
 		cfg.Postgres = postgres.Config{DSN: os.Getenv("PGCONN")}
 	}
 	return cfg
+}
+
+// loadSnapshotConfig reads the F-111 snapshot-writer settings from
+// the environment. The Helm chart sets these when snapshots.enabled
+// is true; the schema in values.schema.json rejects the
+// enabled-without-persistence combination so a Tier 1 install never
+// reaches this code with enabled=true (invariant 2.2).
+//
+// Recognized env vars:
+//
+//	KUBEATLAS_SNAPSHOTS_ENABLED     "true" enables the writer
+//	KUBEATLAS_SNAPSHOTS_QUEUE_SIZE  int; 0 / unset -> snapshot.DefaultQueueSize
+//	KUBEATLAS_SNAPSHOTS_WORKERS     int; 0 / unset -> snapshot.DefaultWorkers
+func loadSnapshotConfig() (enabled bool, cfg snapshot.Config) {
+	enabled = os.Getenv("KUBEATLAS_SNAPSHOTS_ENABLED") == "true"
+	if v, err := strconv.Atoi(os.Getenv("KUBEATLAS_SNAPSHOTS_QUEUE_SIZE")); err == nil {
+		cfg.QueueSize = v
+	}
+	if v, err := strconv.Atoi(os.Getenv("KUBEATLAS_SNAPSHOTS_WORKERS")); err == nil {
+		cfg.Workers = v
+	}
+	return enabled, cfg
 }
 
 func main() {
@@ -348,9 +372,29 @@ func runWatch(rulePackExtras []string) {
 	if err != nil {
 		log.Fatalf("filter GVRs: %v", err)
 	}
-	graphStore, err := store.New(ctx, loadStoreConfig())
+	storeCfg := loadStoreConfig()
+	graphStore, err := store.New(ctx, storeCfg)
 	if err != nil {
 		log.Fatalf("failed to construct graph store: %v", err)
+	}
+
+	// F-111 snapshot writer (P3-T3). Only started on Tier 2 with
+	// snapshots explicitly enabled. The values.schema.json gate
+	// rejects enabled-without-persistence, so reaching here with
+	// enabled=true on a memory backend means a hand-set env var —
+	// log and skip rather than spin up a writer behind the lossy
+	// Tier 1 ring buffer (invariant 2.2).
+	var snapWriter *snapshot.Writer
+	if snapEnabled, snapCfg := loadSnapshotConfig(); snapEnabled {
+		if storeCfg.Backend != store.BackendPostgres {
+			slog.Warn("KUBEATLAS_SNAPSHOTS_ENABLED set but backend is not postgres; " +
+				"snapshots require Tier 2 — skipping snapshot writer (invariant 2.2)")
+		} else {
+			snapWriter = snapshot.New(graphStore, snapCfg, snapshot.NewMetrics())
+			snapWriter.Start(ctx)
+			slog.Info("snapshot writer started",
+				"queueSize", snapCfg.QueueSize, "workers", snapCfg.Workers)
+		}
 	}
 
 	// Phase 2 wire-up: the rego engine handles CRD-driven edge
@@ -364,16 +408,30 @@ func runWatch(rulePackExtras []string) {
 		log.Fatalf("build rego engine: %v", err)
 	}
 
-	srv := api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(),
+	// API server options. snapWriter is nil unless Tier 2 + snapshots
+	// enabled; when set, /metrics surfaces its counters + queue depth.
+	apiOpts := []api.ServerOption{
 		api.WithWebFS(webFS),
 		api.WithRegoMetrics(regoEngine.Metrics(), regoEngine.ModuleCount),
-	)
-	mgr := discovery.NewInformerManager(client.Dynamic(), graphStore,
+	}
+	if snapWriter != nil {
+		apiOpts = append(apiOpts, api.WithSnapshotMetrics(snapWriter.Metrics(), snapWriter.QueueDepth))
+	}
+	srv := api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(), apiOpts...)
+
+	// Informer options. WithOnSynced / WithBroadcaster depend on srv,
+	// so this list is built after srv exists. The snapshot sink is
+	// appended only when the writer is running.
+	informerOpts := []discovery.InformerOption{
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),
 		discovery.WithOnSynced(srv.Readiness().MarkReady),
 		discovery.WithBroadcaster(srv.Hub().BroadcastEvent),
-	)
+	}
+	if snapWriter != nil {
+		informerOpts = append(informerOpts, discovery.WithSnapshotSink(snapWriter))
+	}
+	mgr := discovery.NewInformerManager(client.Dynamic(), graphStore, informerOpts...)
 	crdDiscovery := crd.New(client.Dynamic(), graphStore,
 		crd.WithRegoEvaluator(regoEngine),
 	)
@@ -394,6 +452,14 @@ func runWatch(rulePackExtras []string) {
 	cancel()
 	second := <-results
 	third := <-results
+
+	// All three components have stopped, so the informer can no
+	// longer Enqueue. Drain the snapshot writer's buffered events
+	// into the store before exit (best-effort — Stop honours the
+	// per-event retry budget, it does not block forever).
+	if snapWriter != nil {
+		snapWriter.Stop()
+	}
 
 	for _, r := range []result{first, second, third} {
 		if r.err != nil && !errors.Is(r.err, context.Canceled) {

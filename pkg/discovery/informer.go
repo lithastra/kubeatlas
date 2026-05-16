@@ -68,15 +68,36 @@ type Broadcaster func(op, namespace, kind, name string)
 // configured (e.g. -once mode).
 var noopBroadcaster Broadcaster = func(_, _, _, _ string) {}
 
+// SnapshotSink is the seam between the informer pipeline and the
+// F-111 snapshot writer (pkg/snapshot.Writer). After a resource
+// change is committed to the store, the manager hands a
+// ResourceEvent to the sink. Enqueue MUST NOT block — it runs on
+// the shared informer goroutine — and *snapshot.Writer.Enqueue
+// satisfies that contract.
+//
+// Defined as an interface here (not a direct *snapshot.Writer
+// dependency) to avoid an import cycle and to keep -once mode /
+// tests free of the writer.
+type SnapshotSink interface {
+	Enqueue(e graph.ResourceEvent)
+}
+
+// noopSnapshotSink discards events. Default when snapshots are
+// disabled (Tier 1, or snapshots.enabled=false).
+type noopSnapshotSink struct{}
+
+func (noopSnapshotSink) Enqueue(_ graph.ResourceEvent) {}
+
 // InformerManager runs a dynamic SharedInformerFactory for the
 // configured GVRs and forwards K8s add/update/delete events into a
 // GraphStore via the configured ExtractorRegistry.
 type InformerManager struct {
 	factory     dynamicinformer.DynamicSharedInformerFactory
 	store       graph.GraphStore
-	extractor   ExtractorRegistry
-	broadcaster Broadcaster
-	gvrs        []schema.GroupVersionResource
+	extractor    ExtractorRegistry
+	broadcaster  Broadcaster
+	snapshotSink SnapshotSink
+	gvrs         []schema.GroupVersionResource
 
 	// kindCacheMu guards kindCache. Each watched GVR runs its own
 	// processorListener goroutine; every event upserts the GVR's
@@ -111,6 +132,14 @@ func WithExtractor(r ExtractorRegistry) InformerOption {
 // drives the store but emits no live updates.
 func WithBroadcaster(b Broadcaster) InformerOption {
 	return func(m *InformerManager) { m.broadcaster = b }
+}
+
+// WithSnapshotSink wires the F-111 snapshot writer. After every
+// committed add/update/delete the informer hands the sink a
+// ResourceEvent. Without this option the informer drives the store
+// but records no history (the Tier 1 / snapshots-disabled default).
+func WithSnapshotSink(s SnapshotSink) InformerOption {
+	return func(m *InformerManager) { m.snapshotSink = s }
 }
 
 // WithOnSynced registers a callback the informer fires exactly once,
@@ -153,10 +182,11 @@ func NewInformerManager(dyn dynamic.Interface, store graph.GraphStore, opts ...I
 	m := &InformerManager{
 		factory:     dynamicinformer.NewDynamicSharedInformerFactory(dyn, DefaultResyncPeriod),
 		store:       store,
-		extractor:   noopRegistry{},
-		broadcaster: noopBroadcaster,
-		gvrs:        MinimalCoreGVRs,
-		kindCache:   make(map[schema.GroupVersionResource]string),
+		extractor:    noopRegistry{},
+		broadcaster:  noopBroadcaster,
+		snapshotSink: noopSnapshotSink{},
+		gvrs:         MinimalCoreGVRs,
+		kindCache:    make(map[schema.GroupVersionResource]string),
 	}
 	for _, o := range opts {
 		o(m)
@@ -193,8 +223,8 @@ func (m *InformerManager) Start(ctx context.Context) error {
 		gvr := gvr // capture for closure
 		informer := m.factory.ForResource(gvr).Informer()
 		_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    func(obj any) { m.handleUpsert(ctx, gvr, obj) },
-			UpdateFunc: func(_, obj any) { m.handleUpsert(ctx, gvr, obj) },
+			AddFunc:    func(obj any) { m.handleUpsert(ctx, gvr, obj, graph.EventTypeAdd) },
+			UpdateFunc: func(_, obj any) { m.handleUpsert(ctx, gvr, obj, graph.EventTypeUpdate) },
 			DeleteFunc: func(obj any) { m.handleDelete(ctx, obj) },
 		})
 		if err != nil {
@@ -220,7 +250,12 @@ func (m *InformerManager) Start(ctx context.Context) error {
 // handleUpsert converts the K8s object into a graph.Resource and
 // upserts it into the store. If an extractor is configured, it derives
 // edges from the snapshot and upserts those too.
-func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVersionResource, obj any) {
+//
+// eventType is graph.EventTypeAdd for the informer's AddFunc (initial
+// list + genuinely-new objects) and graph.EventTypeUpdate for
+// UpdateFunc (modifications + resync re-deliveries) — handed straight
+// to the snapshot sink.
+func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVersionResource, obj any, eventType graph.EventType) {
 	u, ok := toUnstructured(obj)
 	if !ok {
 		slog.Warn("informer received non-unstructured object", "type", fmt.Sprintf("%T", obj))
@@ -231,6 +266,19 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
 		return
 	}
+
+	// Record the change in the F-111 snapshot stream. Enqueue is
+	// non-blocking by contract — the snapshot writer absorbs store
+	// latency on its own goroutines, never on the informer's.
+	m.snapshotSink.Enqueue(graph.ResourceEvent{
+		Namespace:       r.Namespace,
+		Kind:            r.Kind,
+		UID:             string(r.UID),
+		Name:            r.Name,
+		EventType:       eventType,
+		ResourceVersion: r.ResourceVersion,
+		Data:            r.Raw,
+	})
 
 	// Edge re-derivation: ask the extractor for edges out of this
 	// resource against the current snapshot. Edges are upserted; we do
@@ -265,6 +313,18 @@ func (m *InformerManager) handleDelete(ctx context.Context, obj any) {
 	if err := m.store.DeleteResource(ctx, id); err != nil {
 		slog.Warn("delete resource failed", "id", id, "err", err)
 	}
+
+	// Record the delete in the F-111 snapshot stream. Data is nil —
+	// the resource is gone, only its identity is recorded.
+	m.snapshotSink.Enqueue(graph.ResourceEvent{
+		Namespace:       u.GetNamespace(),
+		Kind:            u.GetKind(),
+		UID:             string(u.GetUID()),
+		Name:            u.GetName(),
+		EventType:       graph.EventTypeDelete,
+		ResourceVersion: u.GetResourceVersion(),
+	})
+
 	m.broadcaster("delete", u.GetNamespace(), u.GetKind(), u.GetName())
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/snapshot"
 )
 
 // DefaultAddr is the listen address when one isn't supplied to New.
@@ -45,6 +46,14 @@ type Server struct {
 	regoMetrics     *rego.Metrics
 	regoModuleCount func() int
 
+	// snapshotMetrics + snapshotQueueDepth are the Phase 3 F-111
+	// hooks. main.go wires them through WithSnapshotMetrics, but
+	// only when the snapshot writer is running (Tier 2 +
+	// snapshots.enabled) — left nil otherwise so /metrics stays
+	// snapshot-block-free on a Tier 1 install.
+	snapshotMetrics    *snapshot.Metrics
+	snapshotQueueDepth func() int
+
 	// webFS, when non-nil, is mounted at "/" to serve the embedded
 	// Web UI bundle. Tests leave it nil so the catch-all static
 	// route stays inactive.
@@ -53,7 +62,6 @@ type Server struct {
 	// httpSrv is created in Start; nil before then.
 	httpSrv *http.Server
 }
-
 
 // ServerOption tweaks an optional aspect of the Server. Required
 // dependencies stay positional; additive features (the embedded Web
@@ -78,6 +86,17 @@ func WithRegoMetrics(m *rego.Metrics, moduleCount func() int) ServerOption {
 	return func(s *Server) {
 		s.regoMetrics = m
 		s.regoModuleCount = moduleCount
+	}
+}
+
+// WithSnapshotMetrics wires the F-111 snapshot writer's counters +
+// live queue-depth callable into /metrics. main.go passes this only
+// when the writer is running (Tier 2 + snapshots.enabled); a Tier 1
+// install leaves both nil and /metrics emits no snapshot block.
+func WithSnapshotMetrics(m *snapshot.Metrics, queueDepth func() int) ServerOption {
+	return func(s *Server) {
+		s.snapshotMetrics = m
+		s.snapshotQueueDepth = queueDepth
 	}
 }
 
