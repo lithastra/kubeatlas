@@ -1,0 +1,111 @@
+name: E2E Snapshots (kind)
+
+# Phase 3 M7 acceptance (P3-T6): stand up a kind cluster with CNPG,
+# install kubeatlas in Tier 2 mode with the F-111 snapshot writer
+# enabled, then run test/verify/phase3.sh part 1 — F-109
+# NetworkPolicy edges plus the F-111 snapshot writer + diff
+# endpoint — and the snapshot-write-storm chaos scenario.
+#
+# The workflow uses no untrusted GitHub event inputs in run: blocks;
+# the only env vars it sets are constants we control (KUBEATLAS_*).
+# Runs on PRs that touch the snapshot / NetworkPolicy subsystems.
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'pkg/snapshot/**'
+      - 'pkg/discovery/**'
+      - 'pkg/store/**'
+      - 'pkg/graph/store.go'
+      - 'pkg/graph/snapshot.go'
+      - 'pkg/graph/analysis/snapshot_diff.go'
+      - 'pkg/api/snapshot*.go'
+      - 'pkg/api/networkpolicy*.go'
+      - 'pkg/extractor/networkpolicy.go'
+      - 'helm/**'
+      - 'test/verify/phase3.sh'
+      - 'test/chaos/snapshot-write-storm.sh'
+      - 'test/petclinic/phase3-networkpolicy.yaml'
+      - '.github/workflows/e2e-kind-snapshots.yml'
+  workflow_dispatch:
+
+jobs:
+  e2e-kind-snapshots:
+    name: kind + CNPG + kubeatlas snapshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.24.0
+          node_image: kindest/node:v1.31.0
+          cluster_name: kubeatlas-snapshots
+          wait: 120s
+
+      - name: Resolve Helm sub-chart deps (CNPG)
+        run: helm dependency update helm/kubeatlas
+
+      - name: Build kubeatlas binary (CGO_ENABLED=0)
+        run: |
+          mkdir -p web/dist
+          echo '<html><body>snapshots placeholder</body></html>' > web/dist/index.html
+          CGO_ENABLED=0 go build \
+            -tags embed_web \
+            -o bin/kubeatlas ./cmd/kubeatlas
+
+      - name: Build kubeatlas runtime image
+        run: |
+          mkdir -p .docker-context
+          cp Dockerfile .docker-context/
+          cp bin/kubeatlas .docker-context/
+          docker build -t kubeatlas:snapshots-test .docker-context
+
+      - name: Load image into kind
+        run: kind load docker-image kubeatlas:snapshots-test --name kubeatlas-snapshots
+
+      - name: Helm install kubeatlas with Tier 2 + snapshots enabled
+        run: |
+          helm install kubeatlas helm/kubeatlas \
+            --namespace kubeatlas --create-namespace \
+            --set image.repository=kubeatlas \
+            --set image.tag=snapshots-test \
+            --set image.pullPolicy=Never \
+            --set persistence.enabled=true \
+            --set persistence.embedded.enabled=true \
+            --set persistence.embedded.storageSize=2Gi \
+            --set snapshots.enabled=true \
+            --set snapshots.retention=7d \
+            --wait --timeout 8m
+
+      - name: kubectl describe + recent logs (debug aid on failure)
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pod -n kubeatlas -l app.kubernetes.io/name=kubeatlas || true
+          kubectl logs -n kubeatlas deploy/kubeatlas --tail=200 || true
+
+      - name: Run verify/phase3.sh part 1 + snapshot-write-storm chaos
+        env:
+          KUBEATLAS_NAMESPACE: kubeatlas
+          KUBEATLAS_RELEASE: kubeatlas
+          KUBEATLAS_RUN_CHAOS: '1'
+        run: bash test/verify/phase3.sh m7-m8
+
+      - name: Upload kubeatlas logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeatlas-snapshots-logs
+          path: |
+            /tmp/kubeatlas-*.log
+          if-no-files-found: ignore
+          retention-days: 7
