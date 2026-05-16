@@ -475,6 +475,16 @@ func openAPIComponentsBase() map[string]any {
 				},
 				"required": []any{"source", "affected", "count", "maxDepth"},
 			},
+			"SnapshotTriggerResponse": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"trigger":       map[string]any{"type": "string", "enum": []any{"periodic", "manual"}},
+					"resourceCount": map[string]any{"type": "integer"},
+					"edgeCount":     map[string]any{"type": "integer"},
+					"durationMs":    map[string]any{"type": "integer"},
+				},
+				"required": []any{"trigger", "resourceCount", "edgeCount", "durationMs"},
+			},
 			"NetworkPolicySelectedResponse": map[string]any{
 				"type": "object",
 				"properties": map[string]any{

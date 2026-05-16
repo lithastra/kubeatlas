@@ -332,6 +332,11 @@
           "description": "How long resource_events rows are kept. Day suffix (\"7d\") or any Go duration (\"24h\").",
           "type": "string",
           "pattern": "^[0-9]+d$|^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        "fullSyncSchedule": {
+          "description": "Cron schedule (5-field) for the periodic full-sync snapshot CronJob.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },

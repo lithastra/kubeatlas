@@ -213,8 +213,9 @@ func loadSnapshotConfig() (enabled bool, cfg snapshot.Config, retention time.Dur
 
 func main() {
 	// Subcommand dispatch — "rules-test" runs the offline rule pack
-	// evaluator without touching kubeconfig or the API server, and
-	// "export" emits the cluster graph as DOT. Both live before
+	// evaluator without touching kubeconfig or the API server,
+	// "export" emits the cluster graph as DOT, and "snapshot"
+	// drives the F-111 internal snapshot endpoint. All live before
 	// flag.Parse so each subcommand can carry its own flag set.
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -222,6 +223,8 @@ func main() {
 			os.Exit(runRulesTest(os.Args[2:]))
 		case "export":
 			os.Exit(runExport(os.Args[2:]))
+		case "snapshot":
+			os.Exit(runSnapshot(os.Args[2:]))
 		}
 	}
 

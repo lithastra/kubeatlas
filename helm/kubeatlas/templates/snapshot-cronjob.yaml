@@ -1,0 +1,66 @@
+{{- if .Values.snapshots.enabled }}
+# F-111 periodic full-sync snapshot (P3-T4).
+#
+# Every fullSyncSchedule tick this CronJob runs `kubeatlas snapshot
+# trigger`, which POSTs the running server's internal endpoint so a
+# snapshot_meta marker is recorded. The Job never touches Postgres
+# directly — the server owns the write (one code path, one set of
+# permissions).
+#
+# Rendered only when snapshots.enabled=true; values.schema.json
+# already guarantees that implies persistence.enabled=true, so the
+# server this targets is always Tier 2.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kubeatlas.fullname" . }}-snapshot
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeatlas.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.snapshots.fullSyncSchedule | quote }}
+  # A slow or stuck run must not pile up behind the next tick.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 60
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # One attempt per tick; the next schedule tick is the retry.
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            {{- include "kubeatlas.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          # The Job only makes an in-cluster HTTP call — it needs no
+          # Kubernetes API access, so it drops the SA token.
+          automountServiceAccountToken: false
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: snapshot-trigger
+              image: {{ include "kubeatlas.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - /kubeatlas
+                - snapshot
+                - trigger
+                - -trigger=periodic
+                - -server=http://{{ include "kubeatlas.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+{{- end }}
