@@ -374,7 +374,7 @@ func Run(t *testing.T, factory Factory) {
 
 	t.Run("KindCountsByNamespace empty store returns empty non-nil map", func(t *testing.T) {
 		s := factory(t)
-		got, err := s.KindCountsByNamespace(context.Background())
+		got, err := s.KindCountsByNamespace(context.Background(), nil)
 		if err != nil {
 			t.Fatalf("KindCountsByNamespace: %v", err)
 		}
@@ -406,7 +406,7 @@ func Run(t *testing.T, factory Factory) {
 				t.Fatalf("UpsertResource %s: %v", r.ID(), err)
 			}
 		}
-		got, err := s.KindCountsByNamespace(ctx)
+		got, err := s.KindCountsByNamespace(ctx, nil)
 		if err != nil {
 			t.Fatalf("KindCountsByNamespace: %v", err)
 		}
@@ -467,7 +467,7 @@ func Run(t *testing.T, factory Factory) {
 		}); err != nil {
 			t.Fatalf("UpsertEdge dangling: %v", err)
 		}
-		got, err := s.CrossNamespaceEdgeCounts(ctx)
+		got, err := s.CrossNamespaceEdgeCounts(ctx, nil)
 		if err != nil {
 			t.Fatalf("CrossNamespaceEdgeCounts: %v", err)
 		}
@@ -506,7 +506,7 @@ func Run(t *testing.T, factory Factory) {
 		if err := s.UpsertEdge(ctx, graph.Edge{From: otherSvc.ID(), To: demoDep.ID(), Type: "ROUTES_TO"}); err != nil {
 			t.Fatalf("UpsertEdge: %v", err)
 		}
-		g, err := s.NamespaceSubgraph(ctx, "demo")
+		g, err := s.NamespaceSubgraph(ctx, "demo", nil)
 		if err != nil {
 			t.Fatalf("NamespaceSubgraph: %v", err)
 		}
@@ -545,7 +545,7 @@ func Run(t *testing.T, factory Factory) {
 		_ = s.UpsertResource(context.Background(), graph.Resource{
 			Kind: "Pod", Namespace: "other", Name: "p",
 		})
-		g, err := s.NamespaceSubgraph(context.Background(), "demo")
+		g, err := s.NamespaceSubgraph(context.Background(), "demo", nil)
 		if err != nil {
 			t.Fatalf("NamespaceSubgraph: %v", err)
 		}
@@ -922,6 +922,134 @@ func Run(t *testing.T, factory Factory) {
 		}
 		if got.Total != 0 || len(got.Matches) != 0 {
 			t.Errorf("got total=%d matches=%d, want 0/0", got.Total, len(got.Matches))
+		}
+	})
+
+	// --- Label filtering + LabelStats (F-114) --------------------------
+
+	// labelSeed loads four resources across two namespaces with a
+	// `team` label, plus three edges, and is shared by the F-114 tests.
+	//
+	//   demo/Deployment/web   team=payments
+	//   demo/Deployment/api   team=payments
+	//   demo/Pod/worker       team=search
+	//   other/Service/edge    team=payments
+	//
+	// Edges: web->api (demo->demo, both payments),
+	//        web->worker (demo->demo, mixed),
+	//        web->edge   (demo->other, both payments).
+	labelSeed := func(t *testing.T, s graph.GraphStore) {
+		t.Helper()
+		ctx := context.Background()
+		rs := []graph.Resource{
+			{Kind: "Deployment", Namespace: "demo", Name: "web", Labels: map[string]string{"team": "payments"}},
+			{Kind: "Deployment", Namespace: "demo", Name: "api", Labels: map[string]string{"team": "payments"}},
+			{Kind: "Pod", Namespace: "demo", Name: "worker", Labels: map[string]string{"team": "search"}},
+			{Kind: "Service", Namespace: "other", Name: "edge", Labels: map[string]string{"team": "payments"}},
+		}
+		for _, r := range rs {
+			if err := s.UpsertResource(ctx, r); err != nil {
+				t.Fatalf("labelSeed UpsertResource %s: %v", r.ID(), err)
+			}
+		}
+		for _, e := range []graph.Edge{
+			{From: rs[0].ID(), To: rs[1].ID(), Type: graph.EdgeTypeOwns},
+			{From: rs[0].ID(), To: rs[2].ID(), Type: graph.EdgeTypeOwns},
+			{From: rs[0].ID(), To: rs[3].ID(), Type: graph.EdgeTypeRoutesTo},
+		} {
+			if err := s.UpsertEdge(ctx, e); err != nil {
+				t.Fatalf("labelSeed UpsertEdge: %v", err)
+			}
+		}
+	}
+	payments := map[string]string{"team": "payments"}
+
+	t.Run("KindCountsByNamespace honours a label filter", func(t *testing.T) {
+		s := factory(t)
+		labelSeed(t, s)
+		got, err := s.KindCountsByNamespace(context.Background(), payments)
+		if err != nil {
+			t.Fatalf("KindCountsByNamespace: %v", err)
+		}
+		if got["demo"]["Deployment"] != 2 {
+			t.Errorf("demo/Deployment = %d, want 2", got["demo"]["Deployment"])
+		}
+		if _, ok := got["demo"]["Pod"]; ok {
+			t.Errorf("the team=search Pod must be filtered out, got %v", got["demo"])
+		}
+		if got["other"]["Service"] != 1 {
+			t.Errorf("other/Service = %d, want 1", got["other"]["Service"])
+		}
+	})
+
+	t.Run("CrossNamespaceEdgeCounts honours a label filter on both endpoints", func(t *testing.T) {
+		s := factory(t)
+		labelSeed(t, s)
+		got, err := s.CrossNamespaceEdgeCounts(context.Background(), payments)
+		if err != nil {
+			t.Fatalf("CrossNamespaceEdgeCounts: %v", err)
+		}
+		// web->api (demo,demo) and web->edge (demo,other) survive;
+		// web->worker is dropped because worker is team=search.
+		if got[graph.NamespacePair{From: "demo", To: "demo"}] != 1 {
+			t.Errorf("demo->demo = %d, want 1 (web->worker must be excluded)",
+				got[graph.NamespacePair{From: "demo", To: "demo"}])
+		}
+		if got[graph.NamespacePair{From: "demo", To: "other"}] != 1 {
+			t.Errorf("demo->other = %d, want 1",
+				got[graph.NamespacePair{From: "demo", To: "other"}])
+		}
+	})
+
+	t.Run("NamespaceSubgraph honours a label filter", func(t *testing.T) {
+		s := factory(t)
+		labelSeed(t, s)
+		g, err := s.NamespaceSubgraph(context.Background(), "demo", payments)
+		if err != nil {
+			t.Fatalf("NamespaceSubgraph: %v", err)
+		}
+		if len(g.Resources) != 2 {
+			t.Errorf("got %d resources, want 2 (the team=search Pod excluded)", len(g.Resources))
+		}
+		// Only web->api survives: web->worker loses its worker endpoint.
+		if len(g.Edges) != 1 {
+			t.Errorf("got %d edges, want 1 (only the web->api edge)", len(g.Edges))
+		}
+	})
+
+	t.Run("LabelStats on an empty store returns nothing", func(t *testing.T) {
+		s := factory(t)
+		got, err := s.LabelStats(context.Background())
+		if err != nil {
+			t.Fatalf("LabelStats: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("got %d stats, want 0", len(got))
+		}
+	})
+
+	t.Run("LabelStats tallies keys and values", func(t *testing.T) {
+		s := factory(t)
+		labelSeed(t, s)
+		got, err := s.LabelStats(context.Background())
+		if err != nil {
+			t.Fatalf("LabelStats: %v", err)
+		}
+		if len(got) != 1 || got[0].Key != "team" {
+			t.Fatalf("got %+v, want a single 'team' stat", got)
+		}
+		stat := got[0]
+		if stat.ResourceCount != 4 {
+			t.Errorf("resourceCount = %d, want 4", stat.ResourceCount)
+		}
+		if stat.ValueCount != 2 {
+			t.Errorf("valueCount = %d, want 2", stat.ValueCount)
+		}
+		// Values are frequency-ranked: payments (3) before search (1).
+		if len(stat.Values) != 2 ||
+			stat.Values[0] != (graph.LabelValue{Value: "payments", Count: 3}) ||
+			stat.Values[1] != (graph.LabelValue{Value: "search", Count: 1}) {
+			t.Errorf("values = %+v, want [{payments 3} {search 1}]", stat.Values)
 		}
 	})
 }

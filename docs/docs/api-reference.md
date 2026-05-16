@@ -72,6 +72,7 @@ Returns an aggregated `View` at one of four levels.
 | `namespace` | for `namespace`/`workload`/`resource` | Target namespace |
 | `kind` | for `workload`/`resource` | Resource Kind (e.g. `Deployment`) |
 | `name` | for `workload`/`resource` | Resource name |
+| `label.<key>` | no | Label filter (F-114). Repeatable — every `label.<key>=<value>` must match. Honoured at `cluster` and `namespace` level; an edge counts only between two resources that both match. |
 
 Examples:
 
@@ -268,17 +269,37 @@ reaches it from the CLI.
 
 ### `GET /api/v1/search`
 
-Linear case-insensitive substring scan over kind, name, namespace,
-and labels. Capped at 200 results. Inverted-index replacement is
-a v1.0.x candidate.
+Ranked full-text search over name, kind, namespace, and label
+values. On Tier 2 it runs as one GIN-indexed `tsvector` match; on
+Tier 1 it is a linear scan and the response carries a `warning`
+field saying so. Capped at 200 results.
+
+`q` accepts free-text terms plus `kind:` / `namespace:` (or `ns:`)
+filter tokens — e.g. `customers kind:Pod`.
 
 | Query param | Required | Meaning |
 |---|---|---|
-| `q` | yes | Search term (case-insensitive) |
+| `q` | yes | Free-text terms and/or `kind:`/`namespace:` filter tokens |
 | `limit` | no | Max matches (default 50, max 200) |
 
 ```bash
-curl -s 'http://localhost:8080/api/v1/search?q=customers&limit=10'
+curl -s 'http://localhost:8080/api/v1/search?q=customers%20kind:Pod&limit=10'
+```
+
+## Labels
+
+### `GET /api/v1/labels`
+
+Returns every label key present on any resource, how many resources
+carry it, and its most common values. Each key's value list is
+capped (a high-cardinality key like `pod-template-hash` would
+otherwise return thousands); `valueCount` reports the true distinct
+total. This is the data the "group by label" picker is built from,
+and the key/value vocabulary for the `label.<key>` filter on
+[`/graph`](#get-apiv1graph).
+
+```bash
+curl -s 'http://localhost:8080/api/v1/labels' | jq .
 ```
 
 ## WebSocket watch

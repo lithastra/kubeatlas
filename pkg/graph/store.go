@@ -49,7 +49,11 @@ type GraphStore interface {
 	// The returned map is owned by the caller and safe to mutate.
 	// Implementations must return non-nil maps; an empty store
 	// returns an empty (non-nil) outer map.
-	KindCountsByNamespace(ctx context.Context) (map[string]map[string]int, error)
+	//
+	// labels is the F-114 label filter: when non-empty, only
+	// resources carrying every key=value pair are counted. A nil or
+	// empty map counts every resource (the pre-F-114 behaviour).
+	KindCountsByNamespace(ctx context.Context, labels map[string]string) (map[string]map[string]int, error)
 
 	// CrossNamespaceEdgeCounts returns counts of edges grouped by
 	// (from-namespace, to-namespace). Same-namespace pairs are
@@ -61,8 +65,12 @@ type GraphStore interface {
 	// Endpoints whose resource row is missing (dangling edges) are
 	// dropped — they cannot be assigned a namespace bucket.
 	//
+	// labels is the F-114 label filter: when non-empty, an edge is
+	// counted only if BOTH endpoint resources carry every key=value
+	// pair. A nil or empty map counts every edge.
+	//
 	// The returned map is owned by the caller and safe to mutate.
-	CrossNamespaceEdgeCounts(ctx context.Context) (map[NamespacePair]int, error)
+	CrossNamespaceEdgeCounts(ctx context.Context, labels map[string]string) (map[NamespacePair]int, error)
 
 	// NamespaceSubgraph returns every resource in namespace ns plus
 	// every edge whose endpoints are both in that namespace. Cross-
@@ -71,9 +79,13 @@ type GraphStore interface {
 	// visible-set rule (an edge is emitted only if both endpoints
 	// are visible in the namespace view).
 	//
+	// labels is the F-114 label filter: when non-empty, only
+	// resources carrying every key=value pair are included, and an
+	// edge survives only if both its (surviving) endpoints do.
+	//
 	// Used by the namespace-level aggregator to avoid materialising
 	// the full Snapshot just to filter it down to one namespace.
-	NamespaceSubgraph(ctx context.Context, ns string) (*Graph, error)
+	NamespaceSubgraph(ctx context.Context, ns string, labels map[string]string) (*Graph, error)
 
 	// Snapshot history (F-111 / P3-T2). The Tier 2 (postgres)
 	// backend persists these durably; the Tier 1 (memory) backend
@@ -111,6 +123,17 @@ type GraphStore interface {
 	// the duration. The call returns only when every expired row
 	// is gone (or ctx is cancelled).
 	PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
+
+	// LabelStats returns, for every label key present on any
+	// resource, how many resources carry it and its most common
+	// values (F-114). It powers GET /api/v1/labels — the data the
+	// UI's "group by label" picker is built from.
+	//
+	// Implementations cap each key's Values slice (a high-cardinality
+	// key such as pod-template-hash would otherwise return thousands
+	// of values); LabelStat.ValueCount reports the true distinct-value
+	// total so a caller knows the list is a truncated top-N.
+	LabelStats(ctx context.Context) ([]LabelStat, error)
 
 	// Search runs a full-text query across resources and returns a
 	// ranked page of matches (F-113).
@@ -163,6 +186,38 @@ type SearchResult struct {
 	// warning so a large-cluster operator knows the query was slow
 	// by construction, and that Tier 2 fixes it.
 	LinearScan bool
+}
+
+// MaxLabelValuesPerKey caps the number of values LabelStats reports
+// per key. A high-cardinality key (pod-template-hash, controller-uid)
+// has one distinct value per resource; returning them all would make
+// GET /api/v1/labels both huge and useless.
+const MaxLabelValuesPerKey = 100
+
+// LabelStat is the per-key summary in a LabelStats result: the label
+// key, how many resources carry it, and its most common values.
+type LabelStat struct {
+	Key string `json:"key"`
+
+	// ResourceCount is the number of resources carrying this key
+	// (with any value).
+	ResourceCount int `json:"resourceCount"`
+
+	// ValueCount is the number of DISTINCT values seen for this key
+	// across the cluster. Values below is capped at
+	// MaxLabelValuesPerKey, so ValueCount > len(Values) signals the
+	// list is a truncated top-N.
+	ValueCount int `json:"valueCount"`
+
+	// Values are the key's most common values, most-frequent first,
+	// at most MaxLabelValuesPerKey entries.
+	Values []LabelValue `json:"values"`
+}
+
+// LabelValue is one (value, frequency) pair within a LabelStat.
+type LabelValue struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
 }
 
 // NamespacePair keys the result of CrossNamespaceEdgeCounts. From and

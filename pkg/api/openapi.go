@@ -382,6 +382,32 @@ func openAPIComponentsBase() map[string]any {
 				},
 				"required": []any{"matches", "total", "truncated"},
 			},
+			"LabelValue": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"value": map[string]any{"type": "string"},
+					"count": map[string]any{"type": "integer"},
+				},
+				"required": []any{"value", "count"},
+			},
+			"LabelStat": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"key":           map[string]any{"type": "string"},
+					"resourceCount": map[string]any{"type": "integer"},
+					"valueCount":    map[string]any{"type": "integer", "description": "Distinct values seen; exceeds len(values) when the value list was capped."},
+					"values":        map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/LabelValue"}},
+				},
+				"required": []any{"key", "resourceCount", "valueCount"},
+			},
+			"LabelsResponse": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"labels": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/LabelStat"}},
+					"count":  map[string]any{"type": "integer"},
+				},
+				"required": []any{"labels", "count"},
+			},
 			"OpenAPI": map[string]any{
 				"type":        "object",
 				"description": "OpenAPI 3.0 document. Self-describing; clients should consume the spec directly rather than this schema entry.",

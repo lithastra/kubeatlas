@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -87,6 +88,7 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		Namespace: q.Get("namespace"),
 		Kind:      q.Get("kind"),
 		Name:      q.Get("name"),
+		Labels:    parseLabelParams(q),
 	}
 	view, err := agg.Aggregate(r.Context(), s.store, scope)
 	if err != nil {
@@ -108,6 +110,26 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+// parseLabelParams pulls F-114 label filters out of the query
+// string: every "label.<key>=<value>" param becomes one entry in the
+// returned map. Returns nil when there are none, so a label-free
+// request leaves Scope.Labels nil — the store's "no filter" sentinel.
+// A repeated label.<key> keeps the first value.
+func parseLabelParams(q url.Values) map[string]string {
+	var labels map[string]string
+	for param, vals := range q {
+		key, ok := strings.CutPrefix(param, "label.")
+		if !ok || key == "" || len(vals) == 0 {
+			continue
+		}
+		if labels == nil {
+			labels = make(map[string]string)
+		}
+		labels[key] = vals[0]
+	}
+	return labels
 }
 
 // handleResource serves GET /resources/{namespace}/{kind}/{name}

@@ -128,6 +128,13 @@ func (s *Server) Routes() []RouteInfo {
 			handler:  s.handleSearch,
 		},
 		{
+			Method: "GET", Pattern: "/api/v1alpha1/labels",
+			Summary:     "Label keys and their value distribution",
+			Description: "Returns every label key present on any resource, how many resources carry it, and its most common values (capped per key). Powers the 'group by label' picker. P3-T9 (F-114).",
+			Response:    ResponseSpec{Description: "Label key statistics", SchemaRef: "LabelsResponse"},
+			handler:     s.handleLabels,
+		},
+		{
 			Method: "GET", Pattern: "/api/v1alpha1/watch",
 			Summary:     "WebSocket watch stream",
 			Description: "Upgrades to WebSocket. Client first sends a SUBSCRIBE envelope; the server then streams GRAPH_UPDATE envelopes plus PING heartbeats every 30 seconds. See the protocol notes in the spec's `x-websocket` extension.",

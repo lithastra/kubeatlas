@@ -354,6 +354,76 @@ func TestHandleSearch_Tier1WarnsLinearScan(t *testing.T) {
 	}
 }
 
+// F-114: a label.<key>=<value> param narrows the cluster view to
+// resources carrying that label.
+func TestHandleGraph_LabelFilter(t *testing.T) {
+	base, _, stop := seedAndServe(t, func(s graph.GraphStore) {
+		ctx := context.Background()
+		_ = s.UpsertResource(ctx, graph.Resource{
+			Kind: "Deployment", Namespace: "demo", Name: "web",
+			Labels: map[string]string{"team": "payments"},
+		})
+		_ = s.UpsertResource(ctx, graph.Resource{
+			Kind: "Pod", Namespace: "demo", Name: "worker",
+			Labels: map[string]string{"team": "search"},
+		})
+	})
+	defer stop()
+
+	var view aggregator.View
+	resp, body := getJSON(t, base+"/api/v1alpha1/graph?level=cluster&label.team=payments", &view)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d (body=%s)", resp.StatusCode, body)
+	}
+	var demo *aggregator.Node
+	for i := range view.Nodes {
+		if view.Nodes[i].ID == "demo" {
+			demo = &view.Nodes[i]
+		}
+	}
+	if demo == nil {
+		t.Fatal("no demo namespace node in the filtered view")
+	}
+	if demo.ChildrenCount != 1 {
+		t.Errorf("demo ChildrenCount = %d, want 1 (only the team=payments Deployment)", demo.ChildrenCount)
+	}
+}
+
+// F-114: GET /labels reports every key with its resource counts.
+func TestHandleLabels_ReturnsKeyStats(t *testing.T) {
+	base, _, stop := seedAndServe(t, func(s graph.GraphStore) {
+		ctx := context.Background()
+		_ = s.UpsertResource(ctx, graph.Resource{
+			Kind: "Deployment", Namespace: "demo", Name: "web",
+			Labels: map[string]string{"team": "payments", "env": "prod"},
+		})
+		_ = s.UpsertResource(ctx, graph.Resource{
+			Kind: "Pod", Namespace: "demo", Name: "worker",
+			Labels: map[string]string{"team": "payments"},
+		})
+	})
+	defer stop()
+
+	var resp api.LabelsResponse
+	httpResp, body := getJSON(t, base+"/api/v1alpha1/labels", &resp)
+	if httpResp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d (body=%s)", httpResp.StatusCode, body)
+	}
+	if resp.Count != 2 {
+		t.Fatalf("count = %d, want 2 (team, env)", resp.Count)
+	}
+	byKey := make(map[string]graph.LabelStat, len(resp.Labels))
+	for _, st := range resp.Labels {
+		byKey[st.Key] = st
+	}
+	if byKey["team"].ResourceCount != 2 {
+		t.Errorf("team resourceCount = %d, want 2", byKey["team"].ResourceCount)
+	}
+	if byKey["env"].ResourceCount != 1 {
+		t.Errorf("env resourceCount = %d, want 1", byKey["env"].ResourceCount)
+	}
+}
+
 func TestHandleMetrics_PromExposition(t *testing.T) {
 	base, srv, stop := seedAndServe(t, petClinicSeed)
 	defer stop()

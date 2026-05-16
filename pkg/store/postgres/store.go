@@ -319,16 +319,37 @@ func (s *Store) Snapshot(ctx context.Context) (*graph.Graph, error) {
 // Cluster-scoped resources (Resource.Namespace == "") are bucketed
 // under the empty-string key, matching the in-memory implementation
 // and the contract test.
-func (s *Store) KindCountsByNamespace(ctx context.Context) (map[string]map[string]int, error) {
+// marshalLabelFilter turns an F-114 label filter into the jsonb
+// parameter the @> containment operator takes. An empty/nil filter
+// marshals to a nil []byte, which binds as SQL NULL — every query
+// below pairs that with a "$N IS NULL OR ..." guard so an unfiltered
+// call behaves exactly as it did before F-114.
+func marshalLabelFilter(labels map[string]string) ([]byte, error) {
+	if len(labels) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(labels)
+	if err != nil {
+		return nil, fmt.Errorf("marshal label filter: %w", err)
+	}
+	return b, nil
+}
+
+func (s *Store) KindCountsByNamespace(ctx context.Context, labels map[string]string) (map[string]map[string]int, error) {
+	labelsJSON, err := marshalLabelFilter(labels)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.KindCountsByNamespace: %w", err)
+	}
 	const sql = `
 		SELECT
 			COALESCE(data->>'namespace', '') AS ns,
 			COALESCE(data->>'kind', '')      AS kind,
 			COUNT(*)                         AS cnt
 		FROM resources
+		WHERE $1::jsonb IS NULL OR (data->'labels') @> $1::jsonb
 		GROUP BY data->>'namespace', data->>'kind'
 	`
-	rows, err := s.pool.Query(ctx, sql)
+	rows, err := s.pool.Query(ctx, sql, labelsJSON)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.KindCountsByNamespace: query: %w", err)
 	}
@@ -361,7 +382,11 @@ func (s *Store) KindCountsByNamespace(ctx context.Context) (map[string]map[strin
 //
 // Cluster_view does not differentiate edge types, so type is folded
 // into the count rather than appearing in the key.
-func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context) (map[graph.NamespacePair]int, error) {
+func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context, labels map[string]string) (map[graph.NamespacePair]int, error) {
+	labelsJSON, err := marshalLabelFilter(labels)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: %w", err)
+	}
 	const sql = `
 		SELECT
 			COALESCE(r1.data->>'namespace', '') AS from_ns,
@@ -370,9 +395,11 @@ func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context) (map[graph.Namespa
 		FROM edges e
 		JOIN resources r1 ON r1.id = e.from_id
 		JOIN resources r2 ON r2.id = e.to_id
+		WHERE $1::jsonb IS NULL
+		   OR ((r1.data->'labels') @> $1::jsonb AND (r2.data->'labels') @> $1::jsonb)
 		GROUP BY r1.data->>'namespace', r2.data->>'namespace'
 	`
-	rows, err := s.pool.Query(ctx, sql)
+	rows, err := s.pool.Query(ctx, sql, labelsJSON)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: query: %w", err)
 	}
@@ -407,9 +434,17 @@ func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context) (map[graph.Namespa
 // still large for that fixture. That is intrinsic to "return every
 // resource in this namespace"; the OOM fix is that we no longer
 // also fetch the 1K resources outside the namespace.
-func (s *Store) NamespaceSubgraph(ctx context.Context, ns string) (*graph.Graph, error) {
-	const resourcesSQL = `SELECT data FROM resources WHERE data->>'namespace' = $1`
-	rRows, err := s.pool.Query(ctx, resourcesSQL, ns)
+func (s *Store) NamespaceSubgraph(ctx context.Context, ns string, labels map[string]string) (*graph.Graph, error) {
+	labelsJSON, err := marshalLabelFilter(labels)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.NamespaceSubgraph: %w", err)
+	}
+	const resourcesSQL = `
+		SELECT data FROM resources
+		WHERE data->>'namespace' = $1
+		  AND ($2::jsonb IS NULL OR (data->'labels') @> $2::jsonb)
+	`
+	rRows, err := s.pool.Query(ctx, resourcesSQL, ns, labelsJSON)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.NamespaceSubgraph: resources query: %w", err)
 	}
@@ -423,8 +458,10 @@ func (s *Store) NamespaceSubgraph(ctx context.Context, ns string) (*graph.Graph,
 		FROM edges e
 		JOIN resources r1 ON r1.id = e.from_id AND r1.data->>'namespace' = $1
 		JOIN resources r2 ON r2.id = e.to_id   AND r2.data->>'namespace' = $1
+		WHERE $2::jsonb IS NULL
+		   OR ((r1.data->'labels') @> $2::jsonb AND (r2.data->'labels') @> $2::jsonb)
 	`
-	eRows, err := s.pool.Query(ctx, edgesSQL, ns)
+	eRows, err := s.pool.Query(ctx, edgesSQL, ns, labelsJSON)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.NamespaceSubgraph: edges query: %w", err)
 	}

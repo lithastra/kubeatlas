@@ -28,18 +28,22 @@ func (ClusterAggregator) Level() Level { return LevelCluster }
 // from the store layer.
 const clusterScopedBucket = "_cluster"
 
-func (ClusterAggregator) Aggregate(ctx context.Context, store graph.GraphStore, _ Scope) (*View, error) {
+func (ClusterAggregator) Aggregate(ctx context.Context, store graph.GraphStore, scope Scope) (*View, error) {
 	// Pushdown path (P3-T0a, May 2026): the old implementation called
 	// store.Snapshot, which materialised every Resource (including
 	// the full Raw K8s payload) into Go heap on every request — 50-
 	// 200 MB per call on a 6-7K resource cluster and an OOM-kill of
 	// the API pod under modest concurrent load. The new path uses
 	// two GROUP BY queries that return ~100 + ~50 small rows.
-	nsKinds, err := store.KindCountsByNamespace(ctx)
+	//
+	// scope.Labels (F-114) is pushed into both queries: the store
+	// counts only resources — and edges between two resources —
+	// carrying every key=value pair.
+	nsKinds, err := store.KindCountsByNamespace(ctx, scope.Labels)
 	if err != nil {
 		return nil, err
 	}
-	edgeCounts, err := store.CrossNamespaceEdgeCounts(ctx)
+	edgeCounts, err := store.CrossNamespaceEdgeCounts(ctx, scope.Labels)
 	if err != nil {
 		return nil, err
 	}

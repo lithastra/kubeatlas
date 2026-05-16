@@ -247,11 +247,14 @@ func (s *Store) Traverse(_ context.Context, startID string, opts graph.TraverseO
 // added in the same change. It allocates only the result maps, not
 // the per-resource structs Snapshot would clone — that is the whole
 // point of the pushdown.
-func (s *Store) KindCountsByNamespace(_ context.Context) (map[string]map[string]int, error) {
+func (s *Store) KindCountsByNamespace(_ context.Context, labels map[string]string) (map[string]map[string]int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make(map[string]map[string]int)
 	for _, r := range s.resources {
+		if !labelsMatch(r.Labels, labels) {
+			continue
+		}
 		bucket := out[r.Namespace]
 		if bucket == nil {
 			bucket = make(map[string]int)
@@ -267,18 +270,18 @@ func (s *Store) KindCountsByNamespace(_ context.Context) (map[string]map[string]
 // present as a resource row are skipped — they cannot be assigned a
 // namespace and would otherwise crash the aggregator with empty
 // strings on both sides.
-func (s *Store) CrossNamespaceEdgeCounts(_ context.Context) (map[graph.NamespacePair]int, error) {
+func (s *Store) CrossNamespaceEdgeCounts(_ context.Context, labels map[string]string) (map[graph.NamespacePair]int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make(map[graph.NamespacePair]int)
 	for fromID, peers := range s.outgoing {
 		fromRes, fromOK := s.resources[fromID]
-		if !fromOK {
+		if !fromOK || !labelsMatch(fromRes.Labels, labels) {
 			continue
 		}
 		for k := range peers {
 			toRes, toOK := s.resources[k.other]
-			if !toOK {
+			if !toOK || !labelsMatch(toRes.Labels, labels) {
 				continue
 			}
 			out[graph.NamespacePair{From: fromRes.Namespace, To: toRes.Namespace}]++
@@ -293,7 +296,7 @@ func (s *Store) CrossNamespaceEdgeCounts(_ context.Context) (map[graph.Namespace
 // owners excepted), so the namespace aggregator's owner-walk runs
 // correctly against the subgraph without ever touching the rest of
 // the store.
-func (s *Store) NamespaceSubgraph(_ context.Context, ns string) (*graph.Graph, error) {
+func (s *Store) NamespaceSubgraph(_ context.Context, ns string, labels map[string]string) (*graph.Graph, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	g := &graph.Graph{Resources: make([]graph.Resource, 0), Edges: make([]graph.Edge, 0)}
@@ -302,11 +305,16 @@ func (s *Store) NamespaceSubgraph(_ context.Context, ns string) (*graph.Graph, e
 		if r.Namespace != ns {
 			continue
 		}
+		if !labelsMatch(r.Labels, labels) {
+			continue
+		}
 		g.Resources = append(g.Resources, r)
 		inNS[r.ID()] = struct{}{}
 	}
 	// Edges where both endpoints are in the requested namespace.
 	// Iterating outgoing avoids double-counting (incoming mirrors it).
+	// inNS already excludes label-filtered-out resources, so an edge
+	// to one of them is dropped here for free.
 	for fromID, peers := range s.outgoing {
 		if _, ok := inNS[fromID]; !ok {
 			continue
@@ -319,6 +327,36 @@ func (s *Store) NamespaceSubgraph(_ context.Context, ns string) (*graph.Graph, e
 		}
 	}
 	return g, nil
+}
+
+// LabelStats tallies every label key/value across the resource map
+// for GET /api/v1/labels (F-114). The raw key -> (value, count)
+// tallies are handed to graph.FoldLabelStats so the Tier 1 result
+// is sorted and capped exactly like the Tier 2 GROUP BY path.
+func (s *Store) LabelStats(_ context.Context) ([]graph.LabelStat, error) {
+	s.mu.RLock()
+	counts := make(map[string]map[string]int) // key -> value -> count
+	for _, r := range s.resources {
+		for k, v := range r.Labels {
+			vc := counts[k]
+			if vc == nil {
+				vc = make(map[string]int)
+				counts[k] = vc
+			}
+			vc[v]++
+		}
+	}
+	s.mu.RUnlock()
+
+	byKey := make(map[string][]graph.LabelValue, len(counts))
+	for k, vc := range counts {
+		vals := make([]graph.LabelValue, 0, len(vc))
+		for v, c := range vc {
+			vals = append(vals, graph.LabelValue{Value: v, Count: c})
+		}
+		byKey[k] = vals
+	}
+	return graph.FoldLabelStats(byKey), nil
 }
 
 // AppendEvent records one ResourceEvent in the bounded ring buffer.

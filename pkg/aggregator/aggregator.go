@@ -24,14 +24,21 @@ const (
 
 // Scope narrows down what an Aggregator returns.
 //
-//	LevelCluster:   all fields ignored.
-//	LevelNamespace: Namespace required.
+//	LevelCluster:   Namespace/Kind/Name ignored; Labels honoured.
+//	LevelNamespace: Namespace required; Labels honoured.
 //	LevelWorkload:  Namespace + Kind + Name required (must point at a workload).
 //	LevelResource:  Namespace + Kind + Name required (must point at any resource).
 type Scope struct {
 	Namespace string
 	Kind      string
 	Name      string
+
+	// Labels is the F-114 label filter. When non-empty, the cluster
+	// and namespace views count only resources carrying every
+	// key=value pair (and, for edges, only those between two such
+	// resources). Ignored at workload / resource level — those scopes
+	// already name one resource. Empty means "no filter".
+	Labels map[string]string
 }
 
 // Aggregator computes a pre-aggregated view of the graph at a given

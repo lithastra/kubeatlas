@@ -52,7 +52,7 @@ func (s *Server) handleSnapshotTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kinds, err := s.store.KindCountsByNamespace(r.Context())
+	kinds, err := s.store.KindCountsByNamespace(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
@@ -64,7 +64,7 @@ func (s *Server) handleSnapshotTrigger(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	edges, err := s.store.CrossNamespaceEdgeCounts(r.Context())
+	edges, err := s.store.CrossNamespaceEdgeCounts(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
