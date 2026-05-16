@@ -31,6 +31,7 @@ const sidebars: SidebarsConfig = {
         'concepts/rego-rules',
         'concepts/api-versioning',
         'concepts/snapshots',
+        'concepts/rule-pack-security',
       ],
     },
     'architecture',

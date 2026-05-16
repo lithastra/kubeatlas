@@ -74,6 +74,20 @@ spec:
             - name: KUBEATLAS_RULE_PACKS
               value: {{ join "," . | quote }}
             {{- end }}
+            {{- if .Values.rulePacks.verifySignature }}
+            # rulePacks.verifySignature → Sigstore signature
+            # verification for OCI packs. When "true" a pack whose
+            # signature does not verify aborts startup (invariant 2.9).
+            - name: KUBEATLAS_RULEPACK_VERIFY_SIGNATURE
+              value: "true"
+            {{- end }}
+            {{- with .Values.rulePacks.trustedIdentities }}
+            # rulePacks.trustedIdentities → JSON array of keyless
+            # Fulcio identities trusted for third-party packs. Only
+            # consulted when verifySignature is true.
+            - name: KUBEATLAS_RULEPACK_TRUSTED_IDENTITIES
+              value: {{ toJson . | quote }}
+            {{- end }}
           {{- if .Values.persistence.enabled }}
             - name: KUBEATLAS_BACKEND
               value: "postgres"

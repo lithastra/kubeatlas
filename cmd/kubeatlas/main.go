@@ -75,13 +75,25 @@ func buildRegoEngine(ctx context.Context, disc kdiscoveryClient, extras []string
 		slog.Info("openshift rule pack disabled by config", "mode", mode)
 	}
 
+	ociOpts, err := loadOCIVerifyConfig()
+	if err != nil {
+		return nil, err
+	}
+
 	for _, ref := range extras {
 		ref = strings.TrimSpace(ref)
 		if ref == "" {
 			continue
 		}
-		pack, err := loadExtraPack(ctx, ref)
+		pack, err := loadExtraPack(ctx, ref, ociOpts...)
 		if err != nil {
+			// A signature-verification failure is FATAL — invariant
+			// 2.9: an unverified pack must abort startup, never be
+			// warned-and-skipped like an ordinary load error.
+			// "Failed but continued" equals "not verified".
+			if errors.Is(err, rego.ErrSignatureVerification) {
+				return nil, fmt.Errorf("rule pack %s: %w", ref, err)
+			}
 			slog.Warn("extra rule pack failed to load; skipping",
 				"ref", ref, "err", err)
 			continue
@@ -111,19 +123,49 @@ func buildRegoEngine(ctx context.Context, disc kdiscoveryClient, extras []string
 // "oci://...:tag" or "<host>/<repo>:tag" go through the OCI puller;
 // anything else is treated as a directory path. Future schemes
 // (file://, https:// for an unsigned tarball) plug in here.
-func loadExtraPack(ctx context.Context, ref string) (*rego.RulePack, error) {
+//
+// ociOpts carries the P3-T-COS signature-verification settings; they
+// apply only to the OCI paths (a local directory pack has no
+// signature to verify).
+func loadExtraPack(ctx context.Context, ref string, ociOpts ...rego.OCIOption) (*rego.RulePack, error) {
 	switch {
 	case strings.HasPrefix(ref, "oci://"):
-		return rego.LoadRulePackFromOCI(ctx, ref)
+		return rego.LoadRulePackFromOCI(ctx, ref, ociOpts...)
 	case strings.Contains(ref, ":") && strings.Contains(ref, "/"):
 		// Bare registry/repo:tag form, e.g.
 		// ghcr.io/lithastra/rules/openshift:0.1.0. Heuristic
 		// distinguishes it from a Windows-style path because we
 		// run linux/darwin only.
-		return rego.LoadRulePackFromOCI(ctx, ref)
+		return rego.LoadRulePackFromOCI(ctx, ref, ociOpts...)
 	default:
 		return rego.LoadRulePackFromDir(ref)
 	}
+}
+
+// loadOCIVerifyConfig reads the P3-T-COS rule-pack signature settings
+// from the environment. The Helm chart writes these from
+// rulePacks.verifySignature / rulePacks.trustedIdentities.
+//
+// Recognized env vars:
+//
+//	KUBEATLAS_RULEPACK_VERIFY_SIGNATURE     "true" turns verification on
+//	KUBEATLAS_RULEPACK_TRUSTED_IDENTITIES   JSON array of TrustPolicy
+//
+// A malformed trusted-identities JSON is fatal: a typo'd Helm value
+// must fail loudly at startup, not silently fall back to "trust
+// nothing" (or, worse, "trust everything").
+func loadOCIVerifyConfig() ([]rego.OCIOption, error) {
+	verify := os.Getenv("KUBEATLAS_RULEPACK_VERIFY_SIGNATURE") == "true"
+	opts := []rego.OCIOption{rego.WithSignatureVerification(verify)}
+
+	if raw := strings.TrimSpace(os.Getenv("KUBEATLAS_RULEPACK_TRUSTED_IDENTITIES")); raw != "" {
+		var ids []rego.TrustPolicy
+		if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+			return nil, fmt.Errorf("KUBEATLAS_RULEPACK_TRUSTED_IDENTITIES: %w", err)
+		}
+		opts = append(opts, rego.WithTrustedIdentities(ids...))
+	}
+	return opts, nil
 }
 
 // rulePackRefs assembles the operator's rule-pack refs from both

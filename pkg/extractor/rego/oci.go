@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/file"
 	"oras.land/oras-go/v2/registry/remote"
@@ -20,26 +21,28 @@ import (
 // expects bare repository:tag form.
 const ociScheme = "oci://"
 
-// pullOCIArtifact downloads a rule-pack OCI artifact into destDir.
-// metadata.yaml + every shipped .rego file land at the directory
-// root, matching what LoadRulePackFromDir expects.
+// newRepository resolves an OCI reference to an oras-go remote
+// repository and its tag. Authentication uses the standard Docker
+// credential helpers via oras-go's `credentials.NewStoreFromDocker`
+// — the same flow `docker login ghcr.io` already established.
+// Anonymous pulls work without setup; private artifacts require the
+// operator to have done a `docker login` against the registry
+// beforehand.
 //
-// Authentication uses the standard Docker credential helpers via
-// oras-go's `credentials.NewStoreFromDocker` — i.e. the same flow
-// `docker login ghcr.io` already established. Anonymous pulls work
-// without setup; private artifacts require the operator to have
-// done a `docker login` against the registry beforehand.
-func pullOCIArtifact(ctx context.Context, ref, destDir string) error {
+// Both pullOCIArtifact and verifyOCISignature go through here so the
+// pulled bytes and the signature referrer are fetched from exactly
+// the same repository handle with the same credentials.
+func newRepository(ref string) (*remote.Repository, string, error) {
 	ref = strings.TrimPrefix(ref, ociScheme)
 
 	repoRef, tag, err := splitRefTag(ref)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 
 	repo, err := remote.NewRepository(repoRef)
 	if err != nil {
-		return fmt.Errorf("parse repository %q: %w", repoRef, err)
+		return nil, "", fmt.Errorf("parse repository %q: %w", repoRef, err)
 	}
 
 	// Plug in Docker credentials when available; fall through to
@@ -51,17 +54,33 @@ func pullOCIArtifact(ctx context.Context, ref, destDir string) error {
 			Credential: credentials.Credential(store),
 		}
 	}
+	return repo, tag, nil
+}
+
+// pullOCIArtifact downloads a rule-pack OCI artifact into destDir.
+// metadata.yaml + every shipped .rego file land at the directory
+// root, matching what LoadRulePackFromDir expects.
+//
+// The returned descriptor is the artifact's manifest descriptor —
+// its digest is what the signature (if any) is verified against, so
+// LoadRulePackFromOCI threads it into verifyOCISignature.
+func pullOCIArtifact(ctx context.Context, ref, destDir string) (ocispec.Descriptor, error) {
+	repo, tag, err := newRepository(ref)
+	if err != nil {
+		return ocispec.Descriptor{}, err
+	}
 
 	dst, err := file.New(destDir)
 	if err != nil {
-		return fmt.Errorf("create file store at %q: %w", destDir, err)
+		return ocispec.Descriptor{}, fmt.Errorf("create file store at %q: %w", destDir, err)
 	}
 	defer func() { _ = dst.Close() }()
 
-	if _, err := oras.Copy(ctx, repo, tag, dst, tag, oras.DefaultCopyOptions); err != nil {
-		return fmt.Errorf("oras copy %s:%s: %w", repoRef, tag, err)
+	desc, err := oras.Copy(ctx, repo, tag, dst, tag, oras.DefaultCopyOptions)
+	if err != nil {
+		return ocispec.Descriptor{}, fmt.Errorf("oras copy %s:%s: %w", repo.Reference, tag, err)
 	}
-	return nil
+	return desc, nil
 }
 
 // splitRefTag pulls the trailing :tag off an OCI reference.

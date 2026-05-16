@@ -154,3 +154,46 @@ tests:
       ingress.acknowledgeNoBuiltinAuth: true
     asserts:
       - notFailedTemplate: {}
+
+  - it: rulePacks.verifySignature default-off emits no verify env var
+    template: deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULEPACK_VERIFY_SIGNATURE
+            value: "true"
+
+  - it: rulePacks.verifySignature=true is wired through to the binary
+    template: deployment.yaml
+    set:
+      rulePacks.verifySignature: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULEPACK_VERIFY_SIGNATURE
+            value: "true"
+
+  - it: rulePacks.trustedIdentities renders as a JSON env var
+    template: deployment.yaml
+    set:
+      rulePacks.verifySignature: true
+      rulePacks.trustedIdentities:
+        - issuer: https://token.actions.githubusercontent.com
+          identityRegexp: ^https://github\.com/acme/.+$
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_RULEPACK_TRUSTED_IDENTITIES
+            value: '[{"identityRegexp":"^https://github\\.com/acme/.+$","issuer":"https://token.actions.githubusercontent.com"}]'
+
+  - it: rulePacks.trustedIdentities entry without an issuer is rejected by the schema
+    template: deployment.yaml
+    set:
+      rulePacks.trustedIdentities:
+        - identity: someone
+    asserts:
+      - failedTemplate:
+          errorPattern: "trustedIdentities|issuer|anyOf|required"

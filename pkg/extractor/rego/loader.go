@@ -49,23 +49,36 @@ func EmbeddedOpenShift() (*RulePack, error) {
 // form ("oci://ghcr.io/...:tag") that operator-friendly Helm
 // values prefer.
 //
-// Cosign signature verification is intentionally NOT done here —
-// P2-T22 will add `--verify-signature` plumbing once the release
-// pipeline starts signing artifacts. We accept the design risk
-// that an attacker who controls the registry can ship a malicious
-// pack today; rule-pack interface guards (rego_api / kubeatlas
-// constraint) plus the engine's timeout + recover sandbox limit
-// blast radius.
-func LoadRulePackFromOCI(ctx context.Context, ref string) (*RulePack, error) {
+// Sigstore signature verification (P3-T-COS / invariant 2.9) runs
+// when WithSignatureVerification(true) is passed: after the pull,
+// the artifact's manifest digest is verified against the keyless
+// signature attached as an OCI referrer. A verification failure is
+// returned wrapped in ErrSignatureVerification so the bootstrap can
+// make it fatal — "failed but continued" equals "not verified".
+// With verification off (the v1.1 default, and the only sane mode
+// for an air-gapped install) the pull proceeds unchecked, exactly
+// as it did before this option existed.
+func LoadRulePackFromOCI(ctx context.Context, ref string, opts ...OCIOption) (*RulePack, error) {
+	o := newOCIOptions(opts)
+
 	tmpDir, err := os.MkdirTemp("", "kubeatlas-rulepack-*")
 	if err != nil {
 		return nil, fmt.Errorf("LoadRulePackFromOCI: tempdir: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	if err := pullOCIArtifact(ctx, ref, tmpDir); err != nil {
+	manifest, err := pullOCIArtifact(ctx, ref, tmpDir)
+	if err != nil {
 		return nil, fmt.Errorf("LoadRulePackFromOCI %s: %w", ref, err)
 	}
+
+	if o.verify {
+		if err := verifyOCISignature(ctx, ref, manifest, o); err != nil {
+			// Already wrapped in ErrSignatureVerification.
+			return nil, fmt.Errorf("LoadRulePackFromOCI %s: %w", ref, err)
+		}
+	}
+
 	return LoadRulePackFromDir(tmpDir)
 }
 
