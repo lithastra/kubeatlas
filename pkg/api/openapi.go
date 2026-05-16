@@ -378,6 +378,7 @@ func openAPIComponentsBase() map[string]any {
 					"matches":   map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Resource"}},
 					"total":     map[string]any{"type": "integer"},
 					"truncated": map[string]any{"type": "boolean"},
+					"warning":   map[string]any{"type": "string", "description": "Present when search ran as an unindexed Tier 1 linear scan."},
 				},
 				"required": []any{"matches", "total", "truncated"},
 			},
