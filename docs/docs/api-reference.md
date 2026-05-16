@@ -192,6 +192,78 @@ Same shape, for cluster-scoped ClusterRoles. Split from the
 namespaced variant because net/http's mux folds repeated
 slashes.
 
+## NetworkPolicy
+
+These endpoints expose the `SELECTS_NP` / `ALLOWS_FROM` / `ALLOWS_TO`
+edges KubeAtlas derives from `NetworkPolicy` objects. They describe
+the policy's **declared** topology — what the spec permits — not
+what a CNI actually enforces on the wire.
+
+### `GET /api/v1/networkpolicy/{namespace}/{name}/selected`
+
+Returns every Pod (and Pod-template-carrying workload) in the
+policy's namespace that `spec.podSelector` matches, resolved from
+the `SELECTS_NP` edges. An empty `podSelector` selects every Pod in
+the namespace.
+
+### `GET /api/v1/networkpolicy/{namespace}/{name}/allow-graph`
+
+Returns the `ALLOWS_FROM` (`spec.ingress[].from[]`) and
+`ALLOWS_TO` (`spec.egress[].to[]`) targets — the Pods, workloads,
+and Namespaces the policy declares as permitted peers.
+
+## Snapshots (Tier 2)
+
+Historical-snapshot endpoints. **Tier 2 only** — on a Tier 1
+install, or Tier 2 with `snapshots.enabled=false`, every endpoint
+below returns `503 Service Unavailable` with error code
+`UNAVAILABLE`. See [Historical snapshots](./concepts/snapshots.md)
+for the design.
+
+### `GET /api/v1/snapshots`
+
+Lists the recorded full-sync snapshot markers, most-recent first.
+
+```json
+{
+  "snapshots": [
+    { "timestamp": "2026-05-16T09:00:00Z", "resourceCount": 1432, "trigger": "periodic" }
+  ],
+  "count": 1
+}
+```
+
+### `GET /api/v1/snapshots/diff`
+
+Replays the event stream across a time window and classifies every
+resource into `added` / `removed` / `modified`. The window may not
+exceed the configured retention.
+
+| Query param | Required | Meaning |
+|---|---|---|
+| `from` | yes | Window start: `now`, a duration read as "ago" (`5m`/`1h`/`7d`), or an RFC3339 timestamp |
+| `to` | no | Window end; same formats, defaults to `now` |
+| `namespace` | no | Restrict the diff to one namespace; empty diffs the whole cluster |
+
+`400` if `from` is missing or unparseable, if `from` is not before
+`to`, or if the window is wider than retention.
+
+```bash
+curl -s 'http://localhost:8080/api/v1/snapshots/diff?from=1h&to=now' | jq .
+```
+
+### `POST /api/_internal/snapshot/trigger`
+
+Writes one `snapshot_meta` marker anchoring the diff endpoint to a
+known full-sync point. **Internal** — served only on the ClusterIP
+Service, never exposed through Ingress. The periodic full-sync
+`CronJob` is the intended caller; `kubeatlas snapshot trigger`
+reaches it from the CLI.
+
+| Query param | Required | Meaning |
+|---|---|---|
+| `trigger` | no | Marker kind: `periodic` or `manual` (default `manual`) |
+
 ## Search
 
 ### `GET /api/v1/search`
