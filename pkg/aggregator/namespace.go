@@ -66,7 +66,10 @@ func (NamespaceAggregator) Aggregate(ctx context.Context, store graph.GraphStore
 	// rule (cluster-scoped owners excepted), so the owner-chain walk
 	// below runs correctly against the subgraph without ever fetching
 	// the rest of the store.
-	sub, err := store.NamespaceSubgraph(ctx, scope.Namespace)
+	// scope.Labels (F-114) is pushed into the subgraph query: only
+	// resources carrying every key=value pair, and edges between two
+	// such resources, come back.
+	sub, err := store.NamespaceSubgraph(ctx, scope.Namespace, scope.Labels)
 	if err != nil {
 		return nil, err
 	}
