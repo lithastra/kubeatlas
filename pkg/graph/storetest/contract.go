@@ -472,8 +472,8 @@ func Run(t *testing.T, factory Factory) {
 			t.Fatalf("CrossNamespaceEdgeCounts: %v", err)
 		}
 		want := map[graph.NamespacePair]int{
-			{From: "demo", To: "demo"}:   2,
-			{From: "other", To: "demo"}:  1,
+			{From: "demo", To: "demo"}:  2,
+			{From: "other", To: "demo"}: 1,
 		}
 		for k, want := range want {
 			if got[k] != want {
@@ -801,6 +801,127 @@ func Run(t *testing.T, factory Factory) {
 				t.Errorf("markers not newest-first at index %d: %v after %v",
 					i, got[i].Timestamp, got[i-1].Timestamp)
 			}
+		}
+	})
+
+	// --- Search (F-113) ------------------------------------------------
+	//
+	// Both stores must agree on match SETS. Ranking differs (Tier 2
+	// ts_rank vs Tier 1 score) so order is not asserted, and queries
+	// use whole tokens — the PostgreSQL tsvector matches whole tokens,
+	// while the memory store does substring matching, so a partial
+	// token would diverge.
+
+	// searchSeed loads a small, fixed fixture the Search tests share.
+	searchSeed := func(t *testing.T, s graph.GraphStore) {
+		t.Helper()
+		ctx := context.Background()
+		for _, r := range []graph.Resource{
+			{Kind: "Deployment", Namespace: "shop", Name: "checkout", Labels: map[string]string{"tier": "backend"}},
+			{Kind: "Service", Namespace: "shop", Name: "checkout"},
+			{Kind: "Pod", Namespace: "shop", Name: "warehouse", Labels: map[string]string{"tier": "backend"}},
+		} {
+			if err := s.UpsertResource(ctx, r); err != nil {
+				t.Fatalf("seed UpsertResource %s: %v", r.ID(), err)
+			}
+		}
+	}
+	// names collects the match names into a set for order-free asserts.
+	names := func(res graph.SearchResult) map[string]bool {
+		m := make(map[string]bool, len(res.Matches))
+		for _, r := range res.Matches {
+			m[r.Name] = true
+		}
+		return m
+	}
+
+	t.Run("Search on an empty store returns no matches", func(t *testing.T) {
+		s := factory(t)
+		got, err := s.Search(context.Background(), graph.SearchQuery{Text: "anything"})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if got.Total != 0 || len(got.Matches) != 0 {
+			t.Errorf("got total=%d matches=%d, want 0/0", got.Total, len(got.Matches))
+		}
+	})
+
+	t.Run("Search matches a name token", func(t *testing.T) {
+		s := factory(t)
+		searchSeed(t, s)
+		got, err := s.Search(context.Background(), graph.SearchQuery{Text: "checkout"})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if got.Total != 2 {
+			t.Errorf("total = %d, want 2", got.Total)
+		}
+		if n := names(got); !n["checkout"] || len(n) != 1 {
+			t.Errorf("match names = %v, want {checkout}", n)
+		}
+	})
+
+	t.Run("Search matches a label value", func(t *testing.T) {
+		s := factory(t)
+		searchSeed(t, s)
+		got, err := s.Search(context.Background(), graph.SearchQuery{Text: "backend"})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if got.Total != 2 {
+			t.Errorf("total = %d, want 2 (the two tier=backend resources)", got.Total)
+		}
+	})
+
+	t.Run("Search with a kind filter and empty text", func(t *testing.T) {
+		s := factory(t)
+		searchSeed(t, s)
+		got, err := s.Search(context.Background(), graph.SearchQuery{Kind: "Pod"})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if got.Total != 1 || !names(got)["warehouse"] {
+			t.Errorf("got total=%d names=%v, want 1 / {warehouse}", got.Total, names(got))
+		}
+	})
+
+	t.Run("Search combines free text with a kind filter", func(t *testing.T) {
+		s := factory(t)
+		searchSeed(t, s)
+		got, err := s.Search(context.Background(), graph.SearchQuery{Text: "checkout", Kind: "Service"})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if got.Total != 1 || !names(got)["checkout"] {
+			t.Errorf("got total=%d names=%v, want 1 / {checkout}", got.Total, names(got))
+		}
+	})
+
+	t.Run("Search caps Matches at Limit but Total counts every hit", func(t *testing.T) {
+		s := factory(t)
+		searchSeed(t, s)
+		// All three fixtures live in namespace "shop".
+		got, err := s.Search(context.Background(), graph.SearchQuery{Text: "shop", Limit: 2})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if got.Total != 3 {
+			t.Errorf("total = %d, want 3", got.Total)
+		}
+		if len(got.Matches) != 2 {
+			t.Errorf("len(matches) = %d, want 2 (Limit)", len(got.Matches))
+		}
+	})
+
+	t.Run("Search with no hits returns an empty result", func(t *testing.T) {
+		s := factory(t)
+		searchSeed(t, s)
+		got, err := s.Search(context.Background(), graph.SearchQuery{Text: "nonexistenttoken"})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		if got.Total != 0 || len(got.Matches) != 0 {
+			t.Errorf("got total=%d matches=%d, want 0/0", got.Total, len(got.Matches))
 		}
 	})
 }

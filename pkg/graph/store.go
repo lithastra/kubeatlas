@@ -111,6 +111,58 @@ type GraphStore interface {
 	// the duration. The call returns only when every expired row
 	// is gone (or ctx is cancelled).
 	PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
+
+	// Search runs a full-text query across resources and returns a
+	// ranked page of matches (F-113).
+	//
+	// Pushing this into the store is mandatory, not an optimisation:
+	// the Phase 1 search read store.Snapshot and scanned in Go,
+	// which is the O(R) full-Resource allocation P3-T0a removed from
+	// the cluster/namespace views for OOM-ing the API pod past ~5K
+	// resources.
+	//
+	// Tier 2 answers from a GIN-indexed tsvector column. Tier 1 has
+	// no index and falls back to a linear scan, flagging
+	// SearchResult.LinearScan so the API can warn the caller. Both
+	// honour SearchQuery.Limit and report SearchResult.Total.
+	Search(ctx context.Context, q SearchQuery) (SearchResult, error)
+}
+
+// SearchQuery is the parsed form of a /api/v1/search request — the
+// deliberately small query model F-113 ships in v1.1: free-text
+// terms plus optional kind / namespace field filters. A richer
+// query DSL is deferred until there is user feedback (ADR 0011).
+type SearchQuery struct {
+	// Text is the free-text portion. Tier 2 hands it to PostgreSQL's
+	// websearch_to_tsquery; Tier 1 matches it as a case-insensitive
+	// substring. May be empty for a pure field-filter query such as
+	// "kind:Pod".
+	Text string
+
+	// Kind and Namespace are exact-match filters. Empty means "any".
+	Kind      string
+	Namespace string
+
+	// Limit caps the number of Matches returned. Implementations
+	// clamp a non-positive value to a sane default.
+	Limit int
+}
+
+// SearchResult is what GraphStore.Search returns.
+type SearchResult struct {
+	// Matches is the ranked page of resources, at most Limit long.
+	Matches []Resource
+
+	// Total is the count of resources matching the query before
+	// Limit was applied, so the API can report "showing N of Total"
+	// and set a truncation flag.
+	Total int
+
+	// LinearScan reports that the result came from an unindexed O(N)
+	// scan — the Tier 1 memory store. The API surfaces it as a
+	// warning so a large-cluster operator knows the query was slow
+	// by construction, and that Tier 2 fixes it.
+	LinearScan bool
 }
 
 // NamespacePair keys the result of CrossNamespaceEdgeCounts. From and

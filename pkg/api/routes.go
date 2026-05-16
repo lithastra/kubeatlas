@@ -118,10 +118,10 @@ func (s *Server) Routes() []RouteInfo {
 		},
 		{
 			Method: "GET", Pattern: "/api/v1alpha1/search",
-			Summary:     "Substring search across resources",
-			Description: "Linear case-insensitive scan over kind / name / namespace / labels. Phase 2 (v1.0) replaces this with an inverted index.",
+			Summary:     "Full-text search across resources",
+			Description: "Ranked full-text search over name / kind / namespace / label values. On Tier 2 it runs as one GIN-indexed tsvector match; on Tier 1 it is a linear scan and the response carries a warning. P3-T8 (F-113).",
 			QueryParams: []ParamSpec{
-				{Name: "q", Required: true, Description: "Search term (case-insensitive)", Type: "string"},
+				{Name: "q", Required: true, Description: "Free-text terms plus optional kind:/namespace: filter tokens, e.g. 'customers kind:Pod'", Type: "string"},
 				{Name: "limit", Description: "Max matches to return (default 50, max 200)", Type: "integer"},
 			},
 			Response: ResponseSpec{Description: "Search results", SchemaRef: "SearchResponse"},

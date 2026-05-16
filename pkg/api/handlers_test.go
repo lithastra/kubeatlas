@@ -301,6 +301,59 @@ func TestHandleSearch_LimitCappedAtMax(t *testing.T) {
 	}
 }
 
+// F-113: a kind: filter token with no free text returns only that
+// kind.
+func TestHandleSearch_KindFilterOnly(t *testing.T) {
+	base, _, stop := seedAndServe(t, func(s graph.GraphStore) {
+		ctx := context.Background()
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Namespace: "demo", Name: "alpha"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Service", Namespace: "demo", Name: "beta"})
+	})
+	defer stop()
+	var resp api.SearchResponse
+	httpResp, body := getJSON(t, base+"/api/v1alpha1/search?q=kind:Pod", &resp)
+	if httpResp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d (body=%s)", httpResp.StatusCode, body)
+	}
+	if resp.Total != 1 || len(resp.Matches) != 1 || resp.Matches[0].Kind != "Pod" {
+		t.Errorf("q=kind:Pod returned %+v, want exactly one Pod", resp.Matches)
+	}
+}
+
+// F-113: free text and a kind: filter combine — both must hold.
+func TestHandleSearch_TextPlusKindFilter(t *testing.T) {
+	base, _, stop := seedAndServe(t, func(s graph.GraphStore) {
+		ctx := context.Background()
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "checkout"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Service", Namespace: "demo", Name: "checkout"})
+	})
+	defer stop()
+	var resp api.SearchResponse
+	httpResp, body := getJSON(t, base+"/api/v1alpha1/search?q=checkout%20kind:Service", &resp)
+	if httpResp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d (body=%s)", httpResp.StatusCode, body)
+	}
+	if resp.Total != 1 || len(resp.Matches) != 1 || resp.Matches[0].Kind != "Service" {
+		t.Errorf("q='checkout kind:Service' returned %+v, want only the Service", resp.Matches)
+	}
+}
+
+// F-113: a Tier 1 (memory) store search is an unindexed linear scan;
+// the response must say so (guide invariant — do not let Tier 1
+// search silently "seem to work").
+func TestHandleSearch_Tier1WarnsLinearScan(t *testing.T) {
+	base, _, stop := seedAndServe(t, petClinicSeed)
+	defer stop()
+	var resp api.SearchResponse
+	httpResp, body := getJSON(t, base+"/api/v1alpha1/search?q=api", &resp)
+	if httpResp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d (body=%s)", httpResp.StatusCode, body)
+	}
+	if resp.Warning == "" {
+		t.Error("expected a linear-scan warning on a Tier 1 store, got none")
+	}
+}
+
 func TestHandleMetrics_PromExposition(t *testing.T) {
 	base, srv, stop := seedAndServe(t, petClinicSeed)
 	defer stop()

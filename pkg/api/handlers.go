@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -43,11 +42,14 @@ type ResourceDetailResponseV1 struct {
 // SearchResponse is the body of GET /search?q=...
 //
 // Truncated is true when the cap was hit — the client should narrow
-// its query rather than ask for a higher limit.
+// its query rather than ask for a higher limit. Warning is set when
+// the search ran as an unindexed linear scan (a Tier 1 store); it is
+// omitted entirely on the indexed Tier 2 path.
 type SearchResponse struct {
 	Matches   []graph.Resource `json:"matches"`
 	Total     int              `json:"total"`
 	Truncated bool             `json:"truncated"`
+	Warning   string           `json:"warning,omitempty"`
 }
 
 const (
@@ -193,20 +195,25 @@ func (s *Server) handleOutgoing(w http.ResponseWriter, r *http.Request) {
 
 // handleSearch serves GET /search?q=&limit=.
 //
-// Phase 1's search is a linear case-insensitive substring scan over
-// every resource's kind / name / namespace / label values. Phase 2
-// (v1.0) replaces this with an inverted index — until then, this
-// scales fine for typical Phase 1 cluster sizes but the spec keeps a
-// per-request cap so a 50K-resource cluster doesn't return everything.
+// F-113 (P3-T8): the query is pushed into the store. On Tier 2 it
+// runs as one GIN-indexed tsvector match; on Tier 1 it is a linear
+// scan and the response carries a Warning saying so. The Phase 1
+// path — store.Snapshot + a Go-side scan — is gone: it materialised
+// every resource into the API process and OOM-killed the pod past
+// ~5K resources (the same defect P3-T0a removed from the views).
+//
+// q accepts free-text terms plus "kind:" / "namespace:" (or "ns:")
+// filter tokens; see parseSearchQuery. limit is capped at
+// maxSearchLimit so a huge cluster cannot return everything.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if q == "" {
+	raw := strings.TrimSpace(r.URL.Query().Get("q"))
+	if raw == "" {
 		writeError(w, http.StatusBadRequest, CodeInvalidArgument, "q is required and must not be empty")
 		return
 	}
 	limit := defaultSearchLimit
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		n, err := strconv.Atoi(raw)
+	if rawLimit := r.URL.Query().Get("limit"); rawLimit != "" {
+		n, err := strconv.Atoi(rawLimit)
 		if err != nil || n <= 0 {
 			writeError(w, http.StatusBadRequest, CodeInvalidArgument, "limit must be a positive integer")
 			return
@@ -216,31 +223,64 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
-	snap, err := s.store.Snapshot(r.Context())
+
+	query := parseSearchQuery(raw)
+	query.Limit = limit
+	if query.Text == "" && query.Kind == "" && query.Namespace == "" {
+		writeError(w, http.StatusBadRequest, CodeInvalidArgument,
+			"q must contain a search term or a kind:/namespace: filter")
+		return
+	}
+
+	result, err := s.store.Search(r.Context(), query)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
-	needle := strings.ToLower(q)
-	matches := make([]graph.Resource, 0, limit)
-	total := 0
-	for _, res := range snap.Resources {
-		if !resourceMatches(res, needle) {
+	matches := result.Matches
+	if matches == nil {
+		matches = []graph.Resource{}
+	}
+	resp := SearchResponse{
+		Matches:   matches,
+		Total:     result.Total,
+		Truncated: result.Total > len(matches),
+	}
+	if result.LinearScan {
+		resp.Warning = "search ran as a linear scan on a Tier 1 (in-memory) store " +
+			"and may be slow on large clusters; enable Tier 2 (PostgreSQL) for indexed search"
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// parseSearchQuery splits a raw q value into the F-113 query model:
+// "kind:" / "namespace:" / "ns:" tokens become exact-match filters,
+// every other token is free text. The query model stays this small
+// for v1.1 — no boolean DSL, no quoting (ADR 0011). A repeated
+// filter token keeps the last value; a token with an unrecognised
+// "prefix:" is treated as plain free text.
+func parseSearchQuery(raw string) graph.SearchQuery {
+	var (
+		q     graph.SearchQuery
+		terms []string
+	)
+	for _, tok := range strings.Fields(raw) {
+		key, val, isFilter := strings.Cut(tok, ":")
+		if !isFilter || val == "" {
+			terms = append(terms, tok)
 			continue
 		}
-		total++
-		if len(matches) < limit {
-			matches = append(matches, res)
+		switch strings.ToLower(key) {
+		case "kind":
+			q.Kind = val
+		case "namespace", "ns":
+			q.Namespace = val
+		default:
+			terms = append(terms, tok)
 		}
 	}
-	// Stable order so two consecutive calls with the same query and
-	// store contents return the same prefix.
-	sort.Slice(matches, func(i, j int) bool { return matches[i].ID() < matches[j].ID() })
-	writeJSON(w, http.StatusOK, SearchResponse{
-		Matches:   matches,
-		Total:     total,
-		Truncated: total > len(matches),
-	})
+	q.Text = strings.Join(terms, " ")
+	return q
 }
 
 // handleMetrics serves the Prometheus exposition.
@@ -279,21 +319,4 @@ func writeNotFoundOr500(w http.ResponseWriter, err error, id string) {
 		return
 	}
 	writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-}
-
-// resourceMatches returns true if needle (already lower-cased) appears
-// as a substring of any of: Kind, Name, Namespace, or any label value
-// or key.
-func resourceMatches(r graph.Resource, needle string) bool {
-	if strings.Contains(strings.ToLower(r.Kind), needle) ||
-		strings.Contains(strings.ToLower(r.Name), needle) ||
-		strings.Contains(strings.ToLower(r.Namespace), needle) {
-		return true
-	}
-	for k, v := range r.Labels {
-		if strings.Contains(strings.ToLower(k), needle) || strings.Contains(strings.ToLower(v), needle) {
-			return true
-		}
-	}
-	return false
 }

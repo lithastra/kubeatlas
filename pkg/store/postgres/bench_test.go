@@ -351,3 +351,76 @@ func BenchmarkP3T0aBaseline_Postgres(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkSearch10K_Postgres is the P3-T8 (F-113) acceptance
+// benchmark: full-text search across a 10K-resource cluster. The
+// target is P95 < 200 ms; the GIN-indexed tsvector match (migration
+// 006) is expected to land an order of magnitude inside that.
+//
+// The fixture is deliberately the worst case for the index: every
+// resource carries the label tier=backend, so a search for "backend"
+// matches all 10K rows — count(*) OVER() and ts_rank run over the
+// whole set before LIMIT trims it to a 50-row page. A real query
+// ("find the one Service called checkout") touches far fewer rows.
+//
+// Seed cost (~10K x ~2.2 ms per UpsertResource AGE double-write,
+// ~22 s) is paid once and amortised across both sub-benchmarks.
+func BenchmarkSearch10K_Postgres(b *testing.B) {
+	if testing.Short() {
+		b.Skip("skipping testcontainers benchmark in -short mode")
+	}
+	store := sharedBenchStore(b)
+	ctx := context.Background()
+
+	if err := store.truncateAll(ctx); err != nil {
+		b.Fatalf("truncateAll: %v", err)
+	}
+	const n = 10000
+	kinds := []string{"Pod", "Service", "ConfigMap", "Deployment", "StatefulSet"}
+	for i := 0; i < n; i++ {
+		r := graph.Resource{
+			Kind:      kinds[i%len(kinds)],
+			Namespace: fmt.Sprintf("ns-%03d", i%200),
+			Name:      fmt.Sprintf("svc-%05d", i),
+			UID:       types.UID(fmt.Sprintf("u-%05d", i)),
+			Labels:    map[string]string{"app": fmt.Sprintf("app-%d", i%50), "tier": "backend"},
+		}
+		if err := store.UpsertResource(ctx, r); err != nil {
+			b.Fatalf("seed UpsertResource %d: %v", i, err)
+		}
+	}
+
+	// free-text: matches every row (worst case for count + rank).
+	b.Run("free-text", func(b *testing.B) {
+		q := graph.SearchQuery{Text: "backend", Limit: 50}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			res, err := store.Search(ctx, q)
+			if err != nil {
+				b.Fatalf("Search: %v", err)
+			}
+			if len(res.Matches) != 50 || res.Total != n {
+				b.Fatalf("got %d matches / total %d, want 50 / %d",
+					len(res.Matches), res.Total, n)
+			}
+		}
+	})
+
+	// text + kind filter: the kind predicate narrows to 1/5 of the
+	// rows, the realistic shape of a scoped search.
+	b.Run("text-plus-kind-filter", func(b *testing.B) {
+		q := graph.SearchQuery{Text: "backend", Kind: "Service", Limit: 50}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			res, err := store.Search(ctx, q)
+			if err != nil {
+				b.Fatalf("Search: %v", err)
+			}
+			if res.Total != n/len(kinds) {
+				b.Fatalf("total = %d, want %d", res.Total, n/len(kinds))
+			}
+		}
+	})
+}

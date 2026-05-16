@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -455,4 +456,90 @@ func labelsMatch(have, want map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// memorySearchDefaultLimit caps a Search whose SearchQuery.Limit is
+// non-positive — mirrors the postgres store's searchDefaultLimit.
+const memorySearchDefaultLimit = 50
+
+// Search runs F-113 full-text search as a linear scan over the
+// in-memory resource map. There is no index, so every call is O(R)
+// and SearchResult.LinearScan is set true — the API turns that into
+// a "Tier 1 search may be slow" warning. ADR 0011: the indexed path
+// is Tier 2 (PostgreSQL); a bleve fallback for Tier 1 could be added
+// later behind this same method.
+func (s *Store) Search(_ context.Context, q graph.SearchQuery) (graph.SearchResult, error) {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = memorySearchDefaultLimit
+	}
+	needle := strings.ToLower(strings.TrimSpace(q.Text))
+
+	type scored struct {
+		r     graph.Resource
+		score int
+	}
+	var hits []scored
+
+	s.mu.RLock()
+	for _, r := range s.resources {
+		if q.Kind != "" && r.Kind != q.Kind {
+			continue
+		}
+		if q.Namespace != "" && r.Namespace != q.Namespace {
+			continue
+		}
+		score, ok := searchScore(r, needle)
+		if !ok {
+			continue
+		}
+		hits = append(hits, scored{r: r, score: score})
+	}
+	s.mu.RUnlock()
+
+	// Rank: higher score first (a name hit outranks a label hit),
+	// then ID for a stable order across equal scores.
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].score != hits[j].score {
+			return hits[i].score > hits[j].score
+		}
+		return hits[i].r.ID() < hits[j].r.ID()
+	})
+
+	total := len(hits)
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	matches := make([]graph.Resource, len(hits))
+	for i, h := range hits {
+		matches[i] = h.r
+	}
+	return graph.SearchResult{Matches: matches, Total: total, LinearScan: true}, nil
+}
+
+// searchScore reports whether r matches needle and, if so, a
+// relevance score: a name hit outranks a kind / namespace hit,
+// which outranks a label hit. An empty needle matches every
+// resource at score 0 — a pure field-filter query the caller has
+// already narrowed via SearchQuery.Kind / Namespace.
+func searchScore(r graph.Resource, needle string) (int, bool) {
+	if needle == "" {
+		return 0, true
+	}
+	if strings.Contains(strings.ToLower(r.Name), needle) {
+		return 3, true
+	}
+	if strings.Contains(strings.ToLower(r.Kind), needle) {
+		return 2, true
+	}
+	if strings.Contains(strings.ToLower(r.Namespace), needle) {
+		return 2, true
+	}
+	for k, v := range r.Labels {
+		if strings.Contains(strings.ToLower(k), needle) ||
+			strings.Contains(strings.ToLower(v), needle) {
+			return 1, true
+		}
+	}
+	return 0, false
 }
