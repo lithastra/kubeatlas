@@ -3,17 +3,26 @@
 
 package main
 
-import "github.com/pkg/browser"
+import (
+	"strings"
 
-// opener opens a URL in the operator's default browser. It is a
-// function type, not a direct call to github.com/pkg/browser, so the
-// command tests can substitute a fake that just records the URL —
-// CI has no display to launch a real browser into.
-type opener func(targetURL string) error
+	"github.com/pkg/browser"
+)
 
-// systemBrowser is the production opener: github.com/pkg/browser is
-// pure Go and picks the right mechanism per OS (open / xdg-open /
-// rundll32).
-func systemBrowser(targetURL string) error {
-	return browser.OpenURL(targetURL)
+// opener opens a URL or a local file. It is a function type, not a
+// direct call into github.com/pkg/browser, so the command tests can
+// substitute a fake that just records the argument — CI has no
+// display to launch a real browser into.
+type opener func(target string) error
+
+// systemBrowser is the production opener. A target with a "://"
+// scheme is opened as a URL (online mode's UI deep-link); anything
+// else is treated as a local file path (offline mode's rendered
+// SVG). github.com/pkg/browser is pure Go and picks the right
+// per-OS mechanism for each.
+func systemBrowser(target string) error {
+	if strings.Contains(target, "://") {
+		return browser.OpenURL(target)
+	}
+	return browser.OpenFile(target)
 }
