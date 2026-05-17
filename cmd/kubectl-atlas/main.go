@@ -112,13 +112,13 @@ func (a *app) openTarget(ctx context.Context, build func(base string) string) er
 	defer cleanup()
 
 	target := build(base)
-	fmt.Fprintln(os.Stdout, "Opening", target)
+	_, _ = fmt.Fprintln(os.Stdout, "Opening", target)
 	if err := a.open(target); err != nil {
 		return fmt.Errorf("open browser: %w", err)
 	}
 
 	if tunnel {
-		fmt.Fprintln(os.Stdout, "Port-forward tunnel is up — press Ctrl-C to close it.")
+		_, _ = fmt.Fprintln(os.Stdout, "Port-forward tunnel is up — press Ctrl-C to close it.")
 		waitForInterrupt(ctx)
 	}
 	return nil

@@ -69,7 +69,7 @@ func runSnapshotTrigger(args []string) int {
 		fmt.Fprintf(os.Stderr, "snapshot trigger: POST %s: %v\n", endpoint, err)
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "snapshot trigger: server returned %d: %s\n",

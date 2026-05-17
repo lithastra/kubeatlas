@@ -510,10 +510,8 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("NamespaceSubgraph: %v", err)
 		}
-		if g == nil {
-			t.Fatal("expected non-nil Graph, got nil")
-		}
-		// Resources: only the two demo resources.
+		// Resources: only the two demo resources. (That the store
+		// returns a non-nil Graph is the next sub-test's assertion.)
 		gotIDs := make(map[string]bool, len(g.Resources))
 		for _, r := range g.Resources {
 			gotIDs[r.ID()] = true
@@ -549,10 +547,13 @@ func Run(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("NamespaceSubgraph: %v", err)
 		}
+		// The store must return a non-nil, empty Graph — never a nil
+		// pointer the aggregator would have to special-case. The
+		// emptiness check sits in the non-nil branch so it can never
+		// dereference a nil g.
 		if g == nil {
 			t.Fatal("expected non-nil Graph, got nil")
-		}
-		if len(g.Resources) != 0 || len(g.Edges) != 0 {
+		} else if len(g.Resources) != 0 || len(g.Edges) != 0 {
 			t.Errorf("expected empty subgraph, got resources=%d edges=%d", len(g.Resources), len(g.Edges))
 		}
 	})
