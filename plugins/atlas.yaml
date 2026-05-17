@@ -1,8 +1,7 @@
-# Krew plugin manifest for `kubectl atlas` (F-116 / P3-T10).
+# Krew plugin manifest for `kubectl atlas`.
 #
 # This is the manifest submitted to https://github.com/kubernetes-sigs/krew-index
-# so operators can `kubectl krew install atlas`. The submission PR is
-# task P3-T16 (M9); this file is the prepared source.
+# so operators can `kubectl krew install atlas`. This file is the prepared source.
 #
 # `version` and the per-platform `uri` / `sha256` are filled in at
 # release time — goreleaser builds the kubectl-atlas_<ver>_<os>_<arch>
@@ -15,23 +14,22 @@ metadata:
 spec:
   version: v0.0.0
   homepage: https://github.com/lithastra/kubeatlas
-  shortDescription: Open the KubeAtlas UI for a Kubernetes resource
+  shortDescription: Visualize Kubernetes resource dependencies
   description: |
-    kubectl-atlas opens the KubeAtlas web UI at the page for a
-    resource, namespace, or the whole cluster — a one-command jump
-    from the terminal to the dependency graph.
+    kubectl-atlas shows a KubeAtlas dependency graph for a resource,
+    a namespace, or the whole cluster.
 
-        kubectl atlas deployment api -n petclinic
-        kubectl atlas namespace petclinic
-        kubectl atlas cluster
+    By default it works offline: it renders the graph to an SVG
+    locally through the kubeatlas CLI, with no KubeAtlas server
+    required. With --online (or --server / KUBEATLAS_URL) it opens
+    the live KubeAtlas web UI instead.
 
-    The UI base URL is resolved from --server, then the KUBEATLAS_URL
-    environment variable, then a kubectl port-forward to the
-    in-cluster KubeAtlas Service. The plugin is an entry point only;
-    it embeds no server code and installs nothing in the cluster.
+    The plugin installs nothing in the cluster. Run
+    `kubectl atlas --help` for usage.
   caveats: |
-    Requires KubeAtlas to be installed in the cluster (or reachable
-    via --server / KUBEATLAS_URL). See
+    Offline mode (the default) needs the `kubeatlas` CLI on your
+    PATH. Online mode (--online) needs KubeAtlas installed in the
+    cluster, or reachable via --server / KUBEATLAS_URL. See
     https://docs.kubeatlas.lithastra.com for installation.
   platforms:
     - selector:

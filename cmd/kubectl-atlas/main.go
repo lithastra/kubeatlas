@@ -62,7 +62,11 @@ type target struct {
 // name to that subcommand and everything else to the root's RunE.
 func newRootCmd(a *app) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "atlas <kind> <name>",
+		// Use begins with the binary name so help and usage strings
+		// carry the kubectl-plugin prefix (Krew best practice) — e.g.
+		// "Usage: kubectl-atlas namespace <name>" rather than a bare
+		// "atlas". kubectl invokes the plugin as `kubectl atlas`.
+		Use:   "kubectl-atlas <kind> <name>",
 		Short: "Show a KubeAtlas view of a Kubernetes resource",
 		Long: "kubectl-atlas shows a KubeAtlas view of a resource, namespace,\n" +
 			"or the whole cluster.\n\n" +
