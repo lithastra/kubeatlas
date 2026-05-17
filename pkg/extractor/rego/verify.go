@@ -83,9 +83,6 @@ func (p TrustPolicy) certificateIdentity() (verify.CertificateIdentity, error) {
 type OCIOptions struct {
 	verify            bool
 	trustedIdentities []TrustPolicy
-	// trustedMaterial is a test seam. Production leaves it nil and
-	// fetches the Sigstore public-good trusted root over TUF.
-	trustedMaterial root.TrustedMaterial
 }
 
 // OCIOption is a functional option for LoadRulePackFromOCI.
@@ -105,12 +102,6 @@ func WithTrustedIdentities(policies ...TrustPolicy) OCIOption {
 	return func(o *OCIOptions) {
 		o.trustedIdentities = append(o.trustedIdentities, policies...)
 	}
-}
-
-// withTrustedMaterial injects a Sigstore trust root. Test-only —
-// production verification fetches the public-good root.
-func withTrustedMaterial(tm root.TrustedMaterial) OCIOption {
-	return func(o *OCIOptions) { o.trustedMaterial = tm }
 }
 
 func newOCIOptions(opts []OCIOption) *OCIOptions {
@@ -146,14 +137,12 @@ func verifyOCISignature(ctx context.Context, ref string, manifest ocispec.Descri
 			ErrSignatureVerification, ref, firstPartyRepoPrefix)
 	}
 
-	tm := opts.trustedMaterial
-	if tm == nil {
-		tr, err := root.FetchTrustedRoot()
-		if err != nil {
-			return fmt.Errorf("%w: fetch Sigstore trusted root: %v",
-				ErrSignatureVerification, err)
-		}
-		tm = tr
+	// Verify against the Sigstore public-good trusted root, fetched
+	// over TUF.
+	tm, err := root.FetchTrustedRoot()
+	if err != nil {
+		return fmt.Errorf("%w: fetch Sigstore trusted root: %v",
+			ErrSignatureVerification, err)
 	}
 
 	repo, _, err := newRepository(ref)

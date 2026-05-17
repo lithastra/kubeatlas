@@ -375,17 +375,18 @@ func TestHandleGraph_LabelFilter(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d (body=%s)", resp.StatusCode, body)
 	}
-	var demo *aggregator.Node
-	for i := range view.Nodes {
-		if view.Nodes[i].ID == "demo" {
-			demo = &view.Nodes[i]
+	found := false
+	for _, n := range view.Nodes {
+		if n.ID != "demo" {
+			continue
+		}
+		found = true
+		if n.ChildrenCount != 1 {
+			t.Errorf("demo ChildrenCount = %d, want 1 (only the team=payments Deployment)", n.ChildrenCount)
 		}
 	}
-	if demo == nil {
+	if !found {
 		t.Fatal("no demo namespace node in the filtered view")
-	}
-	if demo.ChildrenCount != 1 {
-		t.Errorf("demo ChildrenCount = %d, want 1 (only the team=payments Deployment)", demo.ChildrenCount)
 	}
 }
 
