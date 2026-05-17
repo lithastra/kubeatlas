@@ -30,6 +30,12 @@ const (
 	// install — e.g. the F-111 snapshot endpoints on a Tier 1
 	// deployment (paired with HTTP 503).
 	CodeUnavailable = "unavailable"
+	// CodePayloadTooLarge marks a result too large to serve — e.g.
+	// an /export view past the node cap (paired with HTTP 413).
+	CodePayloadTooLarge = "payload_too_large"
+	// CodeTooManyRequests marks a request shed by a concurrency or
+	// rate limit (paired with HTTP 429).
+	CodeTooManyRequests = "too_many_requests"
 )
 
 // writeError serialises an ErrorResponse with the given HTTP status.

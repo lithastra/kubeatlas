@@ -276,5 +276,17 @@ func (s *Server) Routes() []RouteInfo {
 			Response: ResponseSpec{Description: "Affected resources", SchemaRef: "BlastRadiusResponse"},
 			handler:  s.handleBlastRadius,
 		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1alpha1/export",
+			Summary:     "Render a cluster or namespace view as an image",
+			Description: "Server-side renders the dependency graph to SVG or PNG via Graphviz. Optional `namespace` narrows the view; the whole-cluster render is refused past 1000 nodes (413). Concurrency-limited (429 when busy); 503 when the renderer is unavailable. P3-T14 (F-115).",
+			QueryParams: []ParamSpec{
+				{Name: "format", Description: "Image format; defaults to svg", Type: "string", Enum: []string{"svg", "png"}},
+				{Name: "namespace", Description: "Restrict the render to one namespace; empty = whole cluster", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Rendered SVG or PNG image", ContentType: "image/svg+xml"},
+			handler:  s.handleExport,
+		},
 	}
 }
