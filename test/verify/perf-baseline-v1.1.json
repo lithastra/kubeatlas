@@ -1,0 +1,55 @@
+{
+  "description": "v1.1.0 perf baseline (P3-T11). Captured against the stress-test-5k fixture (5000 ConfigMaps + 1000 Deployments + 1000 owner-ref ReplicaSets + 200 Services) across Tier 1 (in-memory) and Tier 2 (PostgreSQL + Apache AGE), on Docker Desktop Kubernetes under WSL2. Tier 2 numbers go through kubectl port-forward + WSL2 networking (~10ms/round-trip vs native Linux); Tier 1 is benched against a local memory-backed process. v1.1 reworked the informer edge-extraction path to issue namespace-scoped store queries instead of snapshotting the whole graph on every event — see CHANGELOG and the perf(extractor) commit.",
+  "spec_targets": {
+    "_comment": "Targets carried forward unchanged from perf-baseline-v1.0.json — they are workload-size based (5K+ resources), not release based. cluster_view + namespace_view scale O(R) on the namespace resource count and the JSON marshal of the response dominates wall time; blast-radius stays at 500ms because the recursive-CTE traversal is bounded by the affected subgraph, not the total graph. Re-tightening the targets is P3-T15's call, not P3-T11's.",
+    "cluster_view_p50_ms": 5000,
+    "cluster_view_p95_ms": 7500,
+    "blast_radius_p95_ms": 500,
+    "namespace_view_p50_ms": 6000,
+    "namespace_view_p95_ms": 8000
+  },
+  "fixture": {
+    "approximate_resource_count": 7200,
+    "approximate_edge_count": 7000,
+    "namespace": "stress-test-5k",
+    "samples_per_endpoint": 100
+  },
+  "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
+  "phase": "3-v1.1.0",
+  "tier2": {
+    "cluster_view_p50_ms": 134.515,
+    "cluster_view_p95_ms": 144.978,
+    "cluster_view_p99_ms": 147.973,
+    "namespace_view_p50_ms": 526.387,
+    "namespace_view_p95_ms": 696.087,
+    "namespace_view_p99_ms": 738.689,
+    "blast_radius_p50_ms": 4.631,
+    "blast_radius_p95_ms": 5.928,
+    "blast_radius_p99_ms": 27.091,
+    "namespace_count": 15,
+    "captured_at": "2026-05-17T14:25:00+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2"
+    }
+  },
+  "tier1": {
+    "cluster_view_p50_ms": 5.351,
+    "cluster_view_p95_ms": 7.569,
+    "cluster_view_p99_ms": 9.612,
+    "namespace_view_p50_ms": 23.398,
+    "namespace_view_p95_ms": 36.879,
+    "namespace_view_p99_ms": 45.915,
+    "blast_radius_p50_ms": 0.518,
+    "blast_radius_p95_ms": 0.656,
+    "blast_radius_p99_ms": 0.836,
+    "namespace_count": 15,
+    "captured_at": "2026-05-17T14:25:34+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2"
+    }
+  }
+}
