@@ -105,6 +105,15 @@ jobs:
         run: |
           echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GHCR_USER" --password-stdin
 
+      - name: Build chart dependencies
+        # helm/*/charts/ is gitignored, so a fresh checkout carries
+        # only Chart.lock and not the cloudnative-pg subchart. Fetch
+        # the pinned version into charts/ before packaging — helm
+        # package aborts on a declared-but-absent dependency.
+        run: |
+          helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+          helm dependency build helm/kubeatlas
+
       - name: Package and push chart
         env:
           GIT_REF: ${{ github.ref }}
