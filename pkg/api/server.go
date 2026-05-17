@@ -71,6 +71,12 @@ type Server struct {
 
 	// httpSrv is created in Start; nil before then.
 	httpSrv *http.Server
+
+	// exportSem bounds how many /export image renders run at once.
+	// Each render shells out to graphviz, which is CPU- and
+	// memory-bound; excess callers get 429 rather than piling up
+	// dot processes (ADR 0012).
+	exportSem chan struct{}
 }
 
 // ServerOption tweaks an optional aspect of the Server. Required
@@ -138,6 +144,7 @@ func New(addr string, store graph.GraphStore, aggs *aggregator.Registry, opts ..
 		hub:       NewWatchHub(),
 		readiness: NewReadinessGate(),
 		metrics:   newMetricsCounter(),
+		exportSem: make(chan struct{}, exportConcurrency),
 	}
 	for _, o := range opts {
 		o(s)
