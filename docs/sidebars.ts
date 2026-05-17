@@ -44,6 +44,7 @@ const sidebars: SidebarsConfig = {
         },
         'concepts/api-versioning',
         'concepts/snapshots',
+        'concepts/performance',
         'concepts/rule-pack-security',
       ],
     },

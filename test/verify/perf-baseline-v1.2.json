@@ -1,0 +1,55 @@
+{
+  "description": "v1.2.0 perf baseline (P3-T15). Captured against the stress-test-10k fixture (10000 ConfigMaps + 2000 Deployments + 2000 owner-ref ReplicaSets + 400 Services) across Tier 1 (in-memory) and Tier 2 (PostgreSQL + Apache AGE), on Docker Desktop Kubernetes under WSL2. Tier 2 numbers go through kubectl port-forward + WSL2 networking (~10ms/round-trip vs native Linux); Tier 1 is benched against a local memory-backed process. spec_targets are reclaimed to the v1.0 README-promised latencies now that store-side pushdown aggregation has removed the per-request whole-graph materialisation that forced the Phase 2 relaxation. Caveat: the Tier 2 stress-test-10k namespace_view p95 (~1.4s) exceeds the namespace SLO because the synthetic fixture puts all ~10K resources in a single namespace — the documented 100%-single-namespace artefact where the NamespaceSubgraph JOIN costs more than a full scan. Real namespaces are far smaller, and cluster_view (the realistic whole-graph aggregation) lands at 360ms p95; Tier 1 is unaffected.",
+  "spec_targets": {
+    "_comment": "v1.2 reclaims the latency targets to the figures the v1.0 README publicly promised. Phase 2 relaxed them to 5000-8000ms while cluster_view / namespace_view still materialised the whole graph per request; the store-side pushdown aggregation removed that cost, so the targets return to cluster_view / namespace_view p95 <= 1000ms and blast_radius p95 <= 500ms. This is the final instalment of the debt the pushdown work took on.",
+    "cluster_view_p50_ms": 500,
+    "cluster_view_p95_ms": 1000,
+    "namespace_view_p50_ms": 500,
+    "namespace_view_p95_ms": 1000,
+    "blast_radius_p95_ms": 500
+  },
+  "fixture": {
+    "approximate_resource_count": 14400,
+    "approximate_edge_count": 14000,
+    "namespace": "stress-test-10k",
+    "samples_per_endpoint": 100
+  },
+  "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
+  "phase": "3-v1.2.0",
+  "tier2": {
+    "cluster_view_p50_ms": 278.087,
+    "cluster_view_p95_ms": 360.160,
+    "cluster_view_p99_ms": 482.047,
+    "namespace_view_p50_ms": 615.396,
+    "namespace_view_p95_ms": 1433.885,
+    "namespace_view_p99_ms": 1646.191,
+    "blast_radius_p50_ms": 4.542,
+    "blast_radius_p95_ms": 9.326,
+    "blast_radius_p99_ms": 28.881,
+    "namespace_count": 16,
+    "captured_at": "2026-05-17T21:12:14+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2"
+    }
+  },
+  "tier1": {
+    "cluster_view_p50_ms": 23.018,
+    "cluster_view_p95_ms": 29.105,
+    "cluster_view_p99_ms": 32.076,
+    "namespace_view_p50_ms": 71.672,
+    "namespace_view_p95_ms": 390.778,
+    "namespace_view_p99_ms": 612.812,
+    "blast_radius_p50_ms": 0.543,
+    "blast_radius_p95_ms": 0.669,
+    "blast_radius_p99_ms": 0.798,
+    "namespace_count": 16,
+    "captured_at": "2026-05-17T21:13:48+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2"
+    }
+  }
+}
