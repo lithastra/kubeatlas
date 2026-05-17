@@ -272,7 +272,8 @@ func main() {
 
 	var rulePacks rulePackFlag
 	var (
-		once        = flag.Bool("once", false, "Run a single discovery pass, write JSON+DOT, and exit (legacy CLI mode).")
+		once        = flag.Bool("once", false, "Run a single offline discovery pass (talks to the K8s API directly, no kubeatlas server) and exit.")
+		format      = flag.String("format", "json", "Output format for -once: json (default) | dot | svg.")
 		level       = flag.String("level", "resource", "Aggregation level: resource | namespace | workload | cluster.")
 		namespace   = flag.String("namespace", "", "Filter by namespace (required for namespace/workload, optional for resource).")
 		kind        = flag.String("kind", "", "Resource Kind (required for workload, and for resource when scoped to a single object).")
@@ -290,20 +291,32 @@ func main() {
 		return
 	}
 	if *once {
-		runOnce(*level, *namespace, *kind, *name)
+		runOnce(*level, *namespace, *kind, *name, *format)
 		return
 	}
 	runWatch(rulePackRefs(rulePacks))
 }
 
-// runOnce walks every API resource, extracts edges, persists into the
-// in-memory store, then writes one of:
-//   - raw full graph (level=resource without kind/name) — legacy default
-//   - cluster aggregation (level=cluster)
-//   - namespace aggregation (level=namespace, requires -namespace)
-//   - workload sub-graph (level=workload, requires -namespace + -kind + -name)
-//   - single-resource one-hop view (level=resource with -kind + -name + -namespace)
-func runOnce(level, namespace, kind, name string) {
+// runOnce is the offline CLI mode: it walks every API resource
+// through the kubeconfig — no running kubeatlas server needed —
+// extracts edges, and emits the graph in the requested format.
+//
+// format selects the output:
+//   - json — an aggregated View per -level (cluster / namespace /
+//     workload), a single-resource one-hop view (level=resource with
+//     -kind + -name), or the raw graph (level=resource, unscoped).
+//   - dot  — the raw resource graph as Graphviz DOT.
+//   - svg  — the raw resource graph rendered to SVG via graphviz.
+//
+// dot and svg render the resource graph, optionally narrowed to one
+// -namespace; the -level aggregation applies to json only.
+func runOnce(level, namespace, kind, name, format string) {
+	switch format {
+	case "json", "dot", "svg":
+	default:
+		log.Fatalf("unknown -format=%q (want json | dot | svg)", format)
+	}
+
 	ctx := context.Background()
 
 	client, err := discovery.NewClient()
@@ -342,6 +355,32 @@ func runOnce(level, namespace, kind, name string) {
 		}
 	}
 
+	// dot / svg render the raw resource graph (optionally narrowed to
+	// one -namespace) and stream it to stdout. The -level aggregation
+	// applies to the json format only.
+	if format == "dot" || format == "svg" {
+		g, err := graphStore.Snapshot(ctx)
+		if err != nil {
+			log.Fatalf("failed to snapshot store: %v", err)
+		}
+		opts := graph.DOTOptions{Namespace: namespace}
+		if format == "dot" {
+			fmt.Print(graph.ToDOTOptions(g, opts))
+			return
+		}
+		svg, err := graph.ToSVG(ctx, g, opts)
+		if err != nil {
+			if errors.Is(err, graph.ErrGraphvizNotFound) {
+				log.Fatal("-format=svg needs the graphviz 'dot' binary on PATH; install the graphviz package")
+			}
+			log.Fatalf("render svg: %v", err)
+		}
+		if _, err := os.Stdout.Write(svg); err != nil {
+			log.Fatalf("write svg: %v", err)
+		}
+		return
+	}
+
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 
@@ -370,10 +409,6 @@ func runOnce(level, namespace, kind, name string) {
 		if err := enc.Encode(g); err != nil {
 			log.Fatalf("failed to encode JSON: %v", err)
 		}
-		if err := os.WriteFile("output/kubeatlas.dot", []byte(graph.ToDOT(g)), 0644); err != nil {
-			log.Fatalf("failed to write DOT file: %v", err)
-		}
-		fmt.Fprintln(os.Stderr, "Run: dot -Tsvg output/kubeatlas.dot -o output/kubeatlas.svg")
 
 	case "cluster":
 		view, err := (aggregator.ClusterAggregator{}).Aggregate(ctx, graphStore, aggregator.Scope{})
