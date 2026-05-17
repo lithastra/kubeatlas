@@ -5,65 +5,79 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
-## [Unreleased] — v1.1.0 (draft)
+## [v1.1.0] — cloud rule packs, snapshots, search, plugins
 
-> **Draft.** This entry tracks Phase 3 work as it lands and is
-> completed at the M8 milestone before the v1.1.0 tag. Search and
-> label-filtering (M8) are not yet listed.
+v1.1.0 closes Phase 3. It widens KubeAtlas beyond a single cluster's
+core resources: managed-Kubernetes add-on rule packs, a queryable
+change history, full-text search, and two new ways to reach the
+graph — a `kubectl` plugin and a Headlamp plugin. The `v1alpha1` and
+`/api/v1/*` surfaces from v1.0 are unchanged; everything below is
+additive.
 
 ### Added
 
-- **NetworkPolicy edges (F-109)** — `NetworkPolicy` objects are
-  first-class in the graph. A built-in extractor derives
-  `SELECTS_NP` (policy → the Pods its `podSelector` matches),
-  `ALLOWS_FROM` (`spec.ingress[].from[]`), and `ALLOWS_TO`
-  (`spec.egress[].to[]`) edges — the policy's declared topology,
-  not CNI enforcement. New endpoints:
-  - `GET /api/v1/networkpolicy/{ns}/{name}/selected`
-  - `GET /api/v1/networkpolicy/{ns}/{name}/allow-graph`
+- **Cloud-platform rule packs** — opt-in Rego packs that model the
+  CRDs managed-Kubernetes add-ons inject into a cluster, in the
+  sibling `lithastra/kubeatlas-rules` repository:
+  - **EKS** — AWS Load Balancer Controller `TargetGroupBinding`,
+    Karpenter `NodePool` → `EC2NodeClass`, EKS Pod Identity.
+  - **AKS** — AAD Pod Identity (`AzureIdentityBinding`).
+  - **GKE** — GKE Ingress (`BackendConfig` / `FrontendConfig`),
+    Multi-cluster Services, Backup for GKE, and Fleet membership.
 
-  Tasks P3-T1, P3-T2. (commits — see the P3-T1/T2 changesets.)
-- **Historical snapshots (F-111, Tier 2 only)** — an async writer
-  records every resource add/update/delete into an append-only
-  PostgreSQL event stream without blocking the informer hot path;
-  a bounded queue sheds the oldest event under write-storm
-  backpressure. An hourly retainer prunes the stream to
-  `snapshots.retention` (default 7d). Periodic full-sync markers
-  anchor the diff endpoint. New endpoints:
-  - `GET /api/v1/snapshots` — list full-sync markers
-  - `GET /api/v1/snapshots/diff?from=&to=` — resources added /
-    removed / modified across a time window
-  - `POST /api/_internal/snapshot/trigger` — record a marker
-    (internal; the F-111 `CronJob` is the intended caller)
-
-  All snapshot endpoints return `503` on a Tier 1 install
-  (invariant 2.2). New CLI subcommand `kubeatlas snapshot trigger`.
-  New chart values under `snapshots.*` and a periodic full-sync
-  `CronJob`; `values.schema.json` rejects `snapshots.enabled=true`
-  without `persistence.enabled=true`. Tasks P3-T2 through P3-T6.
-  See [concepts/snapshots](https://docs.kubeatlas.lithastra.com/concepts/snapshots).
-- **EKS rule pack (F-106)** — an opt-in Rego pack
-  (`eks/v0.1.0`, sibling `lithastra/kubeatlas-rules` repo) modelling
-  the CRDs EKS add-ons inject: `TargetGroupBinding` → Service
-  (`ROUTES_TO`), Karpenter `NodePool` → `EC2NodeClass`
-  (`USES_NODE_CLASS`), `PodIdentityAssociation` → ServiceAccount
-  (`BINDS_PLATFORM_IDENTITY`). The pack models the Kubernetes view
-  only — no AWS cloud resources, no AWS SDK (invariants 2.3, 2.7).
-  Load via `rulePacks.extras`. Tasks P3R-T1, P3R-T2. See
+  The packs model the Kubernetes view of a cluster only — no cloud
+  resources, no cloud SDKs. Load them with `rulePacks.extras`. See
   [installation/eks](https://docs.kubeatlas.lithastra.com/installation/eks).
+- **NetworkPolicy in the graph** — `NetworkPolicy` objects are
+  first-class. KubeAtlas derives the Pods a policy selects and the
+  ingress sources / egress destinations it declares — the policy's
+  declared topology, not what a CNI actually enforces. New
+  endpoints `GET /api/v1/networkpolicy/{ns}/{name}/selected` and
+  `.../allow-graph`.
+- **Historical snapshots (Tier 2)** — KubeAtlas can now record every
+  resource add / update / delete into an append-only event stream
+  and answer "what changed?". `GET /api/v1/snapshots/diff?from=&to=`
+  returns the resources added, removed, and modified across a time
+  window; `GET /api/v1/snapshots` lists the periodic full-sync
+  markers. Configured under `snapshots.*` in the chart (default
+  off; requires Tier 2), with a tunable retention window and a
+  periodic full-sync `CronJob`. New `kubeatlas snapshot trigger`
+  CLI subcommand. See
+  [concepts/snapshots](https://docs.kubeatlas.lithastra.com/concepts/snapshots).
+- **Full-text search** — `GET /api/v1/search` is now a ranked
+  full-text search over resource name, kind, namespace, and label
+  values. On Tier 2 it runs as one indexed query; on Tier 1 it
+  falls back to a linear scan and says so. Queries accept free-text
+  terms plus `kind:` / `namespace:` filters.
+- **Label filtering** — `GET /api/v1/graph` accepts
+  `label.<key>=<value>` parameters to narrow the cluster and
+  namespace views to resources carrying a label. The new
+  `GET /api/v1/labels` endpoint lists every label key and its most
+  common values, and the web UI gains a label-filter control on the
+  topology page.
+- **Rule-pack signature verification** — OCI rule packs can be
+  verified with keyless Sigstore signatures before they load
+  (`rulePacks.verifySignature`, off by default in v1.1). A pack
+  whose signature does not verify aborts startup.
+- **`kubectl` plugin** — `kubectl-atlas` opens the KubeAtlas UI at
+  the page for a resource, namespace, or the whole cluster:
+  `kubectl atlas deployment api -n petclinic`.
+- **Headlamp plugin v0.1** — a [Headlamp](https://headlamp.dev)
+  plugin (in a separate repository) that renders the KubeAtlas
+  dependency graph inside the Headlamp UI, with a cluster topology
+  view and a per-resource "Dependencies" section.
 
 ### Changed
 
-- **Memory-bounded cluster/namespace queries (P3-T0a)** — the
-  cluster- and namespace-view aggregations push down into the
-  store (`KindCountsByNamespace`, `CrossNamespaceEdgeCounts`,
-  `NamespaceSubgraph`) instead of materialising the whole graph in
-  the API process. Resolves an OOM on large clusters; ~20×
-  reduction in peak memory for the affected paths.
-- **Cycle categorisation (P3-T0b)** — `GET /api/v1/cycles` now
-  classifies each strongly connected component as
-  `bootstrap-cert`, `intentional`, or `unknown` so operators can
-  triage real problems from expected bootstrap loops.
+- Cluster- and namespace-view aggregation now executes inside the
+  storage backend instead of materialising the whole graph in the
+  API process. This resolves an out-of-memory crash on large
+  clusters and cuts peak memory for those requests roughly 20-fold.
+- `GET /api/v1/cycles` now classifies each dependency cycle as a
+  certificate-bootstrap loop, an intentional cycle, or an unknown
+  one, so operators can tell expected loops from real problems.
+
+[v1.1.0]: https://github.com/lithastra/kubeatlas/releases/tag/v1.1.0
 
 ## [v1.0.0] — Phase 2 GA
 

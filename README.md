@@ -25,35 +25,36 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**v1.0.0 — Phase 2 GA.** Every Phase 2 deliverable is in:
+**v1.1.0 — Phase 3.** Building on the v1.0 GA foundation, v1.1 adds:
 
-- **Tier 2 persistence** — PostgreSQL + Apache AGE backend, opt-in
-  via `persistence.enabled=true`. Restart preserves the graph.
-- **Rego rule packs** — programmable CRD edge derivation, no rebuild
-  needed. Embedded OpenShift pack auto-loads on detection; extras
-  load via OCI ref or local directory.
-- **RBAC graph** — Roles, RoleBindings, ClusterRoles, and
-  ClusterRoleBindings are first-class with `BINDS_SUBJECT` /
-  `BINDS_ROLE` edges. New endpoints walk SA → role and role →
-  subjects.
-- **Blast radius** — `GET /api/v1/blast-radius/...` returns
-  every resource that depends on the target. P95 < 500ms on 5K-
-  resource clusters.
-- **Orphan + cycle analysis** — surface stale resources and
-  dependency loops as first-class endpoints.
-- **`/api/v1/*` GA + frozen v1alpha1** — every v0.1.0 URL keeps
-  working. CI's `api-compat-check` enforces v1alpha1 cannot
-  regress.
-- **`kubeatlas export --format=dot`** — permanent CLI export path
-  for `dot -Tsvg` pipelines.
-- **cert-manager TLS Helm integration** — opt-in
-  `ingress.certManager.enabled=true` with three issuer modes.
+- **Cloud-platform rule packs** — opt-in EKS / AKS / GKE add-on CRD
+  packs (AWS Load Balancer Controller, Karpenter, GKE Ingress,
+  Multi-cluster Services, and more) in the sibling
+  `kubeatlas-rules` repository.
+- **Historical snapshots** — record every resource change and ask
+  "what changed in the last hour?" with the diff endpoint (Tier 2).
+- **Full-text search** — ranked search over resource names, kinds,
+  namespaces, and label values; indexed on Tier 2.
+- **Label filtering** — narrow the cluster and namespace views by
+  `label.<key>=<value>`, with a `/api/v1/labels` endpoint listing
+  the cluster's label vocabulary.
+- **NetworkPolicy edges** — `NetworkPolicy` is first-class, exposing
+  the Pods a policy selects and the peers it allows.
+- **`kubectl` plugin** — `kubectl atlas <kind> <name>` opens the UI
+  for a resource straight from the terminal.
+- **Headlamp plugin v0.1** — the dependency graph inside the
+  [Headlamp](https://headlamp.dev) UI (separate repository).
+
+The v1.0 foundation is unchanged: Tier 2 PostgreSQL persistence,
+Rego rule packs, the RBAC graph, blast radius, orphan / cycle
+analysis, and the frozen `v1alpha1` plus GA `/api/v1` surfaces.
 
 The v0.1.0 defaults still apply: in-memory unless you opt into
 Tier 2, single-replica, **no built-in authentication** — exposing
 via Ingress requires an external auth layer (oauth2-proxy /
-Pomerium / Cloudflare Access). Multi-cluster federation is
-planned for v1.1 — see [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
+Pomerium / Cloudflare Access). Multi-cluster federation is on the
+roadmap for a later release — see
+[the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 Full release notes: [CHANGELOG.md](./CHANGELOG.md).
 
