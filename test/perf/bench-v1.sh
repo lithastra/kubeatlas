@@ -33,7 +33,13 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${DIR}/../.." && pwd)"
-OUT="${REPO_ROOT}/test/verify/perf-baseline-v1.0.json"
+# OUT / PHASE default to the v1.0 baseline so a bare `bench-v1.sh`
+# run is byte-for-byte unchanged. P3-T11 overrides both to capture
+# the v1.1 baseline into its own file without touching v1.0:
+#   KUBEATLAS_BASELINE_OUT=test/verify/perf-baseline-v1.1.json
+#   KUBEATLAS_BASELINE_PHASE=3-v1.1.0
+OUT="${KUBEATLAS_BASELINE_OUT:-${REPO_ROOT}/test/verify/perf-baseline-v1.0.json}"
+PHASE="${KUBEATLAS_BASELINE_PHASE:-2-v1.0.0}"
 
 KUBEATLAS_URL="${KUBEATLAS_URL:-http://127.0.0.1:8080}"
 KUBEATLAS_TIER="${KUBEATLAS_TIER:-tier1}"
@@ -143,12 +149,13 @@ merged=$(jq -n \
   --arg tier "${KUBEATLAS_TIER}" \
   --argjson tier_block "${tier_block}" \
   --arg ns "${NS}" \
+  --arg phase "${PHASE}" \
   --argjson samples "${SAMPLES}" \
   '
   $existing
   + {
     "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
-    phase: "2-v1.0.0",
+    phase: $phase,
     fixture: (($existing.fixture // {}) + { namespace: $ns, samples_per_endpoint: $samples }),
     description: ($existing.description
       // "v1.0.0 perf baseline (P2-T23). Captured against the stress-test-5k fixture across both Tier 1 and Tier 2 backends."),
