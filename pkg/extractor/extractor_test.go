@@ -44,7 +44,7 @@ func TestRegistry_ExtractAllConcatenates(t *testing.T) {
 			},
 		},
 	}
-	got := Default().ExtractAll(pod, []graph.Resource{pod})
+	got := extractAllEdges(t, Default(), pod, []graph.Resource{pod})
 	if len(got) != 3 {
 		t.Errorf("got %d edges, want 3 (OWNS + USES_CONFIGMAP + USES_SERVICEACCOUNT); edges=%v", len(got), got)
 	}
@@ -62,7 +62,7 @@ func TestRegistry_ExtractAllConcatenates(t *testing.T) {
 
 func TestRegistry_NewIsEmpty(t *testing.T) {
 	r := New()
-	if got := r.ExtractAll(graph.Resource{Kind: "Pod"}, nil); got != nil {
+	if got := extractAllEdges(t, r, graph.Resource{Kind: "Pod"}, nil); got != nil {
 		t.Errorf("empty registry should emit nothing, got %v", got)
 	}
 }

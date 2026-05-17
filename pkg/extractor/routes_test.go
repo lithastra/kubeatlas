@@ -27,7 +27,7 @@ func TestRoutes_IngressBackend(t *testing.T) {
 			},
 		},
 	}
-	got := (RoutesExtractor{}).Extract(ing, nil)
+	got := extractEdges(t, RoutesExtractor{}, ing, nil)
 	if len(got) != 1 || got[0].To != "demo/Service/web-svc" {
 		t.Errorf("expected edge to demo/Service/web-svc, got %v", got)
 	}
@@ -51,7 +51,7 @@ func TestRoutes_HTTPRouteBackendInExplicitNamespace(t *testing.T) {
 			},
 		},
 	}
-	got := (RoutesExtractor{}).Extract(rt, nil)
+	got := extractEdges(t, RoutesExtractor{}, rt, nil)
 	if len(got) != 1 || got[0].To != "other/Service/web-svc" {
 		t.Errorf("expected edge to other/Service/web-svc, got %v", got)
 	}
@@ -89,7 +89,7 @@ func TestRoutes_IngressMultiPathDedupOnSameBackend(t *testing.T) {
 			},
 		},
 	}
-	got := (RoutesExtractor{}).Extract(ing, nil)
+	got := extractEdges(t, RoutesExtractor{}, ing, nil)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 edges (web-svc + api-svc, deduped), got %d: %v", len(got), got)
 	}
@@ -121,7 +121,7 @@ func TestRoutes_HTTPRouteSameNamespaceFallback(t *testing.T) {
 			},
 		},
 	}
-	got := (RoutesExtractor{}).Extract(rt, nil)
+	got := extractEdges(t, RoutesExtractor{}, rt, nil)
 	if len(got) != 1 || got[0].To != "demo/Service/web-svc" {
 		t.Errorf("expected fallback to route's namespace, got %v", got)
 	}
@@ -144,7 +144,7 @@ func TestRoutes_HTTPRouteBackendKindOverride(t *testing.T) {
 			},
 		},
 	}
-	got := (RoutesExtractor{}).Extract(rt, nil)
+	got := extractEdges(t, RoutesExtractor{}, rt, nil)
 	if len(got) != 1 || got[0].To != "demo/ServiceImport/imported" {
 		t.Errorf("expected edge to ServiceImport, got %v", got)
 	}
@@ -154,7 +154,7 @@ func TestRoutes_NonRoutingKindEmitsNothing(t *testing.T) {
 	// Pod / Service / etc. do not produce ROUTES_TO edges.
 	for _, kind := range []string{"Pod", "Service", "Deployment", "ConfigMap"} {
 		r := graph.Resource{Kind: kind, Namespace: "demo", Name: "x"}
-		if got := (RoutesExtractor{}).Extract(r, nil); got != nil {
+		if got := extractEdges(t, RoutesExtractor{}, r, nil); got != nil {
 			t.Errorf("kind=%s: expected nil edges, got %v", kind, got)
 		}
 	}

@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // AttachedExtractor emits ATTACHED_TO edges from HTTPRoute to its
 // parent Gateway(s) via spec.parentRefs[]. Other parent kinds are
@@ -10,9 +14,9 @@ type AttachedExtractor struct{}
 
 func (AttachedExtractor) Type() graph.EdgeType { return graph.EdgeTypeAttachedTo }
 
-func (AttachedExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (AttachedExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	if r.Kind != "HTTPRoute" {
-		return nil
+		return nil, nil
 	}
 	from := r.ID()
 	defaultNS := r.Namespace
@@ -43,5 +47,5 @@ func (AttachedExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.E
 		seen[to] = struct{}{}
 		edges = append(edges, graph.Edge{From: from, To: to, Type: graph.EdgeTypeAttachedTo})
 	}
-	return edges
+	return edges, nil
 }

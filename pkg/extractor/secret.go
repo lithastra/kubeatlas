@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // SecretExtractor emits USES_SECRET edges from workloads (and raw
 // Pods) to every Secret they reference. Reference styles:
@@ -13,9 +17,9 @@ type SecretExtractor struct{}
 
 func (SecretExtractor) Type() graph.EdgeType { return graph.EdgeTypeUsesSecret }
 
-func (SecretExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (SecretExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	if r.Kind != "Pod" && !hasPodTemplate(r.Kind) {
-		return nil
+		return nil, nil
 	}
 	from := r.ID()
 	ns := r.Namespace
@@ -52,5 +56,5 @@ func (SecretExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edg
 		pmap, _ := p.(map[string]any)
 		edges = append(edges, emit(nestedString(pmap, "name"))...)
 	}
-	return edges
+	return edges, nil
 }

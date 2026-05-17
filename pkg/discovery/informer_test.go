@@ -207,9 +207,9 @@ type recordingExtractor struct {
 	count atomic.Int64
 }
 
-func (r *recordingExtractor) ExtractAll(_ graph.Resource, _ []graph.Resource) []graph.Edge {
+func (r *recordingExtractor) ExtractAll(_ context.Context, _ graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	r.count.Add(1)
-	return nil
+	return nil, nil
 }
 
 func (r *recordingExtractor) calls() int { return int(r.count.Load()) }

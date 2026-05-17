@@ -17,7 +17,7 @@ func TestAttached_HTTPRouteToGateway(t *testing.T) {
 			},
 		},
 	}
-	got := (AttachedExtractor{}).Extract(rt, nil)
+	got := extractEdges(t, AttachedExtractor{}, rt, nil)
 	if len(got) != 1 || got[0].To != "demo/Gateway/gw" {
 		t.Errorf("expected edge to demo/Gateway/gw, got %v", got)
 	}
@@ -37,7 +37,7 @@ func TestAttached_NonGatewayParentSkipped(t *testing.T) {
 			},
 		},
 	}
-	if got := (AttachedExtractor{}).Extract(rt, nil); got != nil {
+	if got := extractEdges(t, AttachedExtractor{}, rt, nil); got != nil {
 		t.Errorf("non-Gateway parent should be skipped, got %v", got)
 	}
 }
@@ -55,7 +55,7 @@ func TestAttached_ExplicitParentNamespace(t *testing.T) {
 			},
 		},
 	}
-	got := (AttachedExtractor{}).Extract(rt, nil)
+	got := extractEdges(t, AttachedExtractor{}, rt, nil)
 	if len(got) != 1 || got[0].To != "infra/Gateway/shared-gw" {
 		t.Errorf("expected edge to infra/Gateway/shared-gw, got %v", got)
 	}
@@ -74,7 +74,7 @@ func TestAttached_MultipleParentsEmitMultipleEdges(t *testing.T) {
 			},
 		},
 	}
-	got := (AttachedExtractor{}).Extract(rt, nil)
+	got := extractEdges(t, AttachedExtractor{}, rt, nil)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 edges, got %d: %v", len(got), got)
 	}
@@ -102,7 +102,7 @@ func TestAttached_DuplicateParentRefDedup(t *testing.T) {
 			},
 		},
 	}
-	got := (AttachedExtractor{}).Extract(rt, nil)
+	got := extractEdges(t, AttachedExtractor{}, rt, nil)
 	if len(got) != 1 {
 		t.Errorf("expected 1 deduplicated edge, got %d: %v", len(got), got)
 	}
@@ -118,7 +118,7 @@ func TestAttached_NotHTTPRouteEmitsNothing(t *testing.T) {
 				"parentRefs": []any{map[string]any{"name": "gw"}},
 			}},
 		}
-		if got := (AttachedExtractor{}).Extract(r, nil); got != nil {
+		if got := extractEdges(t, AttachedExtractor{}, r, nil); got != nil {
 			t.Errorf("kind=%s: expected nil edges, got %v", kind, got)
 		}
 	}

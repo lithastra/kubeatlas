@@ -34,7 +34,7 @@ func TestSelectsNP_HappyPath(t *testing.T) {
 		{Kind: "Pod", Namespace: "demo", Name: "api-1", Labels: map[string]string{"app": "api"}},
 		{Kind: "Pod", Namespace: "other", Name: "web-x", Labels: map[string]string{"app": "web"}},
 	}
-	got := (SelectsNPExtractor{}).Extract(np, all)
+	got := extractEdges(t, SelectsNPExtractor{}, np, all)
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1: %+v", len(got), got)
 	}
@@ -54,7 +54,7 @@ func TestSelectsNP_EmptyPodSelectorMatchesAllInNamespace(t *testing.T) {
 		{Kind: "Pod", Namespace: "demo", Name: "b", Labels: map[string]string{"app": "b"}},
 		{Kind: "Pod", Namespace: "other", Name: "c", Labels: map[string]string{"app": "c"}},
 	}
-	got := (SelectsNPExtractor{}).Extract(np, all)
+	got := extractEdges(t, SelectsNPExtractor{}, np, all)
 	if len(got) != 2 {
 		t.Fatalf("got %d edges, want 2 (both demo pods): %+v", len(got), got)
 	}
@@ -81,7 +81,7 @@ func TestSelectsNP_MatchesPodTemplateWorkloads(t *testing.T) {
 			},
 		},
 	}
-	got := (SelectsNPExtractor{}).Extract(np, []graph.Resource{dep})
+	got := extractEdges(t, SelectsNPExtractor{}, np, []graph.Resource{dep})
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1: %+v", len(got), got)
 	}
@@ -101,7 +101,7 @@ func TestSelectsNP_NotANetworkPolicy(t *testing.T) {
 			},
 		},
 	}
-	if got := (SelectsNPExtractor{}).Extract(pod, nil); got != nil {
+	if got := extractEdges(t, SelectsNPExtractor{}, pod, nil); got != nil {
 		t.Errorf("non-NetworkPolicy input emitted edges: %v", got)
 	}
 }
@@ -130,7 +130,7 @@ func TestAllowsFrom_RequiresExplicitPolicyType(t *testing.T) {
 	all := []graph.Resource{
 		{Kind: "Pod", Namespace: "demo", Name: "fe", Labels: map[string]string{"role": "frontend"}},
 	}
-	if got := (AllowsFromExtractor{}).Extract(np, all); got != nil {
+	if got := extractEdges(t, AllowsFromExtractor{}, np, all); got != nil {
 		t.Errorf("missing policyTypes should emit no ALLOWS_FROM edges, got %v", got)
 	}
 }
@@ -156,7 +156,7 @@ func TestAllowsFrom_PodSelectorOnlyHitsSameNamespace(t *testing.T) {
 		{Kind: "Pod", Namespace: "demo", Name: "be-1", Labels: map[string]string{"role": "backend"}},
 		{Kind: "Pod", Namespace: "other", Name: "fe-x", Labels: map[string]string{"role": "frontend"}},
 	}
-	got := (AllowsFromExtractor{}).Extract(np, all)
+	got := extractEdges(t, AllowsFromExtractor{}, np, all)
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1 (same-ns frontend pod): %+v", len(got), got)
 	}
@@ -190,7 +190,7 @@ func TestAllowsFrom_NamespaceSelectorOnlyHitsNamespaces(t *testing.T) {
 		{Kind: "Namespace", Namespace: "", Name: "trusted", Labels: map[string]string{"trust": "high"}},
 		{Kind: "Pod", Namespace: "trusted", Name: "p", Labels: map[string]string{"app": "x"}},
 	}
-	got := (AllowsFromExtractor{}).Extract(np, all)
+	got := extractEdges(t, AllowsFromExtractor{}, np, all)
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1 (trusted namespace): %+v", len(got), got)
 	}
@@ -227,7 +227,7 @@ func TestAllowsFrom_BothSelectorsHitsCrossNamespacePods(t *testing.T) {
 		{Kind: "Pod", Namespace: "trusted", Name: "be-good", Labels: map[string]string{"role": "backend"}},
 		{Kind: "Pod", Namespace: "untrusted", Name: "fe-bad", Labels: map[string]string{"role": "frontend"}},
 	}
-	got := (AllowsFromExtractor{}).Extract(np, all)
+	got := extractEdges(t, AllowsFromExtractor{}, np, all)
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1 (trusted/fe-good only): %+v", len(got), got)
 	}
@@ -255,7 +255,7 @@ func TestAllowsFrom_IPBlockOnlyPeerIsSkipped(t *testing.T) {
 	all := []graph.Resource{
 		{Kind: "Pod", Namespace: "demo", Name: "p", Labels: map[string]string{"role": "x"}},
 	}
-	if got := (AllowsFromExtractor{}).Extract(np, all); got != nil {
+	if got := extractEdges(t, AllowsFromExtractor{}, np, all); got != nil {
 		t.Errorf("ipBlock-only peer should emit nothing, got %v", got)
 	}
 }
@@ -273,7 +273,7 @@ func TestAllowsFrom_EmptyFromListEmitsNothing(t *testing.T) {
 	all := []graph.Resource{
 		{Kind: "Pod", Namespace: "demo", Name: "p", Labels: map[string]string{"role": "x"}},
 	}
-	if got := (AllowsFromExtractor{}).Extract(np, all); got != nil {
+	if got := extractEdges(t, AllowsFromExtractor{}, np, all); got != nil {
 		t.Errorf("empty from list should emit nothing, got %v", got)
 	}
 }
@@ -296,7 +296,7 @@ func TestAllowsFrom_EmptyPeerObjectIsSkipped(t *testing.T) {
 		{Kind: "Pod", Namespace: "demo", Name: "p", Labels: map[string]string{"role": "x"}},
 		{Kind: "Pod", Namespace: "other", Name: "q", Labels: map[string]string{"role": "x"}},
 	}
-	if got := (AllowsFromExtractor{}).Extract(np, all); got != nil {
+	if got := extractEdges(t, AllowsFromExtractor{}, np, all); got != nil {
 		t.Errorf("empty peer should emit nothing, got %v", got)
 	}
 }
@@ -323,7 +323,7 @@ func TestAllowsTo_MirrorsAllowsFromForEgress(t *testing.T) {
 	all := []graph.Resource{
 		{Kind: "Pod", Namespace: "demo", Name: "db-1", Labels: map[string]string{"role": "db"}},
 	}
-	got := (AllowsToExtractor{}).Extract(np, all)
+	got := extractEdges(t, AllowsToExtractor{}, np, all)
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1: %+v", len(got), got)
 	}
@@ -332,7 +332,7 @@ func TestAllowsTo_MirrorsAllowsFromForEgress(t *testing.T) {
 	}
 	// And the same fixture should yield ZERO ALLOWS_FROM edges
 	// (egress-only policy, no Ingress in policyTypes).
-	if from := (AllowsFromExtractor{}).Extract(np, all); from != nil {
+	if from := extractEdges(t, AllowsFromExtractor{}, np, all); from != nil {
 		t.Errorf("egress-only policy should emit no ALLOWS_FROM, got %v", from)
 	}
 }

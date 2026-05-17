@@ -8,7 +8,7 @@ import (
 
 func TestConfigMap_NotAWorkloadEmitsNothing(t *testing.T) {
 	cm := graph.Resource{Kind: "ConfigMap", Namespace: "demo", Name: "cm"}
-	if got := (ConfigMapExtractor{}).Extract(cm, nil); got != nil {
+	if got := extractEdges(t, ConfigMapExtractor{}, cm, nil); got != nil {
 		t.Errorf("expected nil edges for ConfigMap input, got %v", got)
 	}
 }
@@ -49,7 +49,7 @@ func TestConfigMap_DeploymentEnvFromAndValueFromAndVolumeDedup(t *testing.T) {
 			},
 		},
 	}
-	got := (ConfigMapExtractor{}).Extract(dep, nil)
+	got := extractEdges(t, ConfigMapExtractor{}, dep, nil)
 	// "shared" appears 3 times (envFrom + valueFrom + volume) but
 	// dedup should collapse to one edge. "feature-flags" gets its own.
 	if len(got) != 2 {
@@ -93,7 +93,7 @@ func TestConfigMap_DanglingRefStillEmits(t *testing.T) {
 			},
 		},
 	}
-	got := (ConfigMapExtractor{}).Extract(dep, nil)
+	got := extractEdges(t, ConfigMapExtractor{}, dep, nil)
 	if len(got) != 1 || got[0].To != "demo/ConfigMap/missing-cm" {
 		t.Errorf("expected dangling edge to missing-cm, got %v", got)
 	}
@@ -114,7 +114,7 @@ func TestConfigMap_RawPodSpecAlsoMatched(t *testing.T) {
 			},
 		},
 	}
-	got := (ConfigMapExtractor{}).Extract(pod, nil)
+	got := extractEdges(t, ConfigMapExtractor{}, pod, nil)
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1", len(got))
 	}
@@ -128,7 +128,7 @@ func TestConfigMap_MissingFieldsAreSilent(t *testing.T) {
 		Kind: "Deployment", Namespace: "demo", Name: "skel",
 		Raw: map[string]any{}, // no spec at all
 	}
-	if got := (ConfigMapExtractor{}).Extract(dep, nil); got != nil {
+	if got := extractEdges(t, ConfigMapExtractor{}, dep, nil); got != nil {
 		t.Errorf("expected nil edges for empty spec, got %v", got)
 	}
 }
@@ -153,7 +153,7 @@ func TestConfigMap_EnvWithoutConfigMapRefIsIgnored(t *testing.T) {
 			},
 		},
 	}
-	if got := (ConfigMapExtractor{}).Extract(dep, nil); got != nil {
+	if got := extractEdges(t, ConfigMapExtractor{}, dep, nil); got != nil {
 		t.Errorf("expected nil edges, got %v", got)
 	}
 }

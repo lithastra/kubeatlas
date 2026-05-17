@@ -34,23 +34,24 @@ var MinimalCoreGVRs = []schema.GroupVersionResource{
 }
 
 // ExtractorRegistry is the seam between the informer pipeline and the
-// edge-extractor pipeline (pkg/extractor, populated in P0-T15). The
-// informer asks the registry to derive edges from a single resource
-// against the current snapshot of all resources.
+// edge-extractor pipeline (pkg/extractor). The informer asks the
+// registry to derive edges rooted at a single resource, handing it a
+// graph.ResourceLister the selector extractors query — the informer
+// no longer materialises the whole graph per event.
 //
 // Defined here as an interface to avoid an import cycle: pkg/extractor
 // imports pkg/graph, and pkg/discovery would otherwise need to import
 // pkg/extractor too.
 type ExtractorRegistry interface {
-	ExtractAll(r graph.Resource, all []graph.Resource) []graph.Edge
+	ExtractAll(ctx context.Context, r graph.Resource, q graph.ResourceLister) ([]graph.Edge, error)
 }
 
 // noopRegistry returns no edges. Used as the default when no extractor
 // is configured (W2 informer wiring exists before W4 extractors land).
 type noopRegistry struct{}
 
-func (noopRegistry) ExtractAll(_ graph.Resource, _ []graph.Resource) []graph.Edge {
-	return nil
+func (noopRegistry) ExtractAll(_ context.Context, _ graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
+	return nil, nil
 }
 
 // Broadcaster is the seam between the informer pipeline and the
@@ -280,15 +281,20 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		Data:            r.Raw,
 	})
 
-	// Edge re-derivation: ask the extractor for edges out of this
-	// resource against the current snapshot. Edges are upserted; we do
-	// not delete stale edges here, that requires per-resource diffing
-	// the extractor will handle in P0-T15.
-	snap, err := m.store.Snapshot(ctx)
+	// Edge re-derivation: ask the extractor for edges rooted at this
+	// resource. Extractors query the store directly for the handful
+	// of targets they need — the informer no longer Snapshots the
+	// whole graph on every event (the O(N²) cold-start the pushdown
+	// work removed from the view aggregators). Edges are upserted; we
+	// do not delete stale edges here, that requires per-resource
+	// diffing the extractor will handle in P0-T15.
+	edges, err := m.extractor.ExtractAll(ctx, r, m.store)
 	if err != nil {
-		return
+		// Best-effort: log and still upsert whatever edges the
+		// extractors did produce before the failure.
+		slog.Warn("edge extraction failed", "id", r.ID(), "err", err)
 	}
-	for _, e := range m.extractor.ExtractAll(r, snap.Resources) {
+	for _, e := range edges {
 		if err := m.store.UpsertEdge(ctx, e); err != nil {
 			slog.Warn("upsert edge failed", "from", e.From, "to", e.To, "err", err)
 		}

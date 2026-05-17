@@ -1,17 +1,26 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
 
-// Extractor derives edges of a single type from a Resource against a
-// snapshot of every other resource the store currently knows.
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
+
+// Extractor derives edges of a single type rooted at a Resource.
 //
 // Implementations must be:
 //
 //   - Stateless. The same input must yield the same output.
 //   - Concurrency-safe. The informer may invoke ExtractAll from
 //     multiple goroutines.
-//   - Pure. Extractors must not call back into the GraphStore — the
-//     informer is responsible for writing the edges they return.
+//
+// Most extractors compute target IDs directly from the resource's own
+// fields and ignore the ResourceLister entirely. The selector-based
+// ones (Service / NetworkPolicy) need to enumerate candidate targets;
+// they take a graph.ResourceLister and issue a *scoped* list query
+// (usually one namespace) rather than receiving the whole graph. That
+// is what keeps the informer's per-event cost bounded — it no longer
+// Snapshots every resource on every event.
 //
 // Returned edges set From to r.ID() and reference targets by ID.
 // Dangling references (the target hasn't been observed yet, or was
@@ -21,7 +30,9 @@ type Extractor interface {
 	// Type reports the EdgeType this extractor produces.
 	Type() graph.EdgeType
 	// Extract returns every edge this extractor finds rooted at r.
-	Extract(r graph.Resource, all []graph.Resource) []graph.Edge
+	// q is the read-only store handle the selector extractors query;
+	// extractors that resolve targets purely from r ignore it.
+	Extract(ctx context.Context, r graph.Resource, q graph.ResourceLister) ([]graph.Edge, error)
 }
 
 // Registry aggregates a set of Extractors and exposes a single entry
@@ -72,10 +83,21 @@ func (r *Registry) Register(e Extractor) {
 // ExtractAll runs every registered extractor against res and
 // concatenates the results. Implements
 // pkg/discovery.ExtractorRegistry.
-func (r *Registry) ExtractAll(res graph.Resource, all []graph.Resource) []graph.Edge {
-	var edges []graph.Edge
+//
+// One extractor's failure never suppresses the others: ExtractAll
+// collects every extractor's edges and returns the first error
+// alongside them, leaving the caller to log-and-continue.
+func (r *Registry) ExtractAll(ctx context.Context, res graph.Resource, q graph.ResourceLister) ([]graph.Edge, error) {
+	var (
+		edges    []graph.Edge
+		firstErr error
+	)
 	for _, e := range r.extractors {
-		edges = append(edges, e.Extract(res, all)...)
+		got, err := e.Extract(ctx, res, q)
+		edges = append(edges, got...)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
-	return edges
+	return edges, firstErr
 }

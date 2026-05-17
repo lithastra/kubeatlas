@@ -13,6 +13,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/store/memory"
 )
 
 // runExport is the `kubeatlas export` subcommand: stand up a one-shot
@@ -91,8 +92,10 @@ func runExport(args []string) int {
 }
 
 // buildExportGraph assembles a Graph by walking the cluster the
-// current KUBECONFIG points at. Returns the in-memory graph
-// directly — no store needed since we only need a one-shot dump.
+// current KUBECONFIG points at. The collected resources are staged
+// in a throwaway in-memory store so the edge extractors resolve
+// their targets through the same ResourceLister the informer hands
+// them.
 //
 // The namespace argument is informational only; pkg/discovery's
 // CollectAll always pulls every namespace the RBAC permits, and
@@ -100,7 +103,7 @@ func runExport(args []string) int {
 // namespace edges drop cleanly. Pulling the whole cluster keeps
 // the CLI simple and matches the playbook's "default connects to
 // the cluster" expectation.
-func buildExportGraph(_ context.Context, _ string) (*graph.Graph, error) {
+func buildExportGraph(ctx context.Context, _ string) (*graph.Graph, error) {
 	client, err := discovery.NewClient()
 	if err != nil {
 		return nil, fmt.Errorf("load kubeconfig: %w", err)
@@ -110,10 +113,21 @@ func buildExportGraph(_ context.Context, _ string) (*graph.Graph, error) {
 		return nil, fmt.Errorf("collect resources: %w", err)
 	}
 
+	lister := memory.New()
+	for _, r := range resources {
+		if err := lister.UpsertResource(ctx, r); err != nil {
+			return nil, fmt.Errorf("stage resource %s: %w", r.ID(), err)
+		}
+	}
+
 	reg := extractor.Default()
 	var edges []graph.Edge
 	for _, r := range resources {
-		edges = append(edges, reg.ExtractAll(r, resources)...)
+		got, err := reg.ExtractAll(ctx, r, lister)
+		if err != nil {
+			return nil, fmt.Errorf("extract edges for %s: %w", r.ID(), err)
+		}
+		edges = append(edges, got...)
 	}
 	return &graph.Graph{Resources: resources, Edges: edges}, nil
 }

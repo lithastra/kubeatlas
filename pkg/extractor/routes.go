@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // RoutesExtractor emits ROUTES_TO edges from Ingress and HTTPRoute
 // resources to the backend Services they target.
@@ -12,14 +16,14 @@ type RoutesExtractor struct{}
 
 func (RoutesExtractor) Type() graph.EdgeType { return graph.EdgeTypeRoutesTo }
 
-func (RoutesExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (RoutesExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	switch r.Kind {
 	case "Ingress":
-		return ingressEdges(r)
+		return ingressEdges(r), nil
 	case "HTTPRoute":
-		return httpRouteBackendEdges(r)
+		return httpRouteBackendEdges(r), nil
 	}
-	return nil
+	return nil, nil
 }
 
 func ingressEdges(r graph.Resource) []graph.Edge {

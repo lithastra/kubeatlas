@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // OwnsExtractor emits OWNS edges from a resource to each of its
 // metadata.ownerReferences. Direction is owned -> owner: this matches
@@ -13,9 +17,9 @@ type OwnsExtractor struct{}
 
 func (OwnsExtractor) Type() graph.EdgeType { return graph.EdgeTypeOwns }
 
-func (OwnsExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (OwnsExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	if len(r.OwnerReferences) == 0 {
-		return nil
+		return nil, nil
 	}
 	edges := make([]graph.Edge, 0, len(r.OwnerReferences))
 	for _, o := range r.OwnerReferences {
@@ -25,5 +29,5 @@ func (OwnsExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge 
 			Type: graph.EdgeTypeOwns,
 		})
 	}
-	return edges
+	return edges, nil
 }

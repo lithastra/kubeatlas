@@ -20,7 +20,7 @@ func TestSelects_HappyPath(t *testing.T) {
 		{Kind: "Pod", Namespace: "demo", Name: "api-1", Labels: map[string]string{"app": "api"}},
 		{Kind: "Pod", Namespace: "other", Name: "web-x", Labels: map[string]string{"app": "web"}}, // wrong ns
 	}
-	got := (SelectsExtractor{}).Extract(svc, pods)
+	got := extractEdges(t, SelectsExtractor{}, svc, pods)
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1", len(got))
 	}
@@ -37,7 +37,7 @@ func TestSelects_EmptySelectorMatchesNothing(t *testing.T) {
 	pods := []graph.Resource{
 		{Kind: "Pod", Namespace: "demo", Name: "any", Labels: map[string]string{"app": "x"}},
 	}
-	if got := (SelectsExtractor{}).Extract(svc, pods); got != nil {
+	if got := extractEdges(t, SelectsExtractor{}, svc, pods); got != nil {
 		t.Errorf("empty selector should match nothing, got %v", got)
 	}
 }
@@ -54,7 +54,7 @@ func TestSelects_NamespaceIsolation(t *testing.T) {
 		{Kind: "Pod", Namespace: "team-a", Name: "in-ns", Labels: map[string]string{"app": "web"}},
 		{Kind: "Pod", Namespace: "team-b", Name: "out-ns", Labels: map[string]string{"app": "web"}},
 	}
-	got := (SelectsExtractor{}).Extract(svc, pods)
+	got := extractEdges(t, SelectsExtractor{}, svc, pods)
 	if len(got) != 1 || got[0].To != "team-a/Pod/in-ns" {
 		t.Errorf("expected single edge to in-namespace pod, got %v", got)
 	}
@@ -75,7 +75,7 @@ func TestSelects_MultiLabelRequiresAllToMatch(t *testing.T) {
 		{Kind: "Pod", Namespace: "demo", Name: "full", Labels: map[string]string{"app": "web", "tier": "frontend"}},
 		{Kind: "Pod", Namespace: "demo", Name: "partial", Labels: map[string]string{"app": "web"}},
 	}
-	got := (SelectsExtractor{}).Extract(svc, pods)
+	got := extractEdges(t, SelectsExtractor{}, svc, pods)
 	if len(got) != 1 || got[0].To != "demo/Pod/full" {
 		t.Errorf("expected single edge to fully-matching pod, got %v", got)
 	}
@@ -100,7 +100,7 @@ func TestSelects_WorkloadTemplateLabelsAreMatched(t *testing.T) {
 			},
 		},
 	}
-	got := (SelectsExtractor{}).Extract(svc, []graph.Resource{dep})
+	got := extractEdges(t, SelectsExtractor{}, svc, []graph.Resource{dep})
 	if len(got) != 1 || got[0].To != "demo/Deployment/api" {
 		t.Errorf("expected edge to Deployment via template labels, got %v", got)
 	}
@@ -114,7 +114,7 @@ func TestSelects_NonServiceEmitsNothing(t *testing.T) {
 			Kind: kind, Namespace: "demo", Name: "x",
 			Raw: map[string]any{"spec": map[string]any{"selector": map[string]any{"app": "x"}}},
 		}
-		if got := (SelectsExtractor{}).Extract(r, nil); got != nil {
+		if got := extractEdges(t, SelectsExtractor{}, r, nil); got != nil {
 			t.Errorf("kind=%s: expected nil edges, got %v", kind, got)
 		}
 	}
