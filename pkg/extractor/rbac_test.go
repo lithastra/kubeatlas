@@ -1,10 +1,9 @@
-package extractor_test
+package extractor
 
 import (
 	"sort"
 	"testing"
 
-	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
@@ -55,7 +54,7 @@ func TestBindsSubjectExtractor_RoleBindingDefaultsNamespace(t *testing.T) {
 		map[string]any{"kind": "Role", "name": "list-cm"},
 	)
 
-	got := (extractor.BindsSubjectExtractor{}).Extract(rb, nil)
+	got := extractEdges(t, BindsSubjectExtractor{}, rb, nil)
 	wantTo := []string{
 		"demo/ServiceAccount/api-sa",
 		"/User/alice",
@@ -81,7 +80,7 @@ func TestBindsSubjectExtractor_ClusterRoleBindingNoNamespaceDefault(t *testing.T
 		},
 		map[string]any{"kind": "ClusterRole", "name": "cluster-admin"},
 	)
-	got := (extractor.BindsSubjectExtractor{}).Extract(crb, nil)
+	got := extractEdges(t, BindsSubjectExtractor{}, crb, nil)
 	if len(got) != 1 {
 		t.Fatalf("edges = %d, want 1", len(got))
 	}
@@ -100,7 +99,7 @@ func TestBindsSubjectExtractor_SkipsMalformedSubjects(t *testing.T) {
 		},
 		map[string]any{"kind": "Role", "name": "x"},
 	)
-	got := (extractor.BindsSubjectExtractor{}).Extract(rb, nil)
+	got := extractEdges(t, BindsSubjectExtractor{}, rb, nil)
 	if len(got) != 1 || got[0].To != "/User/alice" {
 		t.Errorf("edges = %+v, want one edge to /User/alice", got)
 	}
@@ -108,7 +107,7 @@ func TestBindsSubjectExtractor_SkipsMalformedSubjects(t *testing.T) {
 
 func TestBindsSubjectExtractor_KindMismatchSkipped(t *testing.T) {
 	notRB := graph.Resource{Kind: "Pod", Name: "x"}
-	got := (extractor.BindsSubjectExtractor{}).Extract(notRB, nil)
+	got := extractEdges(t, BindsSubjectExtractor{}, notRB, nil)
 	if len(got) != 0 {
 		t.Errorf("non-RB resource produced %d edges, want 0", len(got))
 	}
@@ -119,7 +118,7 @@ func TestBindsRoleExtractor_RoleInBindingNamespace(t *testing.T) {
 		nil,
 		map[string]any{"kind": "Role", "name": "list-cm"},
 	)
-	got := (extractor.BindsRoleExtractor{}).Extract(rb, nil)
+	got := extractEdges(t, BindsRoleExtractor{}, rb, nil)
 	if len(got) != 1 {
 		t.Fatalf("edges = %d, want 1", len(got))
 	}
@@ -135,7 +134,7 @@ func TestBindsRoleExtractor_RoleBindingReferencingClusterRole(t *testing.T) {
 		nil,
 		map[string]any{"kind": "ClusterRole", "name": "view"},
 	)
-	got := (extractor.BindsRoleExtractor{}).Extract(rb, nil)
+	got := extractEdges(t, BindsRoleExtractor{}, rb, nil)
 	if len(got) != 1 || got[0].To != "/ClusterRole/view" {
 		t.Errorf("edge = %+v, want /ClusterRole/view", got)
 	}
@@ -145,7 +144,7 @@ func TestBindsRoleExtractor_ClusterRoleBinding(t *testing.T) {
 	crb := crbHelper("admins", nil,
 		map[string]any{"kind": "ClusterRole", "name": "cluster-admin"},
 	)
-	got := (extractor.BindsRoleExtractor{}).Extract(crb, nil)
+	got := extractEdges(t, BindsRoleExtractor{}, crb, nil)
 	if len(got) != 1 || got[0].To != "/ClusterRole/cluster-admin" {
 		t.Errorf("edge = %+v, want /ClusterRole/cluster-admin", got)
 	}
@@ -167,7 +166,7 @@ func TestBindsRoleExtractor_MalformedRoleRefSkipped(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			rb := rbHelper("demo", "x", nil, c.roleRef)
-			got := (extractor.BindsRoleExtractor{}).Extract(rb, nil)
+			got := extractEdges(t, BindsRoleExtractor{}, rb, nil)
 			if len(got) != 0 {
 				t.Errorf("malformed roleRef %v produced %d edges, want 0", c.roleRef, len(got))
 			}
@@ -180,7 +179,7 @@ func TestBindsRoleExtractor_NoRoleRefSkipped(t *testing.T) {
 		Kind: "RoleBinding", Namespace: "demo", Name: "broken",
 		Raw: map[string]any{"subjects": []any{}},
 	}
-	got := (extractor.BindsRoleExtractor{}).Extract(rb, nil)
+	got := extractEdges(t, BindsRoleExtractor{}, rb, nil)
 	if len(got) != 0 {
 		t.Errorf("missing roleRef produced %d edges, want 0", len(got))
 	}
@@ -190,12 +189,12 @@ func TestBindsRoleExtractor_NoRoleRefSkipped(t *testing.T) {
 // stays in sync with graph.AllEdgeTypes — adding an edge type
 // without registering its extractor here flips this test red.
 func TestDefault_RegistersRBACExtractors(t *testing.T) {
-	reg := extractor.Default()
+	reg := Default()
 	rb := rbHelper("demo", "binding",
 		[]map[string]any{{"kind": "ServiceAccount", "name": "default"}},
 		map[string]any{"kind": "Role", "name": "list-cm"},
 	)
-	edges := reg.ExtractAll(rb, nil)
+	edges := extractAllEdges(t, reg, rb, nil)
 	types := make([]string, 0, len(edges))
 	for _, e := range edges {
 		types = append(types, string(e.Type))

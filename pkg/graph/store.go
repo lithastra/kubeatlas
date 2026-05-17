@@ -5,6 +5,18 @@ import (
 	"time"
 )
 
+// ResourceLister is the narrow read-only slice of GraphStore an
+// edge extractor needs: a single filtered list query. Extractors take
+// this rather than GraphStore so they cannot mutate the graph, and
+// rather than a materialised []Resource so the informer no longer has
+// to Snapshot the whole graph on every event (the O(N²) cold-start
+// the pushdown work removed from the view aggregators).
+//
+// Every GraphStore satisfies ResourceLister.
+type ResourceLister interface {
+	ListResources(ctx context.Context, filter Filter) ([]Resource, error)
+}
+
 // GraphStore is the persistence-agnostic interface for storing and
 // querying the dependency graph.
 //

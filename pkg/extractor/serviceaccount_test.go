@@ -19,7 +19,7 @@ func TestServiceAccount_ExplicitNameEmitsEdge(t *testing.T) {
 			},
 		},
 	}
-	got := (ServiceAccountExtractor{}).Extract(dep, nil)
+	got := extractEdges(t, ServiceAccountExtractor{}, dep, nil)
 	if len(got) != 1 || got[0].To != "demo/ServiceAccount/api-sa" {
 		t.Errorf("expected single edge to demo/ServiceAccount/api-sa, got %v", got)
 	}
@@ -30,7 +30,7 @@ func TestServiceAccount_MissingFieldImpliesDefault(t *testing.T) {
 		Kind: "Pod", Namespace: "demo", Name: "p",
 		Raw: map[string]any{"spec": map[string]any{}},
 	}
-	got := (ServiceAccountExtractor{}).Extract(pod, nil)
+	got := extractEdges(t, ServiceAccountExtractor{}, pod, nil)
 	if len(got) != 1 || got[0].To != "demo/ServiceAccount/default" {
 		t.Errorf("expected implicit default SA edge, got %v", got)
 	}
@@ -51,7 +51,7 @@ func TestServiceAccount_LegacyServiceAccountField(t *testing.T) {
 			},
 		},
 	}
-	got := (ServiceAccountExtractor{}).Extract(pod, nil)
+	got := extractEdges(t, ServiceAccountExtractor{}, pod, nil)
 	if len(got) != 1 || got[0].To != "demo/ServiceAccount/legacy-sa" {
 		t.Errorf("expected edge to legacy-sa, got %v", got)
 	}
@@ -73,7 +73,7 @@ func TestServiceAccount_DeploymentTemplateNesting(t *testing.T) {
 			},
 		},
 	}
-	got := (ServiceAccountExtractor{}).Extract(dep, nil)
+	got := extractEdges(t, ServiceAccountExtractor{}, dep, nil)
 	if len(got) != 1 || got[0].From != "demo/Deployment/api" || got[0].To != "demo/ServiceAccount/api-sa" {
 		t.Errorf("expected Deployment/api -> SA/api-sa, got %v", got)
 	}
@@ -98,7 +98,7 @@ func TestServiceAccount_CronJobJobTemplateNesting(t *testing.T) {
 			},
 		},
 	}
-	got := (ServiceAccountExtractor{}).Extract(cj, nil)
+	got := extractEdges(t, ServiceAccountExtractor{}, cj, nil)
 	if len(got) != 1 || got[0].To != "demo/ServiceAccount/backup-sa" {
 		t.Errorf("expected CronJob to resolve nested SA, got %v", got)
 	}
@@ -111,7 +111,7 @@ func TestServiceAccount_NonWorkloadEmitsNothing(t *testing.T) {
 			Kind: kind, Namespace: "demo", Name: "x",
 			Raw: map[string]any{"spec": map[string]any{"serviceAccountName": "ignored"}},
 		}
-		if got := (ServiceAccountExtractor{}).Extract(r, nil); got != nil {
+		if got := extractEdges(t, ServiceAccountExtractor{}, r, nil); got != nil {
 			t.Errorf("kind=%s: expected nil edges, got %v", kind, got)
 		}
 	}

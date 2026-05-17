@@ -10,7 +10,7 @@ import (
 
 func TestOwns_NoOwnerRefsEmitsNothing(t *testing.T) {
 	pod := graph.Resource{Kind: "Pod", Namespace: "demo", Name: "lonely"}
-	if got := (OwnsExtractor{}).Extract(pod, nil); got != nil {
+	if got := extractEdges(t, OwnsExtractor{}, pod, nil); got != nil {
 		t.Errorf("expected nil edges for pod without owner refs, got %v", got)
 	}
 }
@@ -22,7 +22,7 @@ func TestOwns_SingleOwnerRefEmitsOneEdge(t *testing.T) {
 			{Kind: "ReplicaSet", Name: "web-rs", UID: types.UID("rs-uid")},
 		},
 	}
-	got := (OwnsExtractor{}).Extract(pod, nil)
+	got := extractEdges(t, OwnsExtractor{}, pod, nil)
 	if len(got) != 1 {
 		t.Fatalf("got %d edges, want 1", len(got))
 	}
@@ -42,7 +42,7 @@ func TestOwns_MultipleOwnerRefsEmitOneEdgeEach(t *testing.T) {
 			{Kind: "ReplicaSet", Name: "rs-b", UID: types.UID("b")},
 		},
 	}
-	got := (OwnsExtractor{}).Extract(pod, nil)
+	got := extractEdges(t, OwnsExtractor{}, pod, nil)
 	if len(got) != 2 {
 		t.Errorf("got %d edges, want 2", len(got))
 	}
@@ -64,7 +64,7 @@ func TestOwns_PreservesNamespace(t *testing.T) {
 			{Kind: "ReplicaSet", Name: "rs", UID: types.UID("u")},
 		},
 	}
-	got := (OwnsExtractor{}).Extract(pod, nil)
+	got := extractEdges(t, OwnsExtractor{}, pod, nil)
 	if got[0].To != "demo/ReplicaSet/rs" {
 		t.Errorf("expected To in 'demo' namespace, got %q", got[0].To)
 	}

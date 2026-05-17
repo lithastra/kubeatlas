@@ -327,10 +327,15 @@ func runOnce(level, namespace, kind, name string) {
 
 	// Extract edges through the typed extractor.Registry, the same path
 	// the informer uses, so -once mode and the watch loop produce the
-	// same eight edge types from the same code.
+	// same eight edge types from the same code. Every resource is
+	// already in graphStore, so the extractors query it directly.
 	reg := extractor.Default()
 	for _, r := range resources {
-		for _, e := range reg.ExtractAll(r, resources) {
+		edges, err := reg.ExtractAll(ctx, r, graphStore)
+		if err != nil {
+			log.Fatalf("failed to extract edges for %s: %v", r.ID(), err)
+		}
+		for _, e := range edges {
 			if err := graphStore.UpsertEdge(ctx, e); err != nil {
 				log.Fatalf("failed to upsert edge %s -> %s: %v", e.From, e.To, err)
 			}

@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // ConfigMapExtractor emits USES_CONFIGMAP edges from workloads (and
 // raw Pods) to every ConfigMap they reference. Three reference styles
@@ -13,9 +17,9 @@ type ConfigMapExtractor struct{}
 
 func (ConfigMapExtractor) Type() graph.EdgeType { return graph.EdgeTypeUsesConfigMap }
 
-func (ConfigMapExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (ConfigMapExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	if r.Kind != "Pod" && !hasPodTemplate(r.Kind) {
-		return nil
+		return nil, nil
 	}
 	from := r.ID()
 	ns := r.Namespace
@@ -48,5 +52,5 @@ func (ConfigMapExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.
 		vmap, _ := v.(map[string]any)
 		edges = append(edges, emit(nestedString(vmap, "configMap", "name"))...)
 	}
-	return edges
+	return edges, nil
 }

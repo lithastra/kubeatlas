@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // ServiceAccountExtractor emits USES_SERVICEACCOUNT edges from
 // workloads (and raw Pods) to the ServiceAccount named by
@@ -11,13 +15,13 @@ type ServiceAccountExtractor struct{}
 
 func (ServiceAccountExtractor) Type() graph.EdgeType { return graph.EdgeTypeUsesServiceAccount }
 
-func (ServiceAccountExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (ServiceAccountExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	if r.Kind != "Pod" && !hasPodTemplate(r.Kind) {
-		return nil
+		return nil, nil
 	}
 	spec := podSpec(r)
 	if spec == nil {
-		return nil
+		return nil, nil
 	}
 	name := nestedString(spec, "serviceAccountName")
 	if name == "" {
@@ -29,5 +33,5 @@ func (ServiceAccountExtractor) Extract(r graph.Resource, _ []graph.Resource) []g
 		name = "default"
 	}
 	to := graph.Resource{Kind: "ServiceAccount", Name: name, Namespace: r.Namespace}.ID()
-	return []graph.Edge{{From: r.ID(), To: to, Type: graph.EdgeTypeUsesServiceAccount}}
+	return []graph.Edge{{From: r.ID(), To: to, Type: graph.EdgeTypeUsesServiceAccount}}, nil
 }

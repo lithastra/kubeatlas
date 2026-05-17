@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // VolumeExtractor emits MOUNTS_VOLUME edges from workloads (and raw
 // Pods) to every PersistentVolumeClaim they mount via
@@ -9,9 +13,9 @@ type VolumeExtractor struct{}
 
 func (VolumeExtractor) Type() graph.EdgeType { return graph.EdgeTypeMountsVolume }
 
-func (VolumeExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (VolumeExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	if r.Kind != "Pod" && !hasPodTemplate(r.Kind) {
-		return nil
+		return nil, nil
 	}
 	from := r.ID()
 	ns := r.Namespace
@@ -30,5 +34,5 @@ func (VolumeExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edg
 		seen[to] = struct{}{}
 		edges = append(edges, graph.Edge{From: from, To: to, Type: graph.EdgeTypeMountsVolume})
 	}
-	return edges
+	return edges, nil
 }

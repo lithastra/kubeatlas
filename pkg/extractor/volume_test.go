@@ -22,7 +22,7 @@ func TestVolume_HappyPath(t *testing.T) {
 			},
 		},
 	}
-	got := (VolumeExtractor{}).Extract(dep, nil)
+	got := extractEdges(t, VolumeExtractor{}, dep, nil)
 	if len(got) != 2 {
 		t.Errorf("got %d edges, want 2", len(got))
 	}
@@ -44,7 +44,7 @@ func TestVolume_EmptyDirIsIgnored(t *testing.T) {
 			},
 		},
 	}
-	if got := (VolumeExtractor{}).Extract(pod, nil); got != nil {
+	if got := extractEdges(t, VolumeExtractor{}, pod, nil); got != nil {
 		t.Errorf("expected nil edges for emptyDir-only volumes, got %v", got)
 	}
 }
@@ -63,7 +63,7 @@ func TestVolume_DanglingPVCRefStillEmits(t *testing.T) {
 			},
 		},
 	}
-	got := (VolumeExtractor{}).Extract(pod, nil)
+	got := extractEdges(t, VolumeExtractor{}, pod, nil)
 	if len(got) != 1 || got[0].To != "demo/PersistentVolumeClaim/deleted-pvc" {
 		t.Errorf("expected dangling edge to deleted-pvc, got %v", got)
 	}
@@ -74,7 +74,7 @@ func TestVolume_NonWorkloadEmitsNothing(t *testing.T) {
 	// must short-circuit and not pretend to walk a non-existent spec.
 	for _, kind := range []string{"Service", "ConfigMap", "Secret", "Ingress"} {
 		r := graph.Resource{Kind: kind, Namespace: "demo", Name: "x"}
-		if got := (VolumeExtractor{}).Extract(r, nil); got != nil {
+		if got := extractEdges(t, VolumeExtractor{}, r, nil); got != nil {
 			t.Errorf("kind=%s: expected nil edges, got %v", kind, got)
 		}
 	}
@@ -97,7 +97,7 @@ func TestVolume_DuplicateClaimDedup(t *testing.T) {
 			},
 		},
 	}
-	got := (VolumeExtractor{}).Extract(dep, nil)
+	got := extractEdges(t, VolumeExtractor{}, dep, nil)
 	if len(got) != 1 {
 		t.Errorf("expected 1 deduplicated edge, got %d: %v", len(got), got)
 	}

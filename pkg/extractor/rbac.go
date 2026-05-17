@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"context"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // BindsSubjectExtractor emits one BINDS_SUBJECT edge per entry in a
 // RoleBinding / ClusterRoleBinding's `subjects` list. ServiceAccount
@@ -24,13 +28,13 @@ type BindsSubjectExtractor struct{}
 
 func (BindsSubjectExtractor) Type() graph.EdgeType { return graph.EdgeTypeBindsSubject }
 
-func (BindsSubjectExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	if r.Kind != "RoleBinding" && r.Kind != "ClusterRoleBinding" {
-		return nil
+		return nil, nil
 	}
 	subjects := nestedSliceTop(r.Raw, "subjects")
 	if len(subjects) == 0 {
-		return nil
+		return nil, nil
 	}
 	out := make([]graph.Edge, 0, len(subjects))
 	for _, s := range subjects {
@@ -53,7 +57,7 @@ func (BindsSubjectExtractor) Extract(r graph.Resource, _ []graph.Resource) []gra
 			Type: graph.EdgeTypeBindsSubject,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // BindsRoleExtractor emits a single BINDS_ROLE edge from a binding to
@@ -64,18 +68,18 @@ type BindsRoleExtractor struct{}
 
 func (BindsRoleExtractor) Type() graph.EdgeType { return graph.EdgeTypeBindsRole }
 
-func (BindsRoleExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.Edge {
+func (BindsRoleExtractor) Extract(_ context.Context, r graph.Resource, _ graph.ResourceLister) ([]graph.Edge, error) {
 	if r.Kind != "RoleBinding" && r.Kind != "ClusterRoleBinding" {
-		return nil
+		return nil, nil
 	}
 	ref := nestedMapTop(r.Raw, "roleRef")
 	if ref == nil {
-		return nil
+		return nil, nil
 	}
 	kind, _ := ref["kind"].(string)
 	name, _ := ref["name"].(string)
 	if kind == "" || name == "" {
-		return nil
+		return nil, nil
 	}
 	// ClusterRole is cluster-scoped — empty namespace produces the
 	// "/ClusterRole/<name>" ID. Role lives in the binding's
@@ -90,7 +94,7 @@ func (BindsRoleExtractor) Extract(r graph.Resource, _ []graph.Resource) []graph.
 		From: r.ID(),
 		To:   graph.Resource{Kind: kind, Namespace: targetNS, Name: name}.ID(),
 		Type: graph.EdgeTypeBindsRole,
-	}}
+	}}, nil
 }
 
 // nestedSliceTop is the top-level twin of nestedSlice: RoleBinding's
