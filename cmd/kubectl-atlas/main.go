@@ -33,6 +33,7 @@ type app struct {
 	kubeatlasNamespace string // --kubeatlas-namespace
 	resourceNamespace  string // -n / --namespace (the resource's namespace)
 	online             bool   // --online
+	localUI            bool   // --local-ui
 	kubeContext        string // --context
 	kubeconfig         string // --kubeconfig
 
@@ -100,7 +101,10 @@ func newRootCmd(a *app) *cobra.Command {
 			"or the whole cluster.\n\n" +
 			"Offline (the default): builds the dependency graph straight from\n" +
 			"the Kubernetes API and renders it to an SVG file — no KubeAtlas\n" +
-			"server required.\n\n" +
+			"server required (needs the graphviz `dot` binary on PATH).\n\n" +
+			"Offline + --local-ui: runs a KubeAtlas server in-process on a\n" +
+			"loopback port and opens the interactive web UI — no KubeAtlas\n" +
+			"server in the cluster and no graphviz needed. Holds until Ctrl-C.\n\n" +
 			"Online (--online, --server, or KUBEATLAS_URL): opens the live\n" +
 			"KubeAtlas web UI. The server URL is resolved from --server, then\n" +
 			"KUBEATLAS_URL, then a kubectl port-forward to the in-cluster\n" +
@@ -121,6 +125,9 @@ func newRootCmd(a *app) *cobra.Command {
 		"KubeAtlas UI base URL — implies online mode (overrides KUBEATLAS_URL and auto-discovery)")
 	root.PersistentFlags().BoolVar(&a.online, "online", false,
 		"Use a running KubeAtlas server and open the live UI instead of rendering offline")
+	root.PersistentFlags().BoolVar(&a.localUI, "local-ui", false,
+		"Offline: run a KubeAtlas server in-process and open the interactive web UI "+
+			"(no graphviz, no in-cluster server) instead of rendering a static SVG")
 	root.PersistentFlags().StringVar(&a.kubeatlasNamespace, "kubeatlas-namespace",
 		defaultKubeatlasNamespace, "Namespace KubeAtlas is installed in (for online port-forward discovery)")
 	root.PersistentFlags().StringVarP(&a.resourceNamespace, "namespace", "n", "",
@@ -169,10 +176,16 @@ func (a *app) useOnline() bool {
 	return a.online || a.server != "" || os.Getenv("KUBEATLAS_URL") != ""
 }
 
-// run dispatches t to the online or offline path.
+// run dispatches t to the online path, the offline local-UI server,
+// or the offline static-SVG render. Online wins over --local-ui:
+// --local-ui is an offline option, so an explicit online selector
+// (--online, --server, KUBEATLAS_URL) takes precedence.
 func (a *app) run(ctx context.Context, t target) error {
 	if a.useOnline() {
 		return a.runOnline(ctx, t)
+	}
+	if a.localUI {
+		return a.runLocalUI(ctx, t)
 	}
 	return a.runOffline(ctx, t)
 }

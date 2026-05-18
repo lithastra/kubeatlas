@@ -11,6 +11,9 @@ before:
     # do NOT npm-install here to avoid double-building and lockfile
     # contention with the workflow.
     - sh -c 'rm -rf cmd/kubeatlas/web/dist && mkdir -p cmd/kubeatlas/web/dist && cp -R web/dist/. cmd/kubeatlas/web/dist/'
+    # kubectl-atlas embeds the same bundle so its --local-ui mode can
+    # serve the interactive UI from the in-process server.
+    - sh -c 'rm -rf cmd/kubectl-atlas/web/dist && mkdir -p cmd/kubectl-atlas/web/dist && cp -R web/dist/. cmd/kubectl-atlas/web/dist/'
 
 builds:
   - id: kubeatlas
@@ -36,8 +39,11 @@ builds:
   # kubectl-atlas is the F-116 kubectl plugin — a client-side entry
   # point that opens the KubeAtlas UI. Unlike the server binary it
   # also ships for windows: the plugin runs on the operator's
-  # workstation, not in-cluster. No embed_web tag (it has no UI to
-  # embed) and no version ldflags (it imports no pkg/version).
+  # workstation, not in-cluster. embed_web bundles the Web UI so the
+  # --local-ui offline mode can serve it from the in-process server;
+  # the before-hook above has already copied web/dist into
+  # cmd/kubectl-atlas/web/dist. No version ldflags (it imports no
+  # pkg/version).
   - id: kubectl-atlas
     main: ./cmd/kubectl-atlas
     binary: kubectl-atlas
@@ -45,6 +51,8 @@ builds:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    tags:
+      - embed_web
     ldflags:
       - -s -w
 
