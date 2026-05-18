@@ -4,10 +4,21 @@
 package main
 
 import (
+	"io"
 	"strings"
 
 	"github.com/pkg/browser"
 )
+
+func init() {
+	// xdg-open and its kin are noisy on a headless host: each browser
+	// they fail to find prints a "not found" line. We already detect
+	// failure from the exit status (OpenURL/OpenFile return an error)
+	// and fall back to printing the URL ourselves, so silence the
+	// child process's streams.
+	browser.Stdout = io.Discard
+	browser.Stderr = io.Discard
+}
 
 // opener opens a URL or a local file. It is a function type, not a
 // direct call into github.com/pkg/browser, so the command tests can
