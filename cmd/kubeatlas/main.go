@@ -20,6 +20,7 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
 	"github.com/lithastra/kubeatlas/pkg/api"
+	"github.com/lithastra/kubeatlas/pkg/collect"
 	"github.com/lithastra/kubeatlas/pkg/crd"
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor"
@@ -321,40 +322,15 @@ func runOnce(level, namespace, kind, name, format, kubeconfig, kubeContext strin
 
 	ctx := context.Background()
 
-	client, err := discovery.NewClient(kubeconfig, kubeContext)
-	if err != nil {
-		log.Fatalf("failed to load kubeconfig: %v", err)
-	}
-	resources, err := client.CollectAll()
-	if err != nil {
-		log.Fatalf("failed to collect resources: %v", err)
-	}
-
 	graphStore, err := store.New(ctx, loadStoreConfig())
 	if err != nil {
 		log.Fatalf("failed to construct graph store: %v", err)
 	}
-	for _, r := range resources {
-		if err := graphStore.UpsertResource(ctx, r); err != nil {
-			log.Fatalf("failed to upsert resource %s: %v", r.ID(), err)
-		}
-	}
-
-	// Extract edges through the typed extractor.Registry, the same path
-	// the informer uses, so -once mode and the watch loop produce the
-	// same eight edge types from the same code. Every resource is
-	// already in graphStore, so the extractors query it directly.
-	reg := extractor.Default()
-	for _, r := range resources {
-		edges, err := reg.ExtractAll(ctx, r, graphStore)
-		if err != nil {
-			log.Fatalf("failed to extract edges for %s: %v", r.ID(), err)
-		}
-		for _, e := range edges {
-			if err := graphStore.UpsertEdge(ctx, e); err != nil {
-				log.Fatalf("failed to upsert edge %s -> %s: %v", e.From, e.To, err)
-			}
-		}
+	// collect.Cluster runs the offline scan — collect every resource
+	// through the kubeconfig and derive the built-in edges into the
+	// store — the same code path the kubectl-atlas plugin uses.
+	if err := collect.Cluster(ctx, graphStore, kubeconfig, kubeContext); err != nil {
+		log.Fatalf("offline scan: %v", err)
 	}
 
 	// dot / svg render the raw resource graph (optionally narrowed to

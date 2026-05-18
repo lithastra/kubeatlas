@@ -19,18 +19,19 @@ spec:
     kubectl-atlas shows a KubeAtlas dependency graph for a resource,
     a namespace, or the whole cluster.
 
-    By default it works offline: it renders the graph to an SVG
-    locally through the kubeatlas CLI, with no KubeAtlas server
-    required. With --online (or --server / KUBEATLAS_URL) it opens
-    the live KubeAtlas web UI instead.
+    By default it works offline: it builds the dependency graph
+    straight from the Kubernetes API and renders it to an SVG
+    locally, with no KubeAtlas server required. With --online (or
+    --server / KUBEATLAS_URL) it opens the live KubeAtlas web UI
+    instead.
 
     The plugin installs nothing in the cluster. Run
     `kubectl atlas --help` for usage.
   caveats: |
-    Offline mode (the default) needs the `kubeatlas` CLI on your
-    PATH. Online mode (--online) needs KubeAtlas installed in the
-    cluster, or reachable via --server / KUBEATLAS_URL. See
-    https://docs.kubeatlas.lithastra.com for installation.
+    Offline mode (the default) renders SVG with the graphviz `dot`
+    tool, which must be on PATH. Online mode (--online) needs
+    KubeAtlas installed in the cluster, or reachable via --server /
+    KUBEATLAS_URL. See https://docs.kubeatlas.lithastra.com.
   platforms:
     - selector:
         matchLabels: { os: linux, arch: amd64 }
