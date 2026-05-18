@@ -5,6 +5,57 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
+## [v1.2.0] — offline rendering and a self-contained kubectl plugin
+
+v1.2.0 makes KubeAtlas useful without a server running in the
+cluster. The `kubectl` plugin now builds and renders the dependency
+graph itself — straight from the Kubernetes API on the operator's
+machine — and the CLI and API gained graph-image export. The
+`v1alpha1` and `/api/v1/*` surfaces are unchanged; everything below
+is additive.
+
+### Added
+
+- **Offline `kubectl atlas`** — the `kubectl-atlas` plugin works
+  without a KubeAtlas server in the cluster. By default it builds
+  the dependency graph directly from the Kubernetes API and renders
+  a static SVG with the graphviz `dot` tool. `--local-ui` instead
+  runs a KubeAtlas server in-process and opens the interactive web
+  UI — no graphviz and no in-cluster server — with `--host` to
+  choose the bind address. `--online` (or `--server` /
+  `KUBEATLAS_URL`) keeps the original behaviour of opening a live
+  in-cluster UI. The plugin is self-contained: it no longer shells
+  out to a separate `kubeatlas` binary. `--context` / `--kubeconfig`
+  select the cluster, `--no-browser` prints the URL instead of
+  opening one, and the client-go auth plugins are registered so it
+  can reach OIDC-authenticated clusters.
+- **`kubeatlas -once -format`** — the one-shot CLI mode can now emit
+  `json` (default), `dot`, or `svg`, so `kubeatlas -once -format=svg`
+  renders a graph image without a separate `dot` pipeline.
+- **Graph-image export endpoint** — `GET /api/v1/export` (and
+  `/api/v1alpha1/export`) renders a cluster or namespace view as an
+  `svg` or `png` image server-side. See
+  [decision 0012](https://github.com/lithastra/kubeatlas/blob/main/docs/decisions/0012-server-side-render.md).
+- **`-context` / `-kubeconfig` flags** — the `kubeatlas` CLI honours
+  the standard kubectl cluster-selection flags for local runs
+  instead of always using the kubeconfig's current context.
+
+### Changed
+
+- The `kubectl-atlas` plugin now defaults to **offline** rendering.
+  In v1.1.0 it only opened a live in-cluster UI; that behaviour now
+  requires `--online` (or `--server` / `KUBEATLAS_URL`).
+- **Rule-pack signature verification is on by default.**
+  `rulePacks.verifySignature` now defaults to `true` — it shipped
+  `false` in v1.1 as a one-release migration window. An install
+  that loads unsigned OCI rule packs must sign them or set
+  `rulePacks.verifySignature: false` explicitly, the only supported
+  mode for an air-gapped cluster with no path to the Sigstore trust
+  root. First-party `ghcr.io/lithastra` packs are signed and
+  unaffected.
+
+[v1.2.0]: https://github.com/lithastra/kubeatlas/releases/tag/v1.2.0
+
 ## [v1.1.0] — cloud rule packs, snapshots, search, plugins
 
 v1.1.0 closes Phase 3. It widens KubeAtlas beyond a single cluster's

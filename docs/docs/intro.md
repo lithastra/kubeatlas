@@ -51,4 +51,4 @@ next.
 4. [Developer Guide](./developer-guide.md) — for contributors:
    prerequisites, build, test, and a worked example of adding an edge
    type.
-5. [Roadmap](./roadmap.md) — what's next for v1.0.x and v1.1.
+5. [Roadmap](./roadmap.md) — where KubeAtlas is going next.

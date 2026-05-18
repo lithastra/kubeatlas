@@ -171,8 +171,8 @@ Three composed queries that share the `Direction` enum on the
 - **`web/`** — React 19 + TypeScript + MUI v5 Web UI. Cytoscape
   topology view at cluster / namespace / workload levels; the
   resource-detail page renders the v1 enrichment fields as
-  badges. Mermaid neighbour view stays for backward compat (its
-  Cytoscape replacement is a v1.1 target).
+  badges. Mermaid neighbour view stays for backward compat
+  alongside the Cytoscape views.
 - **`helm/`** — installable chart with secure defaults baked in:
   ClusterIP-only Service, Ingress disabled by default, a Helm
   `values.schema.json` gate that requires explicit
@@ -186,9 +186,8 @@ Three composed queries that share the `Direction` enum on the
   `oci://ghcr.io/lithastra/charts/kubeatlas`, cosign-signed,
   SBOM-attached.
 
-For what's deferred to v1.1 (multi-cluster, Headlamp plugin,
-Cytoscape consolidation, dark mode, historical diff), see the
-[Roadmap](./roadmap.md).
+For where KubeAtlas is going next (multi-cluster federation,
+cloud-resource integration), see the [Roadmap](./roadmap.md).
 
 The v0.1.0 API surface and the `graph.Resource`/`graph.Edge`
 shapes stay frozen across v1.x: only additive changes. CI's

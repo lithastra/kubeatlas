@@ -320,7 +320,7 @@
           }
         },
         "verifySignature": {
-          "description": "Verify the Sigstore (cosign) signature of every OCI rule pack. Failure is fatal (invariant 2.9). Default false in v1.1.",
+          "description": "Verify the Sigstore (cosign) signature of every OCI rule pack. Failure is fatal (invariant 2.9). Default true from v1.2 (false in v1.1).",
           "type": "boolean"
         },
         "trustedIdentities": {

@@ -9,7 +9,7 @@ Install KubeAtlas with Helm, open the Web UI, and click through to a
 dependency graph. About five minutes on a cluster you already have.
 
 If you'd rather drive the CLI directly without deploying anything,
-skip to the [Two run modes](./developer-guide.md#two-run-modes)
+skip to the [Run modes](./developer-guide.md#run-modes)
 section in the Developer Guide.
 
 ## Prerequisites
@@ -29,7 +29,7 @@ needed.
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.0.0 \
+  --version 1.1.0 \
   --namespace kubeatlas --create-namespace
 ```
 
@@ -117,5 +117,5 @@ for the dual-surface story. The
   principles and the data flow.
 - **Contribute.** The [Developer Guide](./developer-guide.md) has the
   build/test loop and a worked example of adding a new edge type.
-- **Plan ahead.** The [Roadmap](./roadmap.md) lays out what's
-  next for v1.0.x and v1.1.
+- **Plan ahead.** The [Roadmap](./roadmap.md) lays out where
+  KubeAtlas is going next.

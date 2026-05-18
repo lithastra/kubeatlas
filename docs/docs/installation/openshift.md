@@ -52,7 +52,7 @@ pull-secret from
 
    ```bash
    helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-     --version 1.0.0 \
+     --version 1.1.0 \
      --namespace kubeatlas --create-namespace \
      --set persistence.enabled=true \
      --set persistence.embedded.enabled=true \
@@ -95,7 +95,7 @@ sourcing. If your cluster pulls from a mirror, override
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.0.0 \
+  --version 1.1.0 \
   --namespace kubeatlas --create-namespace \
   --set image.repository=registry.example.com/mirror/lithastra/kubeatlas \
   --set image.tag=v1.0.0

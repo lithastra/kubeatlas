@@ -34,7 +34,8 @@ export KUBEBUILDER_ASSETS=$(setup-envtest use 1.30.x -p path)
 
 ```
 kubeatlas/
-├── cmd/kubeatlas/        # CLI entry point (-once or watch)
+├── cmd/kubeatlas/        # Server + CLI entry point (-once or watch)
+├── cmd/kubectl-atlas/    # kubectl plugin (offline / local-ui / online)
 ├── pkg/
 │   ├── graph/            # Resource / Edge / GraphStore types
 │   │   └── storetest/    # Reusable contract test suite
@@ -80,14 +81,14 @@ go run ./cmd/kubeatlas/ -once -level=namespace -namespace=petclinic            >
 bash test/verify/phase0.sh
 ```
 
-## Two run modes
+## Run modes
 
-The CLI has three modes:
+The CLI has four modes:
 
 | Flag / subcommand | Behaviour |
 |---|---|
 | *(default)* | Start an informer + REST + WebSocket server and run until `Ctrl-C`. This is what the Helm chart runs in the Pod. |
-| `-once` | Walk every API resource the cluster exposes, build the graph, write JSON to stdout and DOT to `output/kubeatlas.dot`, exit. The PoC-era path; useful for one-off dumps. |
+| `-once` | Walk every API resource the cluster exposes, build the graph, write it to stdout, and exit. `-format` picks the output: `json` (default), `dot`, or a rendered `svg`. Useful for one-off dumps and for offline tooling. |
 | `export --format=dot` | Same as `-once` but emits only DOT (to stdout or `--output`) and supports `--namespace` filtering + a `--title` override. See [CLI reference](./cli-reference.md). |
 | `rules-test --pack=...` | Offline Rego rule-pack evaluator — load a pack from a directory or OCI ref, evaluate samples, report per-fixture edges. Used by rule-pack contributors before publishing. |
 

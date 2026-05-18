@@ -252,11 +252,11 @@ rulePacks:
   # valid keyless signature or the pod fails to start — verification
   # failure is fatal, never "warn and continue".
   #
-  # Default false in v1.1 so existing installs migrate gradually;
-  # v1.2 flips the default to true once every first-party pack ships
-  # signed. An air-gapped install with no path to the Sigstore trust
-  # root must leave this false (the only supported air-gap mode).
-  verifySignature: false
+  # Default true from v1.2 (it shipped false in v1.1 so existing
+  # installs could migrate gradually). An air-gapped install with no
+  # path to the Sigstore trust root must set this false explicitly —
+  # the only supported air-gap mode.
+  verifySignature: true
 
   # Trusted signing identities for THIRD-PARTY packs — packs not
   # published under ghcr.io/lithastra (those are pinned to the
