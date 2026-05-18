@@ -22,6 +22,12 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	// Register the client-go auth plugins (OIDC and friends) so the
+	// plugin can authenticate to clusters that need them — a Krew
+	// best practice. Exec-credential auth (EKS, GKE, AKS) is built
+	// into client-go core and needs no import.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 // app holds the plugin's runtime wiring. open, resolve and render
