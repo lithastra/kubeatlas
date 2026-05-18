@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
@@ -63,6 +64,9 @@ func (a *app) runLocalUI(ctx context.Context, t target) error {
 	if !isLoopbackHost(bindHost) {
 		_, _ = fmt.Fprintln(os.Stderr, "kubectl-atlas: --local-ui is binding "+bindHost+
 			" — the cluster graph and unauthenticated API will be reachable from other hosts on the network")
+	} else if runningUnderWSL() {
+		_, _ = fmt.Fprintln(os.Stderr, "kubectl-atlas: running under WSL — a browser on Windows "+
+			"may not reach a loopback bind; re-run with --host 0.0.0.0 if it can't connect")
 	}
 
 	st := memory.New()
@@ -97,6 +101,14 @@ func (a *app) runLocalUI(ctx context.Context, t target) error {
 	base := "http://" + browseAddr
 	dst := t.onlineURL(base)
 	_, _ = fmt.Fprintln(os.Stdout, "KubeAtlas is running locally at "+base)
+	// A wildcard bind is reachable from other hosts (and from the
+	// Windows side of WSL) — list those addresses so the operator
+	// knows what to point a non-local browser at.
+	if isWildcardHost(bindHost) {
+		for _, ip := range nonLoopbackIPv4s() {
+			_, _ = fmt.Fprintln(os.Stdout, "  also reachable at http://"+net.JoinHostPort(ip, port))
+		}
+	}
 	a.launch(dst)
 	_, _ = fmt.Fprintln(os.Stdout, "Press Ctrl-C to stop.")
 
@@ -130,16 +142,58 @@ func freePort(host string) (string, error) {
 	return l.Addr().String(), nil
 }
 
+// isWildcardHost reports whether host binds every interface.
+func isWildcardHost(host string) bool {
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		return true
+	default:
+		return false
+	}
+}
+
 // browseHost maps a bind host to an address a browser can actually
 // reach: wildcard binds (0.0.0.0, ::) collapse to loopback, since
 // the server listens on every interface including it.
 func browseHost(bindHost string) string {
-	switch bindHost {
-	case "", "0.0.0.0", "::", "[::]":
+	if isWildcardHost(bindHost) {
 		return "127.0.0.1"
-	default:
-		return bindHost
 	}
+	return bindHost
+}
+
+// nonLoopbackIPv4s returns the machine's non-loopback IPv4 addresses.
+// When --local-ui binds a wildcard host these are the addresses a
+// browser on another host can reach — including the Windows side of
+// a WSL setup, where the WSL loopback is not the Windows loopback.
+func nonLoopbackIPv4s() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, a := range addrs {
+		ipNet, ok := a.(*net.IPNet)
+		if !ok || ipNet.IP.IsLoopback() {
+			continue
+		}
+		if ip4 := ipNet.IP.To4(); ip4 != nil {
+			out = append(out, ip4.String())
+		}
+	}
+	return out
+}
+
+// runningUnderWSL reports whether the process is inside WSL, where a
+// loopback bind is often not reachable from a browser on the Windows
+// host.
+func runningUnderWSL() bool {
+	b, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	if err != nil {
+		return false
+	}
+	s := strings.ToLower(string(b))
+	return strings.Contains(s, "microsoft") || strings.Contains(s, "wsl")
 }
 
 // isLoopbackHost reports whether host keeps the --local-ui server
