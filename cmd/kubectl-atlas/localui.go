@@ -48,9 +48,21 @@ func (a *app) runLocalUI(ctx context.Context, t target) error {
 		return fmt.Errorf("discover API resources: %w", err)
 	}
 
-	addr, err := freeLoopbackAddr()
+	bindHost := a.localUIHost
+	if bindHost == "" {
+		bindHost = "127.0.0.1"
+	}
+	addr, err := freePort(bindHost)
 	if err != nil {
 		return err
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("parse local server address %q: %w", addr, err)
+	}
+	if !isLoopbackHost(bindHost) {
+		_, _ = fmt.Fprintln(os.Stderr, "kubectl-atlas: --local-ui is binding "+bindHost+
+			" — the cluster graph and unauthenticated API will be reachable from other hosts on the network")
 	}
 
 	st := memory.New()
@@ -69,7 +81,10 @@ func (a *app) runLocalUI(ctx context.Context, t target) error {
 	go func() { err := srv.Start(ctx); cancel(); results <- err }()
 	go func() { err := mgr.Start(ctx); cancel(); results <- err }()
 
-	if err := waitListening(ctx, addr); err != nil {
+	// A wildcard bind host (0.0.0.0, ::) is not browsable — dial and
+	// open a concrete loopback address on the same port instead.
+	browseAddr := net.JoinHostPort(browseHost(bindHost), port)
+	if err := waitListening(ctx, browseAddr); err != nil {
 		if drained := drainLocalUI(results); drained != nil {
 			return drained
 		}
@@ -79,8 +94,9 @@ func (a *app) runLocalUI(ctx context.Context, t target) error {
 		return err
 	}
 
-	dst := t.onlineURL("http://" + addr)
-	_, _ = fmt.Fprintln(os.Stdout, "KubeAtlas is running locally at http://"+addr)
+	base := "http://" + browseAddr
+	dst := t.onlineURL(base)
+	_, _ = fmt.Fprintln(os.Stdout, "KubeAtlas is running locally at "+base)
 	_, _ = fmt.Fprintln(os.Stdout, "Opening", dst, "— press Ctrl-C to stop.")
 	if err := a.open(dst); err != nil {
 		cancel()
@@ -105,17 +121,40 @@ func drainLocalUI(results <-chan error) error {
 	return first
 }
 
-// freeLoopbackAddr probes for an unused TCP port on the loopback
-// interface and returns it as host:port. There is a small race
-// between closing the probe listener and the API server binding the
-// port; for a local, interactive tool that window is acceptable.
-func freeLoopbackAddr() (string, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+// freePort probes for an unused TCP port on host and returns the
+// bind address as host:port. There is a small race between closing
+// the probe listener and the API server binding the port; for a
+// local, interactive tool that window is acceptable.
+func freePort(host string) (string, error) {
+	l, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
 	if err != nil {
-		return "", fmt.Errorf("find a free local port: %w", err)
+		return "", fmt.Errorf("bind a free port on %s: %w", host, err)
 	}
 	defer func() { _ = l.Close() }()
 	return l.Addr().String(), nil
+}
+
+// browseHost maps a bind host to an address a browser can actually
+// reach: wildcard binds (0.0.0.0, ::) collapse to loopback, since
+// the server listens on every interface including it.
+func browseHost(bindHost string) string {
+	switch bindHost {
+	case "", "0.0.0.0", "::", "[::]":
+		return "127.0.0.1"
+	default:
+		return bindHost
+	}
+}
+
+// isLoopbackHost reports whether host keeps the --local-ui server
+// private to this machine.
+func isLoopbackHost(host string) bool {
+	switch host {
+	case "127.0.0.1", "localhost", "::1", "[::1]":
+		return true
+	default:
+		return false
+	}
 }
 
 // waitListening blocks until addr accepts a TCP connection, the

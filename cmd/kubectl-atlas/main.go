@@ -34,6 +34,7 @@ type app struct {
 	resourceNamespace  string // -n / --namespace (the resource's namespace)
 	online             bool   // --online
 	localUI            bool   // --local-ui
+	localUIHost        string // --host (--local-ui bind host)
 	kubeContext        string // --context
 	kubeconfig         string // --kubeconfig
 
@@ -128,6 +129,8 @@ func newRootCmd(a *app) *cobra.Command {
 	root.PersistentFlags().BoolVar(&a.localUI, "local-ui", false,
 		"Offline: run a KubeAtlas server in-process and open the interactive web UI "+
 			"(no graphviz, no in-cluster server) instead of rendering a static SVG")
+	root.PersistentFlags().StringVar(&a.localUIHost, "host", "127.0.0.1",
+		"Host the --local-ui server binds — use 0.0.0.0 to expose it on the network")
 	root.PersistentFlags().StringVar(&a.kubeatlasNamespace, "kubeatlas-namespace",
 		defaultKubeatlasNamespace, "Namespace KubeAtlas is installed in (for online port-forward discovery)")
 	root.PersistentFlags().StringVarP(&a.resourceNamespace, "namespace", "n", "",
