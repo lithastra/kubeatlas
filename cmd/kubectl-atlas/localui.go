@@ -97,12 +97,8 @@ func (a *app) runLocalUI(ctx context.Context, t target) error {
 	base := "http://" + browseAddr
 	dst := t.onlineURL(base)
 	_, _ = fmt.Fprintln(os.Stdout, "KubeAtlas is running locally at "+base)
-	_, _ = fmt.Fprintln(os.Stdout, "Opening", dst, "— press Ctrl-C to stop.")
-	if err := a.open(dst); err != nil {
-		cancel()
-		_ = drainLocalUI(results)
-		return fmt.Errorf("open browser: %w", err)
-	}
+	a.launch(dst)
+	_, _ = fmt.Fprintln(os.Stdout, "Press Ctrl-C to stop.")
 
 	waitForInterrupt(ctx)
 	cancel()

@@ -35,6 +35,7 @@ type app struct {
 	online             bool   // --online
 	localUI            bool   // --local-ui
 	localUIHost        string // --host (--local-ui bind host)
+	noBrowser          bool   // --no-browser
 	kubeContext        string // --context
 	kubeconfig         string // --kubeconfig
 
@@ -131,6 +132,8 @@ func newRootCmd(a *app) *cobra.Command {
 			"(no graphviz, no in-cluster server) instead of rendering a static SVG")
 	root.PersistentFlags().StringVar(&a.localUIHost, "host", "127.0.0.1",
 		"Host the --local-ui server binds — use 0.0.0.0 to expose it on the network")
+	root.PersistentFlags().BoolVar(&a.noBrowser, "no-browser", false,
+		"Don't try to open a browser — just print the URL (or file) to open")
 	root.PersistentFlags().StringVar(&a.kubeatlasNamespace, "kubeatlas-namespace",
 		defaultKubeatlasNamespace, "Namespace KubeAtlas is installed in (for online port-forward discovery)")
 	root.PersistentFlags().StringVarP(&a.resourceNamespace, "namespace", "n", "",
@@ -179,6 +182,23 @@ func (a *app) useOnline() bool {
 	return a.online || a.server != "" || os.Getenv("KUBEATLAS_URL") != ""
 }
 
+// launch points the operator at dst — a UI URL or a rendered file.
+// It tries the system browser unless --no-browser is set, and falls
+// back to printing the location when the browser can't be opened
+// (a headless host, no opener on PATH). It never fails: the URL or
+// file is the deliverable, so a missing browser must not abort the
+// command or tear down a running --local-ui server.
+func (a *app) launch(dst string) {
+	if !a.noBrowser {
+		if err := a.open(dst); err == nil {
+			_, _ = fmt.Fprintln(os.Stdout, "Opened", dst)
+			return
+		}
+	}
+	_, _ = fmt.Fprintln(os.Stdout, "Open this in your browser:")
+	_, _ = fmt.Fprintln(os.Stdout, "    "+dst)
+}
+
 // run dispatches t to the online path, the offline local-UI server,
 // or the offline static-SVG render. Online wins over --local-ui:
 // --local-ui is an offline option, so an explicit online selector
@@ -205,10 +225,7 @@ func (a *app) runOnline(ctx context.Context, t target) error {
 	defer cleanup()
 
 	dst := t.onlineURL(base)
-	_, _ = fmt.Fprintln(os.Stdout, "Opening", dst)
-	if err := a.open(dst); err != nil {
-		return fmt.Errorf("open browser: %w", err)
-	}
+	a.launch(dst)
 	if tunnel {
 		_, _ = fmt.Fprintln(os.Stdout, "Port-forward tunnel is up — press Ctrl-C to close it.")
 		waitForInterrupt(ctx)
@@ -238,9 +255,7 @@ func (a *app) runOffline(ctx context.Context, t target) error {
 		abs = out
 	}
 	_, _ = fmt.Fprintln(os.Stdout, "Rendered", abs)
-	if err := a.open(abs); err != nil {
-		return fmt.Errorf("open browser: %w", err)
-	}
+	a.launch(abs)
 	return nil
 }
 

@@ -115,11 +115,25 @@ func TestExecute_OnlinePropagatesResolveError(t *testing.T) {
 	}
 }
 
-func TestExecute_OnlinePropagatesOpenError(t *testing.T) {
+// A browser-open failure must not fail the command: on a headless
+// host the URL itself is the deliverable, so Execute falls back to
+// printing it and returns cleanly.
+func TestExecute_OnlineOpenFailureIsNotFatal(t *testing.T) {
 	a, _ := newTestApp()
 	a.open = func(string) error { return errors.New("no browser") }
-	if err := runCmd(t, a, "--online", "cluster"); err == nil {
-		t.Error("expected the browser-open error to surface from Execute")
+	if err := runCmd(t, a, "--online", "cluster"); err != nil {
+		t.Errorf("a browser-open failure should not fail Execute: %v", err)
+	}
+}
+
+// --no-browser skips the opener entirely.
+func TestNoBrowser_SkipsOpener(t *testing.T) {
+	a, opened := newTestApp()
+	if err := runCmd(t, a, "--online", "--no-browser", "cluster"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if *opened != "" {
+		t.Errorf("--no-browser still opened %q", *opened)
 	}
 }
 
