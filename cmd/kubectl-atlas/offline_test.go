@@ -14,7 +14,7 @@ import (
 // than a bare exec error.
 func TestRenderOffline_KubeatlasNotOnPath(t *testing.T) {
 	t.Setenv("PATH", "")
-	_, err := renderOffline(context.Background(), "")
+	_, err := renderOffline(context.Background(), "", kubeFlags{})
 	if err == nil {
 		t.Fatal("expected an error when kubeatlas is not on PATH")
 	}

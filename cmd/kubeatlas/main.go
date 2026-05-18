@@ -278,6 +278,8 @@ func main() {
 		namespace   = flag.String("namespace", "", "Filter by namespace (required for namespace/workload, optional for resource).")
 		kind        = flag.String("kind", "", "Resource Kind (required for workload, and for resource when scoped to a single object).")
 		name        = flag.String("name", "", "Resource name (required for workload, and for resource when scoped to a single object).")
+		kubeconfig  = flag.String("kubeconfig", "", "Path to the kubeconfig file (local runs; overrides $KUBECONFIG).")
+		kubeContext = flag.String("context", "", "kubeconfig context to use (local runs).")
 		showVersion = flag.Bool("version", false, "Print build metadata (version, commit, date) and exit.")
 	)
 	flag.Var(&rulePacks, "rule-pack",
@@ -291,10 +293,10 @@ func main() {
 		return
 	}
 	if *once {
-		runOnce(*level, *namespace, *kind, *name, *format)
+		runOnce(*level, *namespace, *kind, *name, *format, *kubeconfig, *kubeContext)
 		return
 	}
-	runWatch(rulePackRefs(rulePacks))
+	runWatch(rulePackRefs(rulePacks), *kubeconfig, *kubeContext)
 }
 
 // runOnce is the offline CLI mode: it walks every API resource
@@ -310,7 +312,7 @@ func main() {
 //
 // dot and svg render the resource graph, optionally narrowed to one
 // -namespace; the -level aggregation applies to json only.
-func runOnce(level, namespace, kind, name, format string) {
+func runOnce(level, namespace, kind, name, format, kubeconfig, kubeContext string) {
 	switch format {
 	case "json", "dot", "svg":
 	default:
@@ -319,7 +321,7 @@ func runOnce(level, namespace, kind, name, format string) {
 
 	ctx := context.Background()
 
-	client, err := discovery.NewClient()
+	client, err := discovery.NewClient(kubeconfig, kubeContext)
 	if err != nil {
 		log.Fatalf("failed to load kubeconfig: %v", err)
 	}
@@ -453,11 +455,11 @@ func runOnce(level, namespace, kind, name, format string) {
 // runWatch starts the informer and the API server in parallel and
 // blocks until either errors or the process receives SIGINT/SIGTERM.
 // Both shut down when the parent context is cancelled.
-func runWatch(rulePackExtras []string) {
+func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	client, err := discovery.NewClient()
+	client, err := discovery.NewClient(kubeconfig, kubeContext)
 	if err != nil {
 		log.Fatalf("failed to load kubeconfig: %v", err)
 	}
