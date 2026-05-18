@@ -155,21 +155,21 @@ tests:
     asserts:
       - notFailedTemplate: {}
 
-  - it: rulePacks.verifySignature default-off emits no verify env var
+  - it: rulePacks.verifySignature defaults on and emits the verify env var
     template: deployment.yaml
     asserts:
-      - notContains:
+      - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: KUBEATLAS_RULEPACK_VERIFY_SIGNATURE
             value: "true"
 
-  - it: rulePacks.verifySignature=true is wired through to the binary
+  - it: rulePacks.verifySignature=false omits the verify env var
     template: deployment.yaml
     set:
-      rulePacks.verifySignature: true
+      rulePacks.verifySignature: false
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].env
           content:
             name: KUBEATLAS_RULEPACK_VERIFY_SIGNATURE

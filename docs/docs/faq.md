@@ -18,16 +18,16 @@ with `kubectl`, and target the day-to-day "browse and edit" loop.
 KubeAtlas is **only the dependency graph**. It doesn't render Pods
 as a list to manage them; it tells you what depends on what. The two
 tools coexist — install Headlamp for "show me the cluster" and
-KubeAtlas for "show me the wiring". A Headlamp plugin is on the
-v1.1 [roadmap](./roadmap.md#v11-themes-active).
+KubeAtlas for "show me the wiring". A Headlamp plugin shipped in
+v1.1 (`lithastra/kubeatlas-headlamp-plugin`).
 
 ## Can I run this in production today?
 
 Yes — for read-only introspection. From v1.0 the chart ships an
 opt-in Tier 2 backend (PostgreSQL + Apache AGE via the embedded
 CloudNativePG sub-chart) so restart preserves the graph. Single-
-replica is still the deploy shape; multi-cluster federation is a
-v1.1 target. Authentication is still your job — read the
+replica is still the deploy shape; multi-cluster federation is on
+the [roadmap](./roadmap.md). Authentication is still your job — read the
 [security warning](./installation/security-warning.md) before
 exposing the UI.
 
@@ -66,7 +66,7 @@ the memory side is no longer the bottleneck, but the aggregator
 response shape is still O(R) — see the
 [`stress-test-5k`](https://github.com/lithastra/kubeatlas/blob/main/test/perf/stress-5k-resources.sh)
 fixture for a worked baseline. Response-shape pagination is a
-v1.0.x target.
+post-v1.2 target.
 
 ## Why is there no built-in authentication?
 
@@ -81,9 +81,8 @@ exposing the UI.
 
 ## When will Tier 2 / Rego / Headlamp plugin be ready?
 
-Tier 2 and Rego rule packs shipped in v1.0. The Headlamp plugin
-moved to v1.1 — see the
-[roadmap](./roadmap.md#v11-themes-active).
+All shipped: Tier 2 and Rego rule packs in v1.0, the Headlamp
+plugin in v1.1. See the [roadmap](./roadmap.md) for what's next.
 
 ## How do I extend it with custom edge types?
 

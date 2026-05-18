@@ -25,7 +25,21 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**v1.1.0 — Phase 3.** Building on the v1.0 GA foundation, v1.1 adds:
+**v1.2.0 — offline rendering.** v1.2.0 makes KubeAtlas usable
+without a server running in the cluster:
+
+- **Offline `kubectl atlas`** — the `kubectl` plugin builds the
+  dependency graph straight from the Kubernetes API and renders it
+  locally: a static SVG by default, or — with `--local-ui` — an
+  interactive web UI from an in-process server. No in-cluster
+  KubeAtlas required.
+- **Graph-image export** — `kubeatlas -once -format=svg` and the new
+  `GET /api/v1/export` endpoint render cluster / namespace views as
+  SVG or PNG.
+- **Cluster selection** — the `kubeatlas` CLI and the plugin honour
+  the standard `--context` / `--kubeconfig` flags.
+
+**v1.1.0 — Phase 3.** Built on the v1.0 GA foundation:
 
 - **Cloud-platform rule packs** — opt-in EKS / AKS / GKE add-on CRD
   packs (AWS Load Balancer Controller, Karpenter, GKE Ingress,
@@ -40,10 +54,9 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
   the cluster's label vocabulary.
 - **NetworkPolicy edges** — `NetworkPolicy` is first-class, exposing
   the Pods a policy selects and the peers it allows.
-- **`kubectl` plugin** — `kubectl atlas <kind> <name>` opens the UI
-  for a resource straight from the terminal.
-- **Headlamp plugin v0.1** — the dependency graph inside the
-  [Headlamp](https://headlamp.dev) UI (separate repository).
+- **`kubectl` and Headlamp plugins** — first releases of the
+  `kubectl atlas` plugin and the [Headlamp](https://headlamp.dev)
+  plugin (separate repository).
 
 The v1.0 foundation is unchanged: Tier 2 PostgreSQL persistence,
 Rego rule packs, the RBAC graph, blast radius, orphan / cycle
@@ -65,7 +78,7 @@ to a running UI):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.0.0 \
+  --version 1.1.0 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
@@ -76,7 +89,7 @@ Tier 2 + cert-manager TLS (production-shaped install):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.0.0 \
+  --version 1.1.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \
@@ -99,28 +112,41 @@ Full walkthrough: [docs.kubeatlas.lithastra.com/quick-start](https://docs.kubeat
 
 ## CLI mode
 
-The same binary also runs as a one-shot CLI for scripting:
+The same binary also runs as a one-shot CLI for scripting. It talks
+to the cluster directly — no KubeAtlas server needed — and emits
+`json` (default), `dot`, or a rendered `svg`:
 
 ```bash
-go run ./cmd/kubeatlas -once -level=cluster   > /tmp/cluster.json
-go run ./cmd/kubeatlas -once -level=namespace -namespace=petclinic > /tmp/ns.json
+go run ./cmd/kubeatlas -once -level=cluster                          > /tmp/cluster.json
+go run ./cmd/kubeatlas -once -level=namespace -namespace=petclinic   > /tmp/ns.json
+go run ./cmd/kubeatlas -once -level=cluster -format=svg              > /tmp/cluster.svg
 ```
 
-See [the developer guide](https://docs.kubeatlas.lithastra.com/developer-guide).
+`--context` / `--kubeconfig` pick the cluster. See
+[the developer guide](https://docs.kubeatlas.lithastra.com/developer-guide).
 
 ## kubectl plugin
 
-`kubectl-atlas` is a small plugin that jumps from the terminal to the
-KubeAtlas UI page for a resource:
+`kubectl-atlas` shows a KubeAtlas view of a resource, a namespace,
+or the whole cluster, straight from the terminal:
 
 ```bash
-kubectl atlas deployment api -n petclinic   # open the resource page
-kubectl atlas namespace petclinic           # open the namespace view
-kubectl atlas cluster                       # open the cluster view
+kubectl atlas deployment api -n petclinic   # one resource
+kubectl atlas namespace petclinic           # a namespace
+kubectl atlas cluster                       # the whole cluster
 ```
 
-It finds the UI from `--server`, then `KUBEATLAS_URL`, then a
-`kubectl port-forward` to the in-cluster Service. Install the latest
+It runs in three modes — no KubeAtlas server in the cluster is
+needed for the first two:
+
+- **Offline (default)** — builds the graph from the Kubernetes API
+  and renders it to a local SVG. Needs the graphviz `dot` tool.
+- **`--local-ui`** — runs a KubeAtlas server in-process and opens
+  the interactive web UI. No graphviz, no in-cluster server.
+- **`--online`** (or `--server` / `KUBEATLAS_URL`) — opens a live
+  in-cluster KubeAtlas UI, discovered via `kubectl port-forward`.
+
+`--context` / `--kubeconfig` pick the cluster. Install the latest
 release binary onto your `PATH`:
 
 ```bash
@@ -128,8 +154,7 @@ curl -L https://github.com/lithastra/kubeatlas/releases/latest/download/kubectl-
   | tar -xz kubectl-atlas && sudo install kubectl-atlas /usr/local/bin/
 ```
 
-Once `kubectl krew` indexing lands (M9) it will also be installable
-with `kubectl krew install atlas`.
+A `kubectl krew install atlas` path is in preparation.
 
 ## Contributing
 
@@ -137,9 +162,9 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the
 [Code of Conduct](./CODE_OF_CONDUCT.md). Look for issues tagged
 [`good first issue`](https://github.com/lithastra/kubeatlas/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-v1.0 shipped. v1.1 priorities (multi-cluster federation,
-cosign-verified rule pack loading, Headlamp plugin, frontend
-Mermaid → Cytoscape consolidation, dark mode) are tracked at
+v1.0 and v1.1 shipped; v1.2.0 (offline rendering, the self-contained
+`kubectl` plugin) is in preparation. Direction beyond it —
+multi-cluster federation, cloud-resource integration — is tracked at
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 ## License

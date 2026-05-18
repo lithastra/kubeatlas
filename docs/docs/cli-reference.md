@@ -57,9 +57,10 @@ kubeatlas export --format=dot | dot -Tdot:cairo | base64 | gh gist create -
 
 #### What's *not* supported (on purpose)
 
-- `--format=svg` — embedding cgo Graphviz bindings would bloat the
-  binary on every install. Use `dot -Tsvg` post-process; the
-  Graphviz dependency is small and ubiquitous.
+- `--format=svg` / `--format=png` — `export` emits DOT only. For a
+  rendered image use `kubeatlas -once -format=svg`, pipe `export`
+  through `dot -Tsvg` / `dot -Tpng`, or call the
+  `GET /api/v1/export` endpoint.
 - `--format=mermaid` — Mermaid was retired on the API side at v1.0,
   and the CLI follows the same path.
 - `--server=URL` — not implemented yet. The default cluster-direct
@@ -79,10 +80,12 @@ and the informer pipeline. The most common flags:
 
 | Flag | Notes |
 |---|---|
-| `--once` | Single discovery pass, write JSON + DOT, exit. Used by integration tests and PoC harnesses. |
+| `--once` | Single offline discovery pass — talk to the Kubernetes API directly (no KubeAtlas server), emit the graph, and exit. |
+| `--format` | Output format for `--once`: `json` (default), `dot`, or `svg`. `svg` renders via the graphviz `dot` tool. |
+| `--level`, `--namespace`, `--kind`, `--name` | Drive `--once` mode — the aggregation level and the resource selector. See `kubeatlas --help`. |
+| `--context`, `--kubeconfig` | Select the cluster for local runs — the kubeconfig context and file. Default to the current context and `$KUBECONFIG`. |
 | `--rule-pack <ref>` | Load an extra rule pack (OCI ref or local directory). Repeatable. The Helm chart sets `KUBEATLAS_RULE_PACKS` from `rulePacks.extras`. |
 | `--version` | Print build metadata and exit. |
-| `--level`, `--namespace`, `--kind`, `--name` | Drive `--once` mode. See `kubeatlas --help`. |
 
 ## Exit codes
 
@@ -91,3 +94,43 @@ and the informer pipeline. The most common flags:
 | 0 | Success. |
 | 1 | Usage / connection / I/O error. The CLI prints a one-line message to stderr. |
 | 2 | `rules-test` only — at least one fixture produced no edges or errored. The per-sample report is still emitted on stdout. |
+
+## `kubectl-atlas` plugin
+
+`kubectl-atlas` is a separate binary — the KubeAtlas `kubectl`
+plugin. Placed on `PATH`, `kubectl` exposes it as `kubectl atlas`.
+It shows a KubeAtlas view of a resource, a namespace, or the whole
+cluster:
+
+```bash
+kubectl atlas deployment api -n petclinic   # one resource
+kubectl atlas namespace petclinic           # a namespace
+kubectl atlas cluster                       # the whole cluster
+```
+
+### Modes
+
+The plugin runs in three modes — the first two need no KubeAtlas
+server in the cluster:
+
+| Mode | Selected by | What it does |
+|---|---|---|
+| Offline | *(default)* | Builds the graph from the Kubernetes API and renders a static SVG file locally. Needs the graphviz `dot` tool on `PATH`. |
+| Local UI | `--local-ui` | Runs a KubeAtlas server in-process and opens the interactive web UI. No graphviz, no in-cluster server. Holds until `Ctrl-C`. |
+| Online | `--online`, `--server`, `KUBEATLAS_URL` | Opens a live in-cluster KubeAtlas UI. The URL is resolved from `--server`, then `KUBEATLAS_URL`, then a `kubectl port-forward` to the in-cluster Service. |
+
+Offline mode is self-contained — it renders in-process and does not
+need the `kubeatlas` binary on `PATH`.
+
+### Flags
+
+| Flag | Notes |
+|---|---|
+| `--online` | Use a running in-cluster KubeAtlas server instead of rendering offline. |
+| `--server <url>` | KubeAtlas UI base URL — implies `--online`. |
+| `--local-ui` | Offline: serve the interactive UI from an in-process server instead of rendering an SVG. |
+| `--host <addr>` | Bind address for the `--local-ui` server. Default `127.0.0.1`; use `0.0.0.0` to expose it on the network. |
+| `--kubeatlas-namespace <ns>` | Namespace KubeAtlas is installed in, for online port-forward discovery. Default `kubeatlas`. |
+| `-n`, `--namespace <ns>` | Namespace of the target resource. |
+| `--context`, `--kubeconfig` | Select the cluster — the kubeconfig context and file. |
+| `--no-browser` | Print the URL (or file path) instead of opening a browser. |

@@ -13,17 +13,20 @@ For the current state, see [What is KubeAtlas](./).
 
 ## Where we are
 
-**v1.0.0 is released.** Install with
-`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.0.0`
-— see the [Quick Start](./quick-start.md). v1.0.x patch work is
-now the active cycle; v1.1 themes are sketched below.
+**v1.1.0 is released** — it closed Phase 3. Install with
+`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.1.0`
+— see the [Quick Start](./quick-start.md). **v1.2.0** — offline
+rendering and a self-contained `kubectl` plugin — is in
+preparation; its scope is sketched below.
 
 | Phase | Status | What it delivered |
 |---|---|---|
 | **Phase 0** (Foundation) | ✅ Done | CLI binary, in-memory graph, 8 edge types, 16 watched resources, contract-tested store interface, contributor docs, CI gates. No API, no UI, no Helm Chart. |
 | **Phase 1** (MVP → v0.1.0) | ✅ Released | REST + WebSocket API, React/MUI Web UI with Cytoscape topology and Mermaid neighbour view, Helm Chart with secure defaults, Playwright E2E, multi-platform release. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:0.1.0`. |
-| **Phase 2** (v1.0) | ✅ Released | Tier 2 persistence (PostgreSQL + Apache AGE), Rego rule packs, RBAC graph, blast radius, orphan + cycle detection, `/api/v1/*` GA, cert-manager TLS, OpenShift detector + embedded pack, chaos test suite. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.0.0`. |
-| **Phase 3** (v2.0+) | 💭 Sketch | Multi-cluster, cloud integration. |
+| **Phase 2** (→ v1.0) | ✅ Released | Tier 2 persistence (PostgreSQL + Apache AGE), Rego rule packs, RBAC graph, blast radius, orphan + cycle detection, `/api/v1/*` GA, cert-manager TLS, OpenShift detector + embedded pack, chaos test suite. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.0.0`. |
+| **Phase 3** (→ v1.1) | ✅ Released | Cloud-platform rule packs (EKS / AKS / GKE), historical snapshots + diff, full-text search, label filtering, NetworkPolicy edges, the `kubectl` and Headlamp plugins. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.1.0`. |
+| **v1.2** (offline rendering) | 🚧 In preparation | Offline `kubectl atlas`, `--local-ui`, graph-image export, `--context` / `--kubeconfig`. |
+| **Beyond v1.2** | 💭 Sketch | Multi-cluster federation, cloud-resource integration. |
 
 ## Related tools
 
@@ -83,7 +86,7 @@ just as easily, KubeAtlas is the right shape for that.
 
 A short list, with the question each is best at:
 
-- **[Headlamp](https://headlamp.dev/) / [Lens](https://k8slens.dev/)** — "Show me everything in this cluster, navigably." General-purpose K8s UIs. KubeAtlas ships its own UI for the graph; a Headlamp plugin lives in `lithastra/kubeatlas-headlamp-plugin` and is tracked as a v1.1 target.
+- **[Headlamp](https://headlamp.dev/) / [Lens](https://k8slens.dev/)** — "Show me everything in this cluster, navigably." General-purpose K8s UIs. KubeAtlas ships its own UI for the graph; a Headlamp plugin (shipped in v1.1) lives in `lithastra/kubeatlas-headlamp-plugin`.
 - **[`kubectl tree`](https://github.com/ahmetb/kubectl-tree)** — "Show owner-reference children of this object." Kubectl plugin, single-edge-type, terminal-only. KubeAtlas covers the same ground via the OWNS edge plus seven others, with a server and UI on top.
 - **[Argo CD](https://argoproj.github.io/cd/)** — Resource topology, but framed around an Application as the root. KubeAtlas roots are arbitrary; you don't need GitOps adoption.
 - **Prometheus / Grafana / DataDog** — Metric and event observability. Disjoint problem space.
@@ -129,8 +132,8 @@ everything:
 - ❌ Dark mode
 - ❌ Headlamp plugin
 
-The first seven shipped in v1.0; dark mode + Headlamp plugin
-moved to v1.1.
+The first seven shipped in v1.0; the Headlamp plugin shipped in
+v1.1.
 
 ## Phase 2 → v1.0 (released)
 
@@ -150,52 +153,52 @@ Shipped scope:
 | **Performance** | 5K-resource perf bench + regression gate; recursive-CTE traversal so blast-radius p95 stays under 500 ms on a 7K-resource cluster. |
 | **Chaos** | `test/chaos/` scenarios (pg-disconnect, rego-panic, rego-runaway, cert-manager-flap) gating the release. |
 
-### Deferred to v1.1
+### Shipped in v1.1
 
 These were in the original Phase 2 plan but moved out for the
-v1.0 cut:
+v1.0 cut and landed in v1.1:
 
 - Headlamp plugin (`lithastra/kubeatlas-headlamp-plugin`)
-- Frontend Mermaid → Cytoscape consolidation
-- Historical snapshots / diff (depends on the v1.0 Tier 2 backend
-  which is now in place; can land as a v1.x patch)
-- Dark mode
+- Historical snapshots / diff
 
-## What's next — v1.0.x patches
+## Phase 3 → v1.1 (released)
 
-Small, additive improvements that don't need a minor bump:
+The "widen beyond a single cluster's core resources" cycle.
+Shipped scope:
 
-- Pagination / response-shape trimming on `cluster-view` and
-  `namespace-view` to bring 5K+ aggregator latency under 1 s.
-- `CycleReport.category` field (`bootstrap_cert` | `dependency`
-  | `structural`) so dashboards collapse benign cert cycles
-  without a name-pattern filter.
-- Tier 1 perf-baseline capture (Tier 2 baseline shipped in v1.0).
+| Theme | What landed |
+|---|---|
+| **Cloud-platform rule packs** | Opt-in EKS / AKS / GKE add-on CRD packs in the sibling `lithastra/kubeatlas-rules` repo — AWS Load Balancer Controller, Karpenter, GKE Ingress, Multi-cluster Services, and more. Loaded via `rulePacks.extras`. |
+| **Historical snapshots** | An append-only resource-change event stream with `GET /api/v1/snapshots/diff` — "what changed in the last hour?" Tier 2; configured under `snapshots.*`. |
+| **Full-text search** | Ranked `GET /api/v1/search` over resource name, kind, namespace, and label values; indexed on Tier 2. |
+| **Label filtering** | `label.<key>=<value>` narrowing on the cluster / namespace views, plus a `GET /api/v1/labels` vocabulary endpoint. |
+| **NetworkPolicy edges** | `NetworkPolicy` is first-class — the Pods a policy selects and the peers it allows. |
+| **Rule-pack signing** | Keyless Sigstore signature verification for OCI rule packs (`rulePacks.verifySignature`). |
+| **Plugins** | The `kubectl atlas` plugin and a [Headlamp](https://headlamp.dev) plugin (separate repo). |
 
-## v1.1 themes (active)
+## v1.2 (in preparation)
 
-The next minor cut, sketched broadly:
+Making KubeAtlas useful without a server running in the cluster:
 
-- **Multi-cluster federation** — one KubeAtlas instance, N
-  clusters. Likely "edge per cluster sending deltas to a hub"
-  model.
-- **cosign-verified rule pack loading** — the OCI loader
-  already reserves a `--verify-signature` flag; v1.1 wires the
-  cosign verification path so rule packs can be required-signed
-  at install time.
-- **Headlamp plugin** — same data, embedded in the Headlamp
-  shell rather than the standalone UI.
-- **Frontend Mermaid → Cytoscape consolidation** — the Phase 1
-  Mermaid neighbour view replaced by a unified Cytoscape
-  rendering. Bundle size drops, UX is consistent.
-- **Historical snapshots / diff** — "what changed in the last
-  hour?" Backed by the v1.0 Tier 2 backend.
-- **Dark mode.**
+- **Offline `kubectl atlas`** — the plugin builds the dependency
+  graph straight from the Kubernetes API and renders it locally:
+  a static SVG by default, or an interactive in-process web UI
+  with `--local-ui`. The plugin is self-contained — it no longer
+  needs a separate `kubeatlas` binary.
+- **Graph-image export** — `kubeatlas -once -format=svg` and a
+  `GET /api/v1/export` endpoint render cluster / namespace views
+  as SVG or PNG.
+- **Cluster selection** — the CLI and the plugin honour the
+  standard `--context` / `--kubeconfig` flags.
+- **Krew distribution** — a `kubectl krew install atlas` path.
 
-## Phase 3 → v2.0+ (sketch)
+## Beyond v1.2 (sketch)
 
 Direction, not commitment:
 
+- **Multi-cluster federation** — one KubeAtlas instance, N
+  clusters. Likely an "edge per cluster sends deltas to a hub"
+  model.
 - **Third-party Kubernetes platform integration** — first-class support for the distros teams actually run, going beyond "it talks to a kubeconfig":
   - **Amazon EKS** — read the `aws-auth` ConfigMap, surface IRSA bindings (ServiceAccount → IAM role), recognise EKS-Anywhere quirks.
   - **Azure AKS** — read managed-identity bindings (ServiceAccount → AAD identity), surface AKS-specific add-ons.
@@ -207,7 +210,7 @@ Direction, not commitment:
 ## Compatibility promises
 
 - **From v0.1.0 onward**: semver. A field added to `graph.Resource` or `graph.Edge` is a minor-version event; renaming or removing one is a major-version event.
-- **`-once` CLI mode** stays available through the v0.x line as a scriptable scrape path.
+- **`-once` CLI mode** stays available across the v1.x line as a scriptable scrape path.
 - **Helm values schema** changes additively where possible; breaking renames are called out in CHANGELOG and accompany a migration note.
 
 ## How to influence the roadmap
@@ -215,4 +218,4 @@ Direction, not commitment:
 - **Open an issue** on [GitHub](https://github.com/lithastra/kubeatlas/issues) describing the use case (not the proposed solution).
 - **Reactions on existing issues** are read as priority signal.
 - **PRs welcome** for items already on the roadmap; for items not on it, open an issue first so we can talk shape before you spend time.
-- For v1.1 priorities specifically, the order will partly reflect what v1.0 users ask for first. If your team would adopt v1.x conditional on a particular feature, say so in an issue.
+- The order of post-v1.2 work will partly reflect what current users ask for first. If your team would adopt a future release conditional on a particular feature, say so in an issue.

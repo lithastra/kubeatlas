@@ -58,11 +58,13 @@ rulePacks:
     - oci://ghcr.io/lithastra/rules/eks:0.1.0
 ```
 
-`verifySignature` defaults to **`false`** in v1.1. This is
-deliberate: existing installs that already load packs must be able
-to upgrade to v1.1 without their packs suddenly failing to load. It
-gives operators a window to turn verification on once their packs
-are signed. **v1.2 changes the default to `true`.**
+`verifySignature` defaults to **`true`** from v1.2. It shipped
+**`false`** in v1.1 so existing installs could upgrade without
+their packs suddenly failing to load — a window to turn
+verification on once packs were signed. From v1.2 that window
+closes: a pack without a valid signature is fatal unless you
+explicitly set `verifySignature: false`, the only supported mode
+for an air-gapped install with no path to the Sigstore trust root.
 
 When verification is on, a pack whose signature does not verify is
 **fatal** — the KubeAtlas Pod fails to start, and the log says
