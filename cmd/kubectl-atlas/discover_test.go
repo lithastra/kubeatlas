@@ -14,7 +14,7 @@ import (
 
 func TestResolveServer_FlagWins(t *testing.T) {
 	// A trailing slash on --server must be normalised away.
-	base, _, tunnel, err := resolveServer(context.Background(), "http://flag.example/", "kubeatlas")
+	base, _, tunnel, err := resolveServer(context.Background(), "http://flag.example/", "kubeatlas", kubeFlags{})
 	if err != nil {
 		t.Fatalf("resolveServer: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestResolveServer_FlagWins(t *testing.T) {
 
 func TestResolveServer_EnvUsedWhenNoFlag(t *testing.T) {
 	t.Setenv("KUBEATLAS_URL", "http://env.example")
-	base, _, tunnel, err := resolveServer(context.Background(), "", "kubeatlas")
+	base, _, tunnel, err := resolveServer(context.Background(), "", "kubeatlas", kubeFlags{})
 	if err != nil {
 		t.Fatalf("resolveServer: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestResolveServer_EnvUsedWhenNoFlag(t *testing.T) {
 
 func TestResolveServer_FlagBeatsEnv(t *testing.T) {
 	t.Setenv("KUBEATLAS_URL", "http://env.example")
-	base, _, _, err := resolveServer(context.Background(), "http://flag.example", "kubeatlas")
+	base, _, _, err := resolveServer(context.Background(), "http://flag.example", "kubeatlas", kubeFlags{})
 	if err != nil {
 		t.Fatalf("resolveServer: %v", err)
 	}

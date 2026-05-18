@@ -33,10 +33,50 @@ type app struct {
 	kubeatlasNamespace string // --kubeatlas-namespace
 	resourceNamespace  string // -n / --namespace (the resource's namespace)
 	online             bool   // --online
+	kubeContext        string // --context
+	kubeconfig         string // --kubeconfig
 
 	open    opener
-	resolve func(ctx context.Context, flagValue, kubeatlasNamespace string) (string, func(), bool, error)
-	render  func(ctx context.Context, namespace string) ([]byte, error)
+	resolve func(ctx context.Context, flagValue, kubeatlasNamespace string, kf kubeFlags) (string, func(), bool, error)
+	render  func(ctx context.Context, namespace string, kf kubeFlags) ([]byte, error)
+}
+
+// kubeFlags carries the kubectl-style cluster-selection flags the
+// plugin passes through to the kubectl / kubeatlas subprocesses it
+// shells out to. Both are empty unless the operator sets --context
+// or --kubeconfig.
+type kubeFlags struct {
+	context    string
+	kubeconfig string
+}
+
+// kube bundles the plugin's cluster-selection flags.
+func (a *app) kube() kubeFlags {
+	return kubeFlags{context: a.kubeContext, kubeconfig: a.kubeconfig}
+}
+
+// kubectlArgs renders the flags as kubectl command-line arguments.
+func (k kubeFlags) kubectlArgs() []string {
+	var args []string
+	if k.context != "" {
+		args = append(args, "--context", k.context)
+	}
+	if k.kubeconfig != "" {
+		args = append(args, "--kubeconfig", k.kubeconfig)
+	}
+	return args
+}
+
+// kubeatlasArgs renders the flags as `kubeatlas` CLI arguments.
+func (k kubeFlags) kubeatlasArgs() []string {
+	var args []string
+	if k.context != "" {
+		args = append(args, "-context="+k.context)
+	}
+	if k.kubeconfig != "" {
+		args = append(args, "-kubeconfig="+k.kubeconfig)
+	}
+	return args
 }
 
 func main() {
@@ -96,6 +136,10 @@ func newRootCmd(a *app) *cobra.Command {
 		defaultKubeatlasNamespace, "Namespace KubeAtlas is installed in (for online port-forward discovery)")
 	root.PersistentFlags().StringVarP(&a.resourceNamespace, "namespace", "n", "",
 		"Namespace of the resource")
+	root.PersistentFlags().StringVar(&a.kubeContext, "context", "",
+		"kubeconfig context to target — passed through to kubectl and kubeatlas")
+	root.PersistentFlags().StringVar(&a.kubeconfig, "kubeconfig", "",
+		"Path to the kubeconfig file — passed through to kubectl and kubeatlas")
 	root.AddCommand(newNamespaceCmd(a), newClusterCmd(a))
 	return root
 }
@@ -149,7 +193,7 @@ func (a *app) run(ctx context.Context, t target) error {
 // until the operator interrupts it, otherwise the tunnel (and the
 // page) would die the instant the plugin returned.
 func (a *app) runOnline(ctx context.Context, t target) error {
-	base, cleanup, tunnel, err := a.resolve(ctx, a.server, a.kubeatlasNamespace)
+	base, cleanup, tunnel, err := a.resolve(ctx, a.server, a.kubeatlasNamespace, a.kube())
 	if err != nil {
 		return err
 	}
@@ -172,7 +216,7 @@ func (a *app) runOnline(ctx context.Context, t target) error {
 // writes the SVG to kubeatlas-<scope>.svg in the working directory,
 // and opens it.
 func (a *app) runOffline(ctx context.Context, t target) error {
-	svg, err := a.render(ctx, t.namespace)
+	svg, err := a.render(ctx, t.namespace, a.kube())
 	if err != nil {
 		return err
 	}

@@ -57,18 +57,20 @@ type Client struct {
 // NewClient builds a Client from the most appropriate source for the
 // runtime environment.
 //
-// Resolution order:
+// An explicit kubeconfigPath or contextName means the caller is
+// selecting a kubeconfig-based config, and that wins. Otherwise the
+// resolution order is:
 //
 //  1. $KUBECONFIG (explicit override — wins everywhere).
-//  2. In-cluster service account (when KUBERNETES_SERVICE_HOST is set,
-//     i.e. running inside a Pod).
+//  2. In-cluster service account (when KUBERNETES_SERVICE_HOST is
+//     set, i.e. running inside a Pod).
 //  3. ~/.kube/config (default for local dev / -once mode on a laptop).
 //
 // The in-cluster step is what lets the Helm-installed Pod work: the
-// distroless image has no $HOME/.kube/config and no UserHomeDir, so
-// the previous "always read kubeconfig" path crashed on startup.
-func NewClient() (*Client, error) {
-	cfg, err := loadConfig()
+// runtime image has no $HOME/.kube/config and no UserHomeDir, so the
+// previous "always read kubeconfig" path crashed on startup.
+func NewClient(kubeconfigPath, contextName string) (*Client, error) {
+	cfg, err := loadConfig(kubeconfigPath, contextName)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +85,12 @@ func NewClient() (*Client, error) {
 	return &Client{discovery: dc, dynamic: dyn}, nil
 }
 
-func loadConfig() (*rest.Config, error) {
+func loadConfig(kubeconfigPath, contextName string) (*rest.Config, error) {
+	// An explicit --kubeconfig or --context selects a kubeconfig-based
+	// config; honour it (in-cluster config has no named contexts).
+	if kubeconfigPath != "" || contextName != "" {
+		return kubeconfigClientConfig(kubeconfigPath, contextName)
+	}
 	if explicit := os.Getenv("KUBECONFIG"); explicit != "" {
 		return clientcmd.BuildConfigFromFlags("", explicit)
 	}
@@ -105,6 +112,23 @@ func loadConfig() (*rest.Config, error) {
 		return nil, fmt.Errorf("no $KUBECONFIG and no in-cluster config; locate user home failed: %w", err)
 	}
 	return clientcmd.BuildConfigFromFlags("", filepath.Join(home, ".kube", "config"))
+}
+
+// kubeconfigClientConfig builds a rest.Config from kubeconfig, with an
+// optional explicit file path and an optional context override. An
+// empty kubeconfigPath uses the default loading rules ($KUBECONFIG,
+// then ~/.kube/config); an empty contextName uses the file's
+// current-context.
+func kubeconfigClientConfig(kubeconfigPath, contextName string) (*rest.Config, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfigPath != "" {
+		loadingRules.ExplicitPath = kubeconfigPath
+	}
+	overrides := &clientcmd.ConfigOverrides{}
+	if contextName != "" {
+		overrides.CurrentContext = contextName
+	}
+	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, overrides).ClientConfig()
 }
 
 // CollectAll walks every API resource the cluster exposes (namespaced

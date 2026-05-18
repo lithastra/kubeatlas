@@ -18,7 +18,7 @@ import (
 // straight from the Kubernetes API through the kubeconfig — so the
 // plugin reuses it rather than embedding any discovery code. The
 // `kubeatlas` binary must be on PATH.
-func renderOffline(ctx context.Context, namespace string) ([]byte, error) {
+func renderOffline(ctx context.Context, namespace string, kf kubeFlags) ([]byte, error) {
 	bin, err := exec.LookPath("kubeatlas")
 	if err != nil {
 		return nil, fmt.Errorf("offline mode needs the `kubeatlas` binary on PATH — " +
@@ -29,6 +29,7 @@ func renderOffline(ctx context.Context, namespace string) ([]byte, error) {
 	if namespace != "" {
 		args = append(args, "-namespace="+namespace)
 	}
+	args = append(args, kf.kubeatlasArgs()...)
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	var stderr bytes.Buffer

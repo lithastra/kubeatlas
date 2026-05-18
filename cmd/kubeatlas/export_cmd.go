@@ -104,7 +104,7 @@ func runExport(args []string) int {
 // the CLI simple and matches the playbook's "default connects to
 // the cluster" expectation.
 func buildExportGraph(ctx context.Context, _ string) (*graph.Graph, error) {
-	client, err := discovery.NewClient()
+	client, err := discovery.NewClient("", "")
 	if err != nil {
 		return nil, fmt.Errorf("load kubeconfig: %w", err)
 	}

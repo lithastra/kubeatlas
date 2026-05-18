@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -19,10 +20,10 @@ func newTestApp() (a *app, opened *string) {
 	var url string
 	a = &app{
 		open: func(u string) error { url = u; return nil },
-		resolve: func(_ context.Context, _, _ string) (string, func(), bool, error) {
+		resolve: func(_ context.Context, _, _ string, _ kubeFlags) (string, func(), bool, error) {
 			return "http://atlas.example", noopCleanup, false, nil
 		},
-		render: func(_ context.Context, _ string) ([]byte, error) {
+		render: func(_ context.Context, _ string, _ kubeFlags) ([]byte, error) {
 			return []byte("<svg>fake</svg>"), nil
 		},
 	}
@@ -103,7 +104,7 @@ func TestServerFlag_ImpliesOnline(t *testing.T) {
 
 func TestExecute_OnlinePropagatesResolveError(t *testing.T) {
 	a, opened := newTestApp()
-	a.resolve = func(_ context.Context, _, _ string) (string, func(), bool, error) {
+	a.resolve = func(_ context.Context, _, _ string, _ kubeFlags) (string, func(), bool, error) {
 		return "", noopCleanup, false, errors.New("server not found")
 	}
 	if err := runCmd(t, a, "--online", "Deployment", "api"); err == nil {
@@ -148,7 +149,7 @@ func TestNamespace_OfflinePassesNamespaceAndNamesFile(t *testing.T) {
 	t.Chdir(t.TempDir())
 	a, _ := newTestApp()
 	var gotNS string
-	a.render = func(_ context.Context, ns string) ([]byte, error) {
+	a.render = func(_ context.Context, ns string, _ kubeFlags) ([]byte, error) {
 		gotNS = ns
 		return []byte("<svg/>"), nil
 	}
@@ -167,7 +168,7 @@ func TestResource_OfflineRendersResourceNamespace(t *testing.T) {
 	t.Chdir(t.TempDir())
 	a, _ := newTestApp()
 	var gotNS string
-	a.render = func(_ context.Context, ns string) ([]byte, error) {
+	a.render = func(_ context.Context, ns string, _ kubeFlags) ([]byte, error) {
 		gotNS = ns
 		return []byte("<svg/>"), nil
 	}
@@ -182,7 +183,7 @@ func TestResource_OfflineRendersResourceNamespace(t *testing.T) {
 func TestOffline_PropagatesRenderError(t *testing.T) {
 	t.Chdir(t.TempDir())
 	a, opened := newTestApp()
-	a.render = func(_ context.Context, _ string) ([]byte, error) {
+	a.render = func(_ context.Context, _ string, _ kubeFlags) ([]byte, error) {
 		return nil, errors.New("kubeatlas not found")
 	}
 	if err := runCmd(t, a, "cluster"); err == nil {
@@ -190,5 +191,51 @@ func TestOffline_PropagatesRenderError(t *testing.T) {
 	}
 	if *opened != "" {
 		t.Errorf("opened %q despite a render failure", *opened)
+	}
+}
+
+// --- --context / --kubeconfig pass-through --------------------------
+
+func TestOffline_ThreadsKubeFlags(t *testing.T) {
+	t.Chdir(t.TempDir())
+	a, _ := newTestApp()
+	var got kubeFlags
+	a.render = func(_ context.Context, _ string, kf kubeFlags) ([]byte, error) {
+		got = kf
+		return []byte("<svg/>"), nil
+	}
+	if err := runCmd(t, a, "cluster", "--context", "staging", "--kubeconfig", "/tmp/kc"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if got != (kubeFlags{context: "staging", kubeconfig: "/tmp/kc"}) {
+		t.Errorf("render got %+v, want context=staging kubeconfig=/tmp/kc", got)
+	}
+}
+
+func TestOnline_ThreadsKubeFlags(t *testing.T) {
+	a, _ := newTestApp()
+	var got kubeFlags
+	a.resolve = func(_ context.Context, _, _ string, kf kubeFlags) (string, func(), bool, error) {
+		got = kf
+		return "http://atlas.example", noopCleanup, false, nil
+	}
+	if err := runCmd(t, a, "--online", "cluster", "--context", "prod"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if got.context != "prod" {
+		t.Errorf("resolve got context %q, want prod", got.context)
+	}
+}
+
+func TestKubeFlags_ArgRendering(t *testing.T) {
+	kf := kubeFlags{context: "staging", kubeconfig: "/tmp/kc"}
+	if got := kf.kubectlArgs(); !reflect.DeepEqual(got, []string{"--context", "staging", "--kubeconfig", "/tmp/kc"}) {
+		t.Errorf("kubectlArgs = %v", got)
+	}
+	if got := kf.kubeatlasArgs(); !reflect.DeepEqual(got, []string{"-context=staging", "-kubeconfig=/tmp/kc"}) {
+		t.Errorf("kubeatlasArgs = %v", got)
+	}
+	if got := (kubeFlags{}).kubectlArgs(); got != nil {
+		t.Errorf("empty kubectlArgs = %v, want nil", got)
 	}
 }

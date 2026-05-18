@@ -36,7 +36,7 @@ func noopCleanup() {}
 // For 1 and 2 the cleanup is a no-op and tunnel is false. For 3 the
 // cleanup tears the port-forward down, and tunnel is true so the
 // caller knows to hold the process open while the browser tab lives.
-func resolveServer(ctx context.Context, flagValue, kubeatlasNamespace string) (base string, cleanup func(), tunnel bool, err error) {
+func resolveServer(ctx context.Context, flagValue, kubeatlasNamespace string, kf kubeFlags) (base string, cleanup func(), tunnel bool, err error) {
 	if v := strings.TrimSpace(flagValue); v != "" {
 		return normalizeBase(v), noopCleanup, false, nil
 	}
@@ -44,7 +44,7 @@ func resolveServer(ctx context.Context, flagValue, kubeatlasNamespace string) (b
 		return normalizeBase(v), noopCleanup, false, nil
 	}
 
-	base, cleanup, err = startPortForward(ctx, kubeatlasNamespace)
+	base, cleanup, err = startPortForward(ctx, kubeatlasNamespace, kf)
 	if err != nil {
 		return "", noopCleanup, false, fmt.Errorf(
 			"KubeAtlas server not found — pass --server, set KUBEATLAS_URL, "+
@@ -63,15 +63,15 @@ var forwardingLine = regexp.MustCompile(`Forwarding from 127\.0\.0\.1:(\d+)`)
 // KubeAtlas Service, picking a random local port, and returns the
 // resulting base URL plus a cleanup that kills the tunnel.
 //
-// The plugin does not embed any Kubernetes client — it reuses the
-// operator's kubectl, so it inherits their kubeconfig, context, and
-// auth with zero extra configuration.
-func startPortForward(ctx context.Context, namespace string) (string, func(), error) {
-	cmd := exec.CommandContext(ctx, "kubectl", "port-forward",
-		"-n", namespace,
-		"svc/"+kubeatlasServiceName,
-		fmt.Sprintf(":%d", kubeatlasServicePort),
-	)
+// The plugin embeds no Kubernetes client — it reuses the operator's
+// kubectl, inheriting their auth — and threads --context /
+// --kubeconfig through so the tunnel targets the same cluster the
+// rest of the invocation does.
+func startPortForward(ctx context.Context, namespace string, kf kubeFlags) (string, func(), error) {
+	args := []string{"port-forward", "-n", namespace}
+	args = append(args, kf.kubectlArgs()...)
+	args = append(args, "svc/"+kubeatlasServiceName, fmt.Sprintf(":%d", kubeatlasServicePort))
+	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", noopCleanup, err
