@@ -227,13 +227,10 @@ func TestOnline_ThreadsKubeFlags(t *testing.T) {
 	}
 }
 
-func TestKubeFlags_ArgRendering(t *testing.T) {
+func TestKubeFlags_kubectlArgs(t *testing.T) {
 	kf := kubeFlags{context: "staging", kubeconfig: "/tmp/kc"}
 	if got := kf.kubectlArgs(); !reflect.DeepEqual(got, []string{"--context", "staging", "--kubeconfig", "/tmp/kc"}) {
 		t.Errorf("kubectlArgs = %v", got)
-	}
-	if got := kf.kubeatlasArgs(); !reflect.DeepEqual(got, []string{"-context=staging", "-kubeconfig=/tmp/kc"}) {
-		t.Errorf("kubeatlasArgs = %v", got)
 	}
 	if got := (kubeFlags{}).kubectlArgs(); got != nil {
 		t.Errorf("empty kubectlArgs = %v, want nil", got)

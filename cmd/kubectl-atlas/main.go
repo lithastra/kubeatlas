@@ -6,9 +6,9 @@
 // shows a KubeAtlas view of a resource, namespace, or the whole
 // cluster in one of two modes:
 //
-//   - offline (the default) — renders the dependency graph to a
-//     local SVG by shelling out to `kubeatlas -once`; no KubeAtlas
-//     server is needed.
+//   - offline (the default) — builds the dependency graph itself
+//     from the Kubernetes API and renders it to a local SVG; no
+//     KubeAtlas server is needed.
 //   - online — opens the live KubeAtlas web UI; selected with
 //     --online, --server, or the KUBEATLAS_URL environment variable.
 package main
@@ -67,18 +67,6 @@ func (k kubeFlags) kubectlArgs() []string {
 	return args
 }
 
-// kubeatlasArgs renders the flags as `kubeatlas` CLI arguments.
-func (k kubeFlags) kubeatlasArgs() []string {
-	var args []string
-	if k.context != "" {
-		args = append(args, "-context="+k.context)
-	}
-	if k.kubeconfig != "" {
-		args = append(args, "-kubeconfig="+k.kubeconfig)
-	}
-	return args
-}
-
 func main() {
 	a := &app{open: systemBrowser, resolve: resolveServer, render: renderOffline}
 	if err := newRootCmd(a).Execute(); err != nil {
@@ -110,8 +98,9 @@ func newRootCmd(a *app) *cobra.Command {
 		Short: "Show a KubeAtlas view of a Kubernetes resource",
 		Long: "kubectl-atlas shows a KubeAtlas view of a resource, namespace,\n" +
 			"or the whole cluster.\n\n" +
-			"Offline (the default): renders the dependency graph to an SVG\n" +
-			"file via `kubeatlas -once` — no KubeAtlas server required.\n\n" +
+			"Offline (the default): builds the dependency graph straight from\n" +
+			"the Kubernetes API and renders it to an SVG file — no KubeAtlas\n" +
+			"server required.\n\n" +
 			"Online (--online, --server, or KUBEATLAS_URL): opens the live\n" +
 			"KubeAtlas web UI. The server URL is resolved from --server, then\n" +
 			"KUBEATLAS_URL, then a kubectl port-forward to the in-cluster\n" +
