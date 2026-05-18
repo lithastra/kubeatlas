@@ -64,9 +64,6 @@ func (a *app) runLocalUI(ctx context.Context, t target) error {
 	if !isLoopbackHost(bindHost) {
 		_, _ = fmt.Fprintln(os.Stderr, "kubectl-atlas: --local-ui is binding "+bindHost+
 			" — the cluster graph and unauthenticated API will be reachable from other hosts on the network")
-	} else if runningUnderWSL() {
-		_, _ = fmt.Fprintln(os.Stderr, "kubectl-atlas: running under WSL — a browser on Windows "+
-			"may not reach a loopback bind; re-run with --host 0.0.0.0 if it can't connect")
 	}
 
 	st := memory.New()
@@ -101,10 +98,16 @@ func (a *app) runLocalUI(ctx context.Context, t target) error {
 	base := "http://" + browseAddr
 	dst := t.onlineURL(base)
 	_, _ = fmt.Fprintln(os.Stdout, "KubeAtlas is running locally at "+base)
-	// A wildcard bind is reachable from other hosts (and from the
-	// Windows side of WSL) — list those addresses so the operator
-	// knows what to point a non-local browser at.
-	if isWildcardHost(bindHost) {
+	switch {
+	case runningUnderWSL():
+		// WSL2 forwards Windows localhost:<port> to the matching port
+		// inside the distro, so that — not a WSL interface IP — is
+		// what a browser on the Windows host should open.
+		winURL := t.onlineURL("http://" + net.JoinHostPort("localhost", port))
+		_, _ = fmt.Fprintln(os.Stdout, "  from a browser on the Windows host: "+winURL)
+	case isWildcardHost(bindHost):
+		// A wildcard bind is reachable from other hosts on the LAN —
+		// list those addresses so the operator knows what to open.
 		for _, ip := range nonLoopbackIPv4s() {
 			_, _ = fmt.Fprintln(os.Stdout, "  also reachable at http://"+net.JoinHostPort(ip, port))
 		}
