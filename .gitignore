@@ -53,8 +53,10 @@ bin/
 # Embedded Web UI bundle. The directory is populated only at release
 # time (Dockerfile / goreleaser before-hook) when building with
 # -tags embed_web. Default builds skip the embed entirely, so nothing
-# from this tree should be tracked.
+# from this tree should be tracked. kubectl-atlas embeds the same
+# bundle for its --local-ui mode.
 cmd/kubeatlas/web/dist/
+cmd/kubectl-atlas/web/dist/
 
 # Docusaurus build artifacts
 docs/.docusaurus/

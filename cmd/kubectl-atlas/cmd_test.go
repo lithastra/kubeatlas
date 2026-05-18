@@ -123,6 +123,18 @@ func TestExecute_OnlinePropagatesOpenError(t *testing.T) {
 	}
 }
 
+// --local-ui is an offline option; an explicit online selector still
+// wins, so --online --local-ui must open the in-cluster UI.
+func TestLocalUI_OnlineTakesPrecedence(t *testing.T) {
+	a, opened := newTestApp()
+	if err := runCmd(t, a, "--online", "--local-ui", "cluster"); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if want := "http://atlas.example/topology?level=cluster"; *opened != want {
+		t.Errorf("opened %q, want %q — --online should win over --local-ui", *opened, want)
+	}
+}
+
 // --- offline mode (the default) -------------------------------------
 
 func TestCluster_OfflineRendersAndOpensFile(t *testing.T) {
