@@ -12,7 +12,7 @@ kind: Plugin
 metadata:
   name: atlas
 spec:
-  version: v0.0.0
+  version: v1.2.0
   homepage: https://github.com/lithastra/kubeatlas
   shortDescription: Visualize Kubernetes resource dependencies
   description: |
@@ -30,40 +30,46 @@ spec:
     The plugin installs nothing in the cluster. Run
     `kubectl atlas --help` for usage.
   caveats: |
-    Offline mode (the default) renders SVG with the graphviz `dot`
-    tool, which must be on PATH; pass --local-ui to skip graphviz
-    and view the graph interactively in the browser instead. Online
-    mode (--online) needs KubeAtlas installed in the cluster, or
-    reachable via --server / KUBEATLAS_URL.
-    See https://docs.kubeatlas.lithastra.com.
+    No in-cluster KubeAtlas server is needed for offline use.
+
+    Three modes:
+      (default)    Render a static SVG. Needs the graphviz
+                   `dot` tool on PATH.
+      --local-ui   Open an interactive web UI from an in-process
+                   server. No graphviz needed.
+      --online     Open a live in-cluster KubeAtlas UI (or pass
+                   --server / set KUBEATLAS_URL).
+
+    Run `kubectl atlas --help` for usage.
+    Docs: https://docs.kubeatlas.lithastra.com
   platforms:
     - selector:
         matchLabels: { os: linux, arch: amd64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_linux_amd64.tar.gz
-      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.2.0/kubectl-atlas_1.2.0_linux_amd64.tar.gz
+      sha256: "e29ba40c3375722ba9a6676bc5e36402fef6a7e1e85912daf9ad787e76901094"
       bin: kubectl-atlas
     - selector:
         matchLabels: { os: linux, arch: arm64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_linux_arm64.tar.gz
-      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.2.0/kubectl-atlas_1.2.0_linux_arm64.tar.gz
+      sha256: "25196773a15b4e8b08961165c1a90da6cd5c6b7abb807da625011a5fe32ba50a"
       bin: kubectl-atlas
     - selector:
         matchLabels: { os: darwin, arch: amd64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_darwin_amd64.tar.gz
-      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.2.0/kubectl-atlas_1.2.0_darwin_amd64.tar.gz
+      sha256: "7f655514af08d7da593100dd5bc27a5d21fde705833bff3bb88b1344af50c485"
       bin: kubectl-atlas
     - selector:
         matchLabels: { os: darwin, arch: arm64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_darwin_arm64.tar.gz
-      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.2.0/kubectl-atlas_1.2.0_darwin_arm64.tar.gz
+      sha256: "70e7094ed657bfda5ea3e391fb780754f730449d0be0522067d6744a4dc424b6"
       bin: kubectl-atlas
     - selector:
         matchLabels: { os: windows, arch: amd64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_windows_amd64.tar.gz
-      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.2.0/kubectl-atlas_1.2.0_windows_amd64.tar.gz
+      sha256: "f0cc8ad1dd9f47981e7851a04efa6d2bfcfb9a2cdc50aae24723809d9999041c"
       bin: kubectl-atlas.exe
     - selector:
         matchLabels: { os: windows, arch: arm64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v0.0.0/kubectl-atlas_0.0.0_windows_arm64.tar.gz
-      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.2.0/kubectl-atlas_1.2.0_windows_arm64.tar.gz
+      sha256: "0779792174c0b1d4eb02cf5739469193ef371c9be4a526c356e5b9e08df44075"
       bin: kubectl-atlas.exe
