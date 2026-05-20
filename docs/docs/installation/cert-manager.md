@@ -42,7 +42,7 @@ references it. The resulting Secret is wired into the Ingress's
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.1.0 \
+  --version 1.2.0 \
   --namespace kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.acknowledgeNoBuiltinAuth=true \
@@ -85,7 +85,7 @@ EOF
 
 # 2. Helm install with cert-manager mode.
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.1.0 \
+  --version 1.2.0 \
   --namespace kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.acknowledgeNoBuiltinAuth=true \
@@ -106,7 +106,7 @@ but can be overridden to `Issuer` when the issuer is namespaced.
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.1.0 \
+  --version 1.2.0 \
   --namespace kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.acknowledgeNoBuiltinAuth=true \
@@ -127,7 +127,7 @@ silently ignoring one.
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.1.0 \
+  --version 1.2.0 \
   --namespace kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.acknowledgeNoBuiltinAuth=true \

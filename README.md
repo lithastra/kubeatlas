@@ -25,8 +25,12 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**v1.2.0 — offline rendering.** v1.2.0 makes KubeAtlas usable
-without a server running in the cluster:
+**Phase 3 in progress.** Phase 3 ships in three releases — v1.1
+(rule packs and plugins), v1.2 (offline rendering), and v1.3
+(multi-cluster, in preparation). The first two are out.
+
+**v1.2.0 — offline rendering** (second Phase 3 release). Makes
+KubeAtlas usable without a server running in the cluster:
 
 - **Offline `kubectl atlas`** — the `kubectl` plugin builds the
   dependency graph straight from the Kubernetes API and renders it
@@ -39,7 +43,7 @@ without a server running in the cluster:
 - **Cluster selection** — the `kubeatlas` CLI and the plugin honour
   the standard `--context` / `--kubeconfig` flags.
 
-**v1.1.0 — Phase 3.** Built on the v1.0 GA foundation:
+**v1.1.0** (first Phase 3 release). Built on the v1.0 GA foundation:
 
 - **Cloud-platform rule packs** — opt-in EKS / AKS / GKE add-on CRD
   packs (AWS Load Balancer Controller, Karpenter, GKE Ingress,
@@ -65,8 +69,8 @@ analysis, and the frozen `v1alpha1` plus GA `/api/v1` surfaces.
 The v0.1.0 defaults still apply: in-memory unless you opt into
 Tier 2, single-replica, **no built-in authentication** — exposing
 via Ingress requires an external auth layer (oauth2-proxy /
-Pomerium / Cloudflare Access). Multi-cluster federation is on the
-roadmap for a later release — see
+Pomerium / Cloudflare Access). Multi-cluster federation lands in
+v1.3 — Phase 3's final release, in preparation — see
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 Full release notes: [CHANGELOG.md](./CHANGELOG.md).
@@ -78,7 +82,7 @@ to a running UI):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.1.0 \
+  --version 1.2.0 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
@@ -89,7 +93,7 @@ Tier 2 + cert-manager TLS (production-shaped install):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.1.0 \
+  --version 1.2.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \
@@ -162,9 +166,11 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the
 [Code of Conduct](./CODE_OF_CONDUCT.md). Look for issues tagged
 [`good first issue`](https://github.com/lithastra/kubeatlas/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-v1.0 and v1.1 shipped; v1.2.0 (offline rendering, the self-contained
-`kubectl` plugin) is in preparation. Direction beyond it —
-multi-cluster federation, cloud-resource integration — is tracked at
+v1.0, v1.1, and v1.2 shipped; **v1.3.0** — Phase 3's final release —
+is in preparation: multi-cluster federation, EKS / AKS / GKE
+platform-identity edges, and a `kubeatlas-action` for CI pipelines.
+Direction beyond Phase 3 — cloud-resource integration, third-party
+platform deep-dives — is tracked at
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 ## License

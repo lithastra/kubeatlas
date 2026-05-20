@@ -9,7 +9,7 @@ The chart is published as an OCI artifact:
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.1.0 \
+  --version 1.2.0 \
   --namespace kubeatlas --create-namespace
 ```
 
