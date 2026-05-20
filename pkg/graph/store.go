@@ -147,6 +147,33 @@ type GraphStore interface {
 	// total so a caller knows the list is a truncated top-N.
 	LabelStats(ctx context.Context) ([]LabelStat, error)
 
+	// ListResourcesInCluster returns every resource whose ClusterID
+	// equals clusterID, intersected with filter. The empty clusterID
+	// matches resources with no ClusterID set — the single-cluster
+	// path through v1.2, where the multicluster manager (P3-T21) was
+	// not active. Federation aggregation (P3-T22) calls it once per
+	// member cluster to build a per-cluster view.
+	//
+	// Implementations must apply the same Filter semantics as
+	// ListResources — namespace, kind, and label matching are
+	// identical; only the ClusterID gate is added on top.
+	ListResourcesInCluster(ctx context.Context, clusterID string, filter Filter) ([]Resource, error)
+
+	// GetEdgesAcrossClusters returns every edge whose endpoints are
+	// resources in the given cluster set. Edges with at least one
+	// endpoint outside the set, or one endpoint that is dangling
+	// (no resource row), are dropped — matching the visible-set rule
+	// the namespace and cluster aggregators use.
+	//
+	// An empty clusterIDs slice returns no edges. A single-element
+	// slice with the empty string returns edges entirely within the
+	// single-cluster (ClusterID="") subgraph, so the v1.2 single-
+	// cluster path keeps its existing behaviour when called this way.
+	//
+	// Federation aggregation (P3-T22) uses this to recover edges
+	// that span clusters once it has merged the per-cluster views.
+	GetEdgesAcrossClusters(ctx context.Context, clusterIDs []string) ([]Edge, error)
+
 	// Search runs a full-text query across resources and returns a
 	// ranked page of matches (F-113).
 	//

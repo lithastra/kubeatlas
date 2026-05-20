@@ -237,6 +237,67 @@ func (s *Store) ListResources(ctx context.Context, filter graph.Filter) ([]graph
 	return scanResources(rows)
 }
 
+// ListResourcesInCluster is the cluster-tagged variant of
+// ListResources (P3-T20). It filters on the generated cluster_id
+// column added by migration 007 — every pre-P3-T20 row reads back as
+// cluster_id='' so passing the empty clusterID reproduces the
+// pre-multicluster behaviour exactly.
+func (s *Store) ListResourcesInCluster(ctx context.Context, clusterID string, filter graph.Filter) ([]graph.Resource, error) {
+	var labelsJSON []byte
+	if len(filter.Labels) > 0 {
+		var err error
+		labelsJSON, err = json.Marshal(filter.Labels)
+		if err != nil {
+			return nil, fmt.Errorf("postgres.ListResourcesInCluster: marshal labels: %w", err)
+		}
+	}
+
+	const sql = `
+		SELECT data FROM resources
+		WHERE cluster_id = $1
+		  AND ($2::text = '' OR data->>'kind' = $2)
+		  AND ($3::text = '' OR data->>'namespace' = $3)
+		  AND (
+		    $4::jsonb IS NULL
+		    OR (data->'labels') @> $4::jsonb
+		  )
+	`
+	rows, err := s.pool.Query(ctx, sql, clusterID, filter.Kind, filter.Namespace, labelsJSON)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.ListResourcesInCluster: query: %w", err)
+	}
+	defer rows.Close()
+	return scanResources(rows)
+}
+
+// GetEdgesAcrossClusters returns every edge whose endpoints are both
+// resources in the given cluster set (P3-T20). Endpoints that are
+// dangling (no resource row) or whose cluster_id is outside the set
+// drop the edge — the visible-set rule the aggregators use.
+//
+// An empty clusterIDs slice returns no edges; passing []string{""}
+// returns edges entirely within the single-cluster subgraph so v1.2
+// callers keep their existing behaviour.
+func (s *Store) GetEdgesAcrossClusters(ctx context.Context, clusterIDs []string) ([]graph.Edge, error) {
+	if len(clusterIDs) == 0 {
+		return nil, nil
+	}
+	const sql = `
+		SELECT e.from_id, e.to_id, e.type
+		FROM edges e
+		JOIN resources rf ON rf.id = e.from_id
+		JOIN resources rt ON rt.id = e.to_id
+		WHERE rf.cluster_id = ANY($1::text[])
+		  AND rt.cluster_id = ANY($1::text[])
+	`
+	rows, err := s.pool.Query(ctx, sql, clusterIDs)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.GetEdgesAcrossClusters: query: %w", err)
+	}
+	defer rows.Close()
+	return scanEdges(rows)
+}
+
 // ListIncoming returns every edge whose To equals id.
 //
 // P2-T4 originally directed switching this to AGE Cypher, on the

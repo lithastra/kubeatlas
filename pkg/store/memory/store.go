@@ -150,6 +150,69 @@ func (s *Store) ListResources(_ context.Context, filter graph.Filter) ([]graph.R
 	return out, nil
 }
 
+// ListResourcesInCluster returns every resource whose ClusterID
+// matches clusterID, intersected with filter. The empty clusterID
+// matches resources whose ClusterID was never set — the single-
+// cluster path through v1.2.
+func (s *Store) ListResourcesInCluster(_ context.Context, clusterID string, filter graph.Filter) ([]graph.Resource, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]graph.Resource, 0, len(s.resources))
+	for _, r := range s.resources {
+		if r.ClusterID != clusterID {
+			continue
+		}
+		if filter.Kind != "" && r.Kind != filter.Kind {
+			continue
+		}
+		if filter.Namespace != "" && r.Namespace != filter.Namespace {
+			continue
+		}
+		if !labelsMatch(r.Labels, filter.Labels) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// GetEdgesAcrossClusters returns every edge whose endpoints are
+// resources in the given cluster set. Endpoints that are dangling
+// (no resource row) or whose ClusterID is outside the set drop the
+// edge, matching the visible-set rule used by the aggregators.
+func (s *Store) GetEdgesAcrossClusters(_ context.Context, clusterIDs []string) ([]graph.Edge, error) {
+	if len(clusterIDs) == 0 {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	want := make(map[string]struct{}, len(clusterIDs))
+	for _, c := range clusterIDs {
+		want[c] = struct{}{}
+	}
+	inSet := func(id string) bool {
+		r, ok := s.resources[id]
+		if !ok {
+			return false
+		}
+		_, member := want[r.ClusterID]
+		return member
+	}
+	var out []graph.Edge
+	for from, peers := range s.outgoing {
+		if !inSet(from) {
+			continue
+		}
+		for _, e := range peers {
+			if !inSet(e.To) {
+				continue
+			}
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
 // ListIncoming returns every edge whose To equals id.
 func (s *Store) ListIncoming(_ context.Context, id string) ([]graph.Edge, error) {
 	s.mu.RLock()
