@@ -1053,4 +1053,152 @@ func Run(t *testing.T, factory Factory) {
 			t.Errorf("values = %+v, want [{payments 3} {search 1}]", stat.Values)
 		}
 	})
+
+	// P3-T20: federation foundations. ClusterID-aware queries live
+	// alongside the existing single-cluster ones. Single-cluster
+	// callers (ClusterID="") must see exactly the v1.2 behaviour;
+	// multi-cluster callers get scoped reads + cross-cluster edge
+	// recovery.
+
+	t.Run("ListResourcesInCluster with empty clusterID matches the single-cluster path", func(t *testing.T) {
+		ctx := context.Background()
+		s := factory(t)
+		// Two unset (single-cluster) resources and one tagged with a
+		// non-empty ClusterID — the empty-clusterID query must see only
+		// the unset pair.
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "ConfigMap", Name: "a", Namespace: "ns1"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "ConfigMap", Name: "b", Namespace: "ns1"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "ConfigMap", Name: "c", Namespace: "ns1", ClusterID: "prod"})
+		got, err := s.ListResourcesInCluster(ctx, "", graph.Filter{})
+		if err != nil {
+			t.Fatalf("ListResourcesInCluster: %v", err)
+		}
+		names := collectNames(got)
+		if len(names) != 2 || !names["a"] || !names["b"] {
+			t.Errorf("got names %v, want {a,b}", names)
+		}
+	})
+
+	t.Run("ListResourcesInCluster scopes to the named cluster", func(t *testing.T) {
+		ctx := context.Background()
+		s := factory(t)
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1", ClusterID: "staging"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "c", Namespace: "ns1", ClusterID: "prod"})
+
+		prod, err := s.ListResourcesInCluster(ctx, "prod", graph.Filter{})
+		if err != nil {
+			t.Fatalf("ListResourcesInCluster prod: %v", err)
+		}
+		prodNames := collectNames(prod)
+		if len(prodNames) != 2 || !prodNames["a"] || !prodNames["c"] {
+			t.Errorf("prod = %v, want {a,c}", prodNames)
+		}
+
+		staging, _ := s.ListResourcesInCluster(ctx, "staging", graph.Filter{})
+		stagingNames := collectNames(staging)
+		if len(stagingNames) != 1 || !stagingNames["b"] {
+			t.Errorf("staging = %v, want {b}", stagingNames)
+		}
+	})
+
+	t.Run("ListResourcesInCluster composes ClusterID with the existing filter", func(t *testing.T) {
+		ctx := context.Background()
+		s := factory(t)
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod", Labels: map[string]string{"app": "api"}})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns2", ClusterID: "prod", Labels: map[string]string{"app": "api"}})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Service", Name: "s", Namespace: "ns1", ClusterID: "prod", Labels: map[string]string{"app": "api"}})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "c", Namespace: "ns1", ClusterID: "staging", Labels: map[string]string{"app": "api"}})
+
+		got, err := s.ListResourcesInCluster(ctx, "prod", graph.Filter{
+			Kind:      "Pod",
+			Namespace: "ns1",
+			Labels:    map[string]string{"app": "api"},
+		})
+		if err != nil {
+			t.Fatalf("ListResourcesInCluster: %v", err)
+		}
+		names := collectNames(got)
+		if len(names) != 1 || !names["a"] {
+			t.Errorf("got %v, want {a}", names)
+		}
+	})
+
+	t.Run("GetEdgesAcrossClusters with an empty cluster list returns nil", func(t *testing.T) {
+		ctx := context.Background()
+		s := factory(t)
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1", ClusterID: "prod"})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/b", Type: graph.EdgeTypeOwns})
+
+		edges, err := s.GetEdgesAcrossClusters(ctx, nil)
+		if err != nil {
+			t.Fatalf("GetEdgesAcrossClusters: %v", err)
+		}
+		if len(edges) != 0 {
+			t.Errorf("got %d edges, want 0", len(edges))
+		}
+	})
+
+	t.Run("GetEdgesAcrossClusters returns edges within the set and drops outside endpoints", func(t *testing.T) {
+		ctx := context.Background()
+		s := factory(t)
+		// prod: a, b. staging: x. Edges: a->b (in-set), b->x (out
+		// when "staging" is excluded), and an edge with a dangling
+		// To target that must be dropped regardless.
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1", ClusterID: "prod"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "x", Namespace: "ns1", ClusterID: "staging"})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/b", Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/b", To: "ns1/Pod/x", Type: graph.EdgeTypeRoutesTo})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/missing", Type: graph.EdgeTypeRoutesTo})
+
+		edges, err := s.GetEdgesAcrossClusters(ctx, []string{"prod"})
+		if err != nil {
+			t.Fatalf("GetEdgesAcrossClusters prod: %v", err)
+		}
+		if len(edges) != 1 || edges[0].From != "ns1/Pod/a" || edges[0].To != "ns1/Pod/b" {
+			t.Errorf("got %+v, want only a->b", edges)
+		}
+
+		// Widen the set to include staging — b->x now passes both
+		// endpoint checks. The dangling edge is still dropped.
+		edges, err = s.GetEdgesAcrossClusters(ctx, []string{"prod", "staging"})
+		if err != nil {
+			t.Fatalf("GetEdgesAcrossClusters prod+staging: %v", err)
+		}
+		if len(edges) != 2 {
+			t.Errorf("got %d edges, want 2 (a->b and b->x)", len(edges))
+		}
+	})
+
+	t.Run("GetEdgesAcrossClusters with empty clusterID returns the single-cluster subgraph", func(t *testing.T) {
+		ctx := context.Background()
+		s := factory(t)
+		// Single-cluster path: ClusterID unset everywhere.
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "c", Namespace: "ns1", ClusterID: "prod"})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/b", Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/c", Type: graph.EdgeTypeRoutesTo})
+
+		edges, err := s.GetEdgesAcrossClusters(ctx, []string{""})
+		if err != nil {
+			t.Fatalf("GetEdgesAcrossClusters: %v", err)
+		}
+		if len(edges) != 1 || edges[0].To != "ns1/Pod/b" {
+			t.Errorf("got %+v, want only the single-cluster a->b edge", edges)
+		}
+	})
+}
+
+// collectNames is a small helper for the federation tests that maps a
+// resource slice to a Name → present set so assertions can ignore
+// slice order.
+func collectNames(rs []graph.Resource) map[string]bool {
+	out := make(map[string]bool, len(rs))
+	for _, r := range rs {
+		out[r.Name] = true
+	}
+	return out
 }

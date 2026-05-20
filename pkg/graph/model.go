@@ -25,6 +25,17 @@ type Resource struct {
 	// fields above and would double the serialized payload — clients
 	// don't need it on the wire.
 	Raw map[string]any `json:"-"`
+
+	// ClusterID is the federation tag (P3-T20). Empty in single-
+	// cluster mode (the default through v1.2) and set by the
+	// multi-cluster informer manager (P3-T21) to the operator's
+	// configured cluster name. Filters in
+	// GraphStore.ListResourcesInCluster and
+	// GraphStore.GetEdgesAcrossClusters key on it.
+	//
+	// v1alpha1 freezes its surface, so this field is v1 only — the
+	// v1alpha1 marshaller drops it.
+	ClusterID string `json:"clusterId,omitempty"`
 }
 
 // OwnerRef captures the K8s metadata.ownerReferences entry that the
