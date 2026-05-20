@@ -26,8 +26,9 @@ v1.1 (`lithastra/kubeatlas-headlamp-plugin`).
 Yes — for read-only introspection. From v1.0 the chart ships an
 opt-in Tier 2 backend (PostgreSQL + Apache AGE via the embedded
 CloudNativePG sub-chart) so restart preserves the graph. Single-
-replica is still the deploy shape; multi-cluster federation is on
-the [roadmap](./roadmap.md). Authentication is still your job — read the
+replica is still the deploy shape; multi-cluster federation is the
+v1.3 / final Phase 3 release, in preparation — see the
+[roadmap](./roadmap.md). Authentication is still your job — read the
 [security warning](./installation/security-warning.md) before
 exposing the UI.
 

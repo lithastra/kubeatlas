@@ -13,20 +13,20 @@ For the current state, see [What is KubeAtlas](./).
 
 ## Where we are
 
-**v1.1.0 is released** — it closed Phase 3. Install with
-`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.1.0`
-— see the [Quick Start](./quick-start.md). **v1.2.0** — offline
-rendering and a self-contained `kubectl` plugin — is in
-preparation; its scope is sketched below.
+**Phase 3 is in progress.** It ships in three releases: v1.1
+(rule packs and plugins) and v1.2 (offline rendering) are out;
+**v1.3** — multi-cluster federation — is the final cut, in
+preparation. Install the latest released line with
+`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.2.0`
+— see the [Quick Start](./quick-start.md).
 
 | Phase | Status | What it delivered |
 |---|---|---|
 | **Phase 0** (Foundation) | ✅ Done | CLI binary, in-memory graph, 8 edge types, 16 watched resources, contract-tested store interface, contributor docs, CI gates. No API, no UI, no Helm Chart. |
 | **Phase 1** (MVP → v0.1.0) | ✅ Released | REST + WebSocket API, React/MUI Web UI with Cytoscape topology and Mermaid neighbour view, Helm Chart with secure defaults, Playwright E2E, multi-platform release. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:0.1.0`. |
 | **Phase 2** (→ v1.0) | ✅ Released | Tier 2 persistence (PostgreSQL + Apache AGE), Rego rule packs, RBAC graph, blast radius, orphan + cycle detection, `/api/v1/*` GA, cert-manager TLS, OpenShift detector + embedded pack, chaos test suite. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.0.0`. |
-| **Phase 3** (→ v1.1) | ✅ Released | Cloud-platform rule packs (EKS / AKS / GKE), historical snapshots + diff, full-text search, label filtering, NetworkPolicy edges, the `kubectl` and Headlamp plugins. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.1.0`. |
-| **v1.2** (offline rendering) | 🚧 In preparation | Offline `kubectl atlas`, `--local-ui`, graph-image export, `--context` / `--kubeconfig`. |
-| **Beyond v1.2** | 💭 Sketch | Multi-cluster federation, cloud-resource integration. |
+| **Phase 3** (→ v1.1 / v1.2 / v1.3) | 🚧 2 of 3 released | Cloud rule packs, snapshots, search, plugins (v1.1, released). Offline `kubectl atlas`, graph-image export (v1.2, released). Multi-cluster federation, platform-identity edges, GitHub Action (v1.3, in preparation). |
+| **Beyond Phase 3** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives. |
 
 ## Related tools
 
@@ -161,9 +161,14 @@ v1.0 cut and landed in v1.1:
 - Headlamp plugin (`lithastra/kubeatlas-headlamp-plugin`)
 - Historical snapshots / diff
 
-## Phase 3 → v1.1 (released)
+## Phase 3 → v1.1 / v1.2 / v1.3 (in progress)
 
-The "widen beyond a single cluster's core resources" cycle.
+Phase 3 widens KubeAtlas beyond a single cluster's core resources
+and reaches it from places besides the in-cluster UI. It ships in
+three releases.
+
+### v1.1 (released) — rule packs, snapshots, search, plugins
+
 Shipped scope:
 
 | Theme | What landed |
@@ -176,9 +181,9 @@ Shipped scope:
 | **Rule-pack signing** | Keyless Sigstore signature verification for OCI rule packs (`rulePacks.verifySignature`). |
 | **Plugins** | The `kubectl atlas` plugin and a [Headlamp](https://headlamp.dev) plugin (separate repo). |
 
-## v1.2 (in preparation)
+### v1.2 (released) — offline rendering and a self-contained plugin
 
-Making KubeAtlas useful without a server running in the cluster:
+KubeAtlas usable without a server in the cluster. Shipped scope:
 
 - **Offline `kubectl atlas`** — the plugin builds the dependency
   graph straight from the Kubernetes API and renders it locally:
@@ -190,22 +195,51 @@ Making KubeAtlas useful without a server running in the cluster:
   as SVG or PNG.
 - **Cluster selection** — the CLI and the plugin honour the
   standard `--context` / `--kubeconfig` flags.
-- **Krew distribution** — a `kubectl krew install atlas` path.
+- **Rule-pack signature verification on by default** —
+  `rulePacks.verifySignature` defaults to `true`; air-gapped
+  installs must set it `false` explicitly.
 
-## Beyond v1.2 (sketch)
+### v1.3 (in preparation) — multi-cluster and platform identity
+
+The final Phase 3 release. Stretching the graph across cluster
+boundaries:
+
+- **Multi-cluster federation (F-201)** — one KubeAtlas instance, N
+  clusters. An "edge per cluster sends deltas to a hub" model: a
+  new `pkg/multicluster/` package, a `ClusterID` on the graph
+  model, federation aggregator and `/federation` route group, and
+  cluster-scoped WebSocket subscriptions. `kubeatlas` accepts
+  `--kubeconfig=ctx1,ctx2` to attach multiple contexts.
+- **Platform-identity edges (F-209)** — model the K8s ⇄ cloud
+  identity bindings that today live outside the graph as plain
+  metadata:
+  - **EKS** — `aws-auth` ConfigMap and IRSA annotations
+    (ServiceAccount → IAM role).
+  - **AKS** — Workload Identity labels (ServiceAccount → AAD
+    identity).
+  - **GKE** — Workload Identity annotations (ServiceAccount → GCP
+    service account).
+- **`kubeatlas-action` (F-202)** — a new repo
+  `lithastra/kubeatlas-action` so KubeAtlas can run in GitHub
+  Actions CI pipelines.
+- **Frontend `Snapshots.tsx`** — a snapshot-diff view paired with
+  the v1.1 backend.
+- **v1.3 perf baseline** — dual-tier (Tier 1 + Tier 2) on the
+  10K-resource stress fixture; multi-cluster merge bench and a
+  cluster-disconnect chaos scenario.
+
+## Beyond Phase 3 (sketch)
 
 Direction, not commitment:
 
-- **Multi-cluster federation** — one KubeAtlas instance, N
-  clusters. Likely an "edge per cluster sends deltas to a hub"
-  model.
-- **Third-party Kubernetes platform integration** — first-class support for the distros teams actually run, going beyond "it talks to a kubeconfig":
-  - **Amazon EKS** — read the `aws-auth` ConfigMap, surface IRSA bindings (ServiceAccount → IAM role), recognise EKS-Anywhere quirks.
-  - **Azure AKS** — read managed-identity bindings (ServiceAccount → AAD identity), surface AKS-specific add-ons.
-  - **Google GKE** — read Workload Identity bindings (ServiceAccount → GCP service account), recognise Autopilot resource constraints.
-  - **Red Hat OpenShift** — model OpenShift `Route` as a first-class edge alongside `Ingress`/`HTTPRoute`, recognise `DeploymentConfig` and `BuildConfig`, ship installation docs that work with OpenShift's stricter SCC defaults.
+- **Third-party Kubernetes platform deep-dives** — going beyond
+  the identity edges v1.3 lands:
+  - **Amazon EKS** — recognise EKS-Anywhere quirks; deeper Karpenter / AWS LBC modeling.
+  - **Azure AKS** — surface AKS-specific add-ons beyond Workload Identity.
+  - **Google GKE** — recognise Autopilot resource constraints.
+  - **Red Hat OpenShift** — model `Route` as a first-class edge alongside `Ingress`/`HTTPRoute`, recognise `DeploymentConfig` and `BuildConfig` natively, ship installation docs that work with OpenShift's stricter SCC defaults.
   Verified install paths, platform-specific Helm values examples, and an integration-test matrix per platform.
-- **Cloud-resource integration** — surface AWS/GCP/Azure objects (S3 buckets, IAM roles, Cloud SQL instances) that K8s resources reference, so the graph spans the cluster boundary. Builds naturally on top of the platform integration above (the IAM/identity bindings give us the edges to follow off-cluster).
+- **Cloud-resource integration** — surface AWS/GCP/Azure objects (S3 buckets, IAM roles, Cloud SQL instances) that K8s resources reference, so the graph spans the cluster boundary. Builds on the platform-identity edges from v1.3 (the IAM/identity bindings give us the edges to follow off-cluster).
 
 ## Compatibility promises
 
@@ -218,4 +252,4 @@ Direction, not commitment:
 - **Open an issue** on [GitHub](https://github.com/lithastra/kubeatlas/issues) describing the use case (not the proposed solution).
 - **Reactions on existing issues** are read as priority signal.
 - **PRs welcome** for items already on the roadmap; for items not on it, open an issue first so we can talk shape before you spend time.
-- The order of post-v1.2 work will partly reflect what current users ask for first. If your team would adopt a future release conditional on a particular feature, say so in an issue.
+- v1.3 scope is set (multi-cluster + platform identity + Action), but the order **within** v1.3 — and what lands first beyond Phase 3 — will partly reflect what current users ask for first. If your team would adopt a future release conditional on a particular feature, say so in an issue.

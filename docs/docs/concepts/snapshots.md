@@ -118,7 +118,7 @@ the full request and response shapes.
 
 ```bash
 helm upgrade --install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.1.0 \
+  --version 1.2.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \

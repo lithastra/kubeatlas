@@ -7,12 +7,12 @@ fixes bump the patch.
 
 ## [v1.2.0] — offline rendering and a self-contained kubectl plugin
 
-v1.2.0 makes KubeAtlas useful without a server running in the
-cluster. The `kubectl` plugin now builds and renders the dependency
-graph itself — straight from the Kubernetes API on the operator's
-machine — and the CLI and API gained graph-image export. The
-`v1alpha1` and `/api/v1/*` surfaces are unchanged; everything below
-is additive.
+v1.2.0 is the second of Phase 3's three release points. It makes
+KubeAtlas useful without a server running in the cluster: the
+`kubectl` plugin now builds and renders the dependency graph itself
+— straight from the Kubernetes API on the operator's machine — and
+the CLI and API gained graph-image export. The `v1alpha1` and
+`/api/v1/*` surfaces are unchanged; everything below is additive.
 
 ### Added
 
@@ -58,12 +58,12 @@ is additive.
 
 ## [v1.1.0] — cloud rule packs, snapshots, search, plugins
 
-v1.1.0 closes Phase 3. It widens KubeAtlas beyond a single cluster's
-core resources: managed-Kubernetes add-on rule packs, a queryable
-change history, full-text search, and two new ways to reach the
-graph — a `kubectl` plugin and a Headlamp plugin. The `v1alpha1` and
-`/api/v1/*` surfaces from v1.0 are unchanged; everything below is
-additive.
+v1.1.0 is the first of Phase 3's three release points. It widens
+KubeAtlas beyond a single cluster's core resources: managed-Kubernetes
+add-on rule packs, a queryable change history, full-text search, and
+two new ways to reach the graph — a `kubectl` plugin and a Headlamp
+plugin. The `v1alpha1` and `/api/v1/*` surfaces from v1.0 are
+unchanged; everything below is additive.
 
 ### Added
 

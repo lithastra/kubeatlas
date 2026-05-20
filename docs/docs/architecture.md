@@ -186,8 +186,9 @@ Three composed queries that share the `Direction` enum on the
   `oci://ghcr.io/lithastra/charts/kubeatlas`, cosign-signed,
   SBOM-attached.
 
-For where KubeAtlas is going next (multi-cluster federation,
-cloud-resource integration), see the [Roadmap](./roadmap.md).
+For where KubeAtlas is going next — multi-cluster federation
+(v1.3, the final Phase 3 release) and cloud-resource integration
+(beyond Phase 3) — see the [Roadmap](./roadmap.md).
 
 The v0.1.0 API surface and the `graph.Resource`/`graph.Edge`
 shapes stay frozen across v1.x: only additive changes. CI's
