@@ -111,6 +111,12 @@ type InformerManager struct {
 	// onSynced is invoked exactly once, after WaitForCacheSync returns
 	// successfully for every GVR. nil means "no callback".
 	onSynced func()
+
+	// clusterID tags every Resource this manager produces (P3-T21).
+	// Empty in single-cluster mode (the default through v1.2); set
+	// by the multicluster.Manager to the operator-configured cluster
+	// name when several InformerManagers share one GraphStore.
+	clusterID string
 }
 
 // InformerOption configures an InformerManager.
@@ -149,6 +155,14 @@ func WithSnapshotSink(s SnapshotSink) InformerOption {
 // returning 200.
 func WithOnSynced(fn func()) InformerOption {
 	return func(m *InformerManager) { m.onSynced = fn }
+}
+
+// WithClusterID tags every Resource this manager produces with id
+// (P3-T21). The multicluster.Manager sets it when running several
+// InformerManagers against the same GraphStore; single-cluster
+// callers leave it unset (the v1.2 default).
+func WithClusterID(id string) InformerOption {
+	return func(m *InformerManager) { m.clusterID = id }
 }
 
 // WithResync overrides the default resync period.
@@ -263,6 +277,7 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		return
 	}
 	r := UnstructuredToResource(u, m.kindFor(gvr, u))
+	r.ClusterID = m.clusterID
 	if err := m.store.UpsertResource(ctx, r); err != nil {
 		slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
 		return
@@ -315,7 +330,13 @@ func (m *InformerManager) handleDelete(ctx context.Context, obj any) {
 	if !ok {
 		return
 	}
+	// Reproduce graph.Resource.ID() — multi-cluster IDs carry a
+	// <clusterID>: prefix so two clusters' same-named objects do not
+	// collide in the shared store.
 	id := u.GetNamespace() + "/" + u.GetKind() + "/" + u.GetName()
+	if m.clusterID != "" {
+		id = m.clusterID + ":" + id
+	}
 	if err := m.store.DeleteResource(ctx, id); err != nil {
 		slog.Warn("delete resource failed", "id", id, "err", err)
 	}

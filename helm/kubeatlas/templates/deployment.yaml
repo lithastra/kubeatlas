@@ -114,6 +114,16 @@ spec:
               value: {{ .Values.snapshots.retention | quote }}
             {{- end }}
           {{- end }}
+          {{- if .Values.multicluster.enabled }}
+            # F-201 multi-cluster federation (P3-T21). When enabled the
+            # binary mounts every kubeconfig in the named Secret and
+            # starts one informer per member cluster. The values.schema
+            # gate above enforces a non-empty kubeconfigSecret.
+            - name: KUBEATLAS_MULTICLUSTER_ENABLED
+              value: "true"
+            - name: KUBEATLAS_MULTICLUSTER_KUBECONFIG_DIR
+              value: /etc/kubeatlas/multicluster
+          {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -132,9 +142,19 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.multicluster.enabled }}
+            - name: multicluster-kubeconfigs
+              mountPath: /etc/kubeatlas/multicluster
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if .Values.multicluster.enabled }}
+        - name: multicluster-kubeconfigs
+          secret:
+            secretName: {{ .Values.multicluster.kubeconfigSecret | quote }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -26,11 +27,83 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/multicluster"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 	"github.com/lithastra/kubeatlas/pkg/store"
 	"github.com/lithastra/kubeatlas/pkg/store/postgres"
 	"github.com/lithastra/kubeatlas/pkg/version"
 )
+
+// componentStarter is the lifecycle shape every long-running runWatch
+// component shares: Start(ctx) blocks until ctx is cancelled, returns
+// ctx.Err() or an early failure. Both discovery.InformerManager and
+// crd.Discovery already satisfy it; runWatch's multi-cluster branch
+// swaps in adapters that do too.
+type componentStarter interface {
+	Start(ctx context.Context) error
+}
+
+// multiclusterStarter adapts a multicluster.Manager to componentStarter
+// (P3-T21). It attaches every cluster from kubeconfigs on Start, then
+// blocks on ctx so the existing 3-component result-loop pattern keeps
+// working. Failure to attach EVERY cluster is the only fatal: a single
+// bad kubeconfig is logged and the rest still run.
+type multiclusterStarter struct {
+	mgr         *multicluster.Manager
+	kubeconfigs map[string][]byte
+	onReady     func()
+}
+
+func (s *multiclusterStarter) Start(ctx context.Context) error {
+	failures := s.mgr.AddFromSecret(ctx, s.kubeconfigs)
+	attached := s.mgr.ListClusters()
+	if len(attached) == 0 {
+		return fmt.Errorf("multicluster: every member cluster failed to attach (%d failures)", len(failures))
+	}
+	slog.Info("multicluster manager started",
+		"attached", attached, "failures", len(failures))
+	if s.onReady != nil {
+		s.onReady()
+	}
+	<-ctx.Done()
+	s.mgr.Stop()
+	return ctx.Err()
+}
+
+// noopStarter parks until ctx is cancelled. Used in place of
+// crd.Discovery in multi-cluster mode, where per-cluster CRD discovery
+// is deferred to a future task (P3-T21 focus: core GVR informers).
+type noopStarter struct{}
+
+func (noopStarter) Start(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// loadMulticlusterKubeconfigs reads every regular file under dir as a
+// kubeconfig and returns map[clusterName]kubeconfig-bytes. The file's
+// basename is the cluster name. K8s Secret mounts use dot-prefixed
+// symlinks (..data, ..2026_05_20_...) for atomic rotation; those are
+// skipped.
+func loadMulticlusterKubeconfigs(dir string) (map[string][]byte, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read multicluster dir %q: %w", dir, err)
+	}
+	out := make(map[string][]byte)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", name, err)
+		}
+		out[name] = data
+	}
+	return out, nil
+}
 
 // buildRegoEngine constructs the rego engine + supporting router /
 // cache / metrics and loads the rule packs we ship at compile time
@@ -507,19 +580,58 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	// Informer options. WithOnSynced / WithBroadcaster depend on srv,
 	// so this list is built after srv exists. The snapshot sink is
 	// appended only when the writer is running.
-	informerOpts := []discovery.InformerOption{
+	//
+	// Multi-cluster mode (P3-T21) shares the same options across every
+	// member cluster, except WithOnSynced — readiness fires once for
+	// the federation, not once per member cluster, so the multi-cluster
+	// branch wires it on the manager's lifecycle instead.
+	baseInformerOpts := []discovery.InformerOption{
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),
-		discovery.WithOnSynced(srv.Readiness().MarkReady),
 		discovery.WithBroadcaster(srv.Hub().BroadcastEvent),
 	}
 	if snapWriter != nil {
-		informerOpts = append(informerOpts, discovery.WithSnapshotSink(snapWriter))
+		baseInformerOpts = append(baseInformerOpts, discovery.WithSnapshotSink(snapWriter))
 	}
-	mgr := discovery.NewInformerManager(client.Dynamic(), graphStore, informerOpts...)
-	crdDiscovery := crd.New(client.Dynamic(), graphStore,
-		crd.WithRegoEvaluator(regoEngine),
+
+	var (
+		informerStarter componentStarter
+		crdStarter      componentStarter
 	)
+	if os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") == "true" {
+		mcDir := os.Getenv("KUBEATLAS_MULTICLUSTER_KUBECONFIG_DIR")
+		if mcDir == "" {
+			log.Fatalf("multicluster: KUBEATLAS_MULTICLUSTER_ENABLED=true requires KUBEATLAS_MULTICLUSTER_KUBECONFIG_DIR")
+		}
+		kubeconfigs, err := loadMulticlusterKubeconfigs(mcDir)
+		if err != nil {
+			log.Fatalf("multicluster: %v", err)
+		}
+		if len(kubeconfigs) == 0 {
+			log.Fatalf("multicluster: no kubeconfig files found in %s", mcDir)
+		}
+		mcMgr := multicluster.New(graphStore,
+			multicluster.WithFactory(multicluster.DefaultInformerFactory(baseInformerOpts...)),
+		)
+		informerStarter = &multiclusterStarter{
+			mgr:         mcMgr,
+			kubeconfigs: kubeconfigs,
+			onReady:     srv.Readiness().MarkReady,
+		}
+		// CRD discovery is per-cluster work that doesn't fit the
+		// single-shared-CRD-informer model. P3-T21 ships the core-GVR
+		// federation; per-cluster CRD discovery is a follow-up.
+		crdStarter = noopStarter{}
+		slog.Info("multicluster enabled", "members", len(kubeconfigs))
+	} else {
+		informerStarter = discovery.NewInformerManager(
+			client.Dynamic(), graphStore,
+			append(baseInformerOpts, discovery.WithOnSynced(srv.Readiness().MarkReady))...,
+		)
+		crdStarter = crd.New(client.Dynamic(), graphStore,
+			crd.WithRegoEvaluator(regoEngine),
+		)
+	}
 
 	// Run all three components under the same cancellable context.
 	// If any returns a non-Canceled error (or the user hits Ctrl-C),
@@ -529,9 +641,9 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		err error
 	}
 	results := make(chan result, 3)
-	go func() { results <- result{"informer", mgr.Start(ctx)} }()
+	go func() { results <- result{"informer", informerStarter.Start(ctx)} }()
 	go func() { results <- result{"api", srv.Start(ctx)} }()
-	go func() { results <- result{"crd-discovery", crdDiscovery.Start(ctx)} }()
+	go func() { results <- result{"crd-discovery", crdStarter.Start(ctx)} }()
 
 	first := <-results
 	cancel()

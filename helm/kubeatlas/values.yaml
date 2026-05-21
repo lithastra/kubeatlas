@@ -300,5 +300,25 @@ snapshots:
   # cron syntax.
   fullSyncSchedule: "*/5 * * * *"
 
+# Multi-cluster federation (F-201, v1.3). When enabled, KubeAtlas
+# attaches an informer to every cluster whose kubeconfig is in the
+# named Secret and tags every Resource with its ClusterID. The
+# federation aggregator (P3-T22) then serves a merged view.
+#
+# Default off — single-cluster install is the v1.0/v1.1/v1.2 path
+# and stays the zero-config baseline.
+multicluster:
+  enabled: false
+  # Name of the Secret holding the member kubeconfigs. Each key in
+  # the Secret's data map is treated as the cluster name (the
+  # ClusterID), each value as that cluster's kubeconfig YAML. The
+  # Secret must live in the release namespace.
+  #
+  # Names must not contain ':' or '/' — they appear verbatim in the
+  # ClusterID prefix on every Resource ID. Cluster startup is
+  # best-effort: a single bad kubeconfig is logged and skipped, the
+  # others still attach.
+  kubeconfigSecret: ""
+
 # Extra labels applied to every resource the chart renders.
 extraLabels: {}
