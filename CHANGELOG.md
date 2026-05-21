@@ -5,6 +5,82 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
+## [v1.3.0] — multi-cluster federation (data layer) and platform-identity edges
+
+v1.3.0 is the third Phase 3 release. It stretches the dependency
+graph across cluster boundaries: a single KubeAtlas instance can now
+attach to several clusters, tag every resource with its origin, and
+serve a federated read surface. Edges between in-cluster identities
+and the cloud accounts that back them — EKS IAM roles, AKS managed
+identities, GKE service accounts — are now first-class graph edges,
+derived purely from the Kubernetes metadata KubeAtlas already
+watches. The `v1alpha1` and `/api/v1/*` surfaces are unchanged
+beyond the new federation paths; everything below is additive.
+
+### Added
+
+- **Multi-cluster federation (data layer)** — opt-in
+  (`multicluster.enabled=true` + `multicluster.kubeconfigSecret`),
+  a single KubeAtlas pod attaches to every kubeconfig the named
+  Secret carries. Each member runs its own informer pipeline against
+  a shared graph store; every resource is tagged with a `ClusterID`
+  so the federation aggregator can answer cluster-scoped queries
+  without re-architecting the store. The new endpoints are:
+  - `GET /api/v1/federation/clusters` — `{mode, clusters}`; the UI
+    uses `mode` to detect whether federation is on.
+  - `GET /api/v1/federation/graph?cluster=a,b` — a flat
+    `FederatedView` (resources + intra-cluster edges) across the
+    named members. Unknown cluster names return 400 so a stale
+    bookmark doesn't silently render an empty selection.
+  Cross-cluster edge inference is deliberately not done in v1.3;
+  the design says explicit-only (planned via an
+  `kubeatlas.io/external-ref` annotation in a future release).
+  The **Web UI cluster switcher** (multi-select picker plus
+  per-cluster colouring in the topology view) is intentionally
+  deferred to v1.3.1 — the UX choices warrant a focused design
+  pass. Operators consume the federation surface in v1.3.0 via the
+  API, `kubectl atlas --server`, or Headlamp.
+- **Platform-identity edges** — three new built-in extractors
+  emit `BINDS_PLATFORM_IDENTITY` edges from a ServiceAccount to a
+  synthetic `ExternalIdentity` endpoint that represents the cloud
+  identity it is bound to:
+  - **EKS IRSA** — `eks.amazonaws.com/role-arn` annotation.
+  - **AKS Workload Identity** — `azure.workload.identity/client-id`
+    label.
+  - **GKE Workload Identity** — `iam.gke.io/gcp-service-account`
+    annotation.
+  KubeAtlas calls no cloud SDK to validate any of these — the edge
+  is derived purely from the K8s metadata. In multi-cluster mode
+  the synthetic endpoint id carries the cluster prefix so two
+  clusters referencing the same external identity stay distinct
+  nodes.
+- **OpenShift `Route` as a built-in `ROUTES_TO` source** — Route
+  (route.openshift.io/v1) joins Ingress and HTTPRoute as a built-in
+  edge instead of relying on the OpenShift rule pack. The rule pack
+  stays for the extra-depth rules (DC trigger chains, weighted
+  backends) it was always carrying.
+- **Snapshots Web UI page** — a new top-level "Snapshots" page
+  surfaces the Tier 2 snapshot endpoints: a window-picker driven
+  diff with three tables (Added / Modified / Removed) plus a
+  timeline of recent full-sync markers. A Tier 1 install (or one
+  with snapshots disabled) sees a clear "snapshots not enabled"
+  banner rather than a generic error.
+
+### Changed
+
+- **Multi-cluster ID propagation** — every built-in extractor that
+  synthesises target IDs (`owns`, `configmap`, `secret`, `volume`,
+  `attached`, `routes`, `serviceaccount`, `rbac`, plus the new
+  platform-identity ones) now propagates `ClusterID` into the
+  target id. Selector extractors (`Service`, `NetworkPolicy`) scope
+  their store queries by `ClusterID`. Single-cluster installs are
+  unchanged: empty `ClusterID` reproduces the v1.2 baseline exactly,
+  including the literal id format. The change matters only when
+  `multicluster.enabled=true`; without it a federated install would
+  have produced dangling edges across the cluster boundary.
+
+[v1.3.0]: https://github.com/lithastra/kubeatlas/releases/tag/v1.3.0
+
 ## [v1.2.0] — offline rendering and a self-contained kubectl plugin
 
 v1.2.0 is the second of Phase 3's three release points. It makes
