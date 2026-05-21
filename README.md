@@ -175,6 +175,12 @@ Direction beyond Phase 3 — cloud-resource integration, third-party
 platform deep-dives — is tracked at
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
+## Support the project
+
+KubeAtlas is built and maintained in the open. If it's useful to you
+or your team, [buy me a coffee](https://buymeacoffee.com/lithastra)
+— it directly funds development time on the next milestone.
+
 ## License
 
 [Apache 2.0](./LICENSE) with [DCO](./DCO).
