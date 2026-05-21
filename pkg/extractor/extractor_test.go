@@ -8,7 +8,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
-func TestRegistry_DefaultRegistersAllEightTypes(t *testing.T) {
+func TestRegistry_DefaultRegistersAllEdgeTypes(t *testing.T) {
 	reg := Default()
 	got := make(map[graph.EdgeType]bool)
 	for _, e := range reg.extractors {
@@ -19,8 +19,12 @@ func TestRegistry_DefaultRegistersAllEightTypes(t *testing.T) {
 			t.Errorf("Default() missing extractor for %q", want)
 		}
 	}
-	if len(reg.extractors) != len(graph.AllEdgeTypes) {
-		t.Errorf("Default() registered %d extractors, want %d", len(reg.extractors), len(graph.AllEdgeTypes))
+	// One EdgeType can have several extractors (F-209: EKS / AKS /
+	// GKE all emit BINDS_PLATFORM_IDENTITY), so the registry length is
+	// >= the AllEdgeTypes length, not strictly equal.
+	if len(reg.extractors) < len(graph.AllEdgeTypes) {
+		t.Errorf("Default() registered %d extractors, want at least %d",
+			len(reg.extractors), len(graph.AllEdgeTypes))
 	}
 }
 
