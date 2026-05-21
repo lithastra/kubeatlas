@@ -2,17 +2,48 @@
   "nav": {
     "resources": "Resources",
     "topology": "Topology",
+    "snapshots": "Snapshots",
     "search": "Search",
     "docs": "Docs"
   },
   "page": {
     "resources": {
       "title": "Resources",
-      "placeholder": "Resource list with namespace filter — coming in P1-T12."
+      "placeholder": "Resource list with namespace filter."
     },
     "topology": {
       "title": "Topology",
-      "placeholder": "Cytoscape graph at cluster / namespace / workload levels — coming in P1-T13."
+      "placeholder": "Cytoscape graph at cluster / namespace / workload levels."
+    },
+    "snapshots": {
+      "title": "Snapshots",
+      "subtitle": "What changed in the cluster across a time window — added, removed, or modified resources from the append-only event stream.",
+      "notEnabled": "Snapshots are not enabled on this server. They require Tier 2 (PostgreSQL) with snapshots.enabled=true in the Helm chart.",
+      "windowLabel": "Window",
+      "namespaceLabel": "Namespace",
+      "namespacePlaceholder": "(any)",
+      "allNamespaces": "all namespaces",
+      "diffHeader": "{{count}} resource change(s) in the last {{window}} — {{namespace}}",
+      "diffLoading": "Loading diff…",
+      "timelineHeader": "Recent full-sync snapshots",
+      "timelineLoading": "Loading snapshot timeline…",
+      "timelineEmpty": "No snapshot markers yet — the first one lands at the configured fullSyncSchedule.",
+      "emptySection": "No matches.",
+      "eventHeader": {
+        "add": "Added ({{count}})",
+        "update": "Modified ({{count}})",
+        "delete": "Removed ({{count}})"
+      },
+      "col": {
+        "namespace": "Namespace",
+        "kind": "Kind",
+        "name": "Name",
+        "when": "When",
+        "trigger": "Trigger",
+        "resources": "Resources",
+        "edges": "Edges",
+        "duration": "Duration"
+      }
     },
     "search": {
       "title": "Search",
