@@ -70,7 +70,9 @@ The v0.1.0 defaults still apply: in-memory unless you opt into
 Tier 2, single-replica, **no built-in authentication** — exposing
 via Ingress requires an external auth layer (oauth2-proxy /
 Pomerium / Cloudflare Access). Multi-cluster federation lands in
-v1.3 — Phase 3's final release, in preparation — see
+v1.3 — Phase 3's final release, in preparation. v1.3.0 ships the
+federation data layer and the `/api/v1/federation/*` API; the Web
+UI cluster switcher follows in v1.3.1. See
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 Full release notes: [CHANGELOG.md](./CHANGELOG.md).

@@ -27,7 +27,9 @@ Yes — for read-only introspection. From v1.0 the chart ships an
 opt-in Tier 2 backend (PostgreSQL + Apache AGE via the embedded
 CloudNativePG sub-chart) so restart preserves the graph. Single-
 replica is still the deploy shape; multi-cluster federation is the
-v1.3 / final Phase 3 release, in preparation — see the
+v1.3 / final Phase 3 release, in preparation. v1.3.0 ships the
+federation data layer and `/api/v1/federation/*` endpoints; the Web
+UI cluster switcher follows in v1.3.1 — see the
 [roadmap](./roadmap.md). Authentication is still your job — read the
 [security warning](./installation/security-warning.md) before
 exposing the UI.
