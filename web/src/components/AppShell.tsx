@@ -12,6 +12,7 @@ import {
   Typography,
 } from '@mui/material';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import HistoryIcon from '@mui/icons-material/History';
 import HubIcon from '@mui/icons-material/Hub';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import SearchIcon from '@mui/icons-material/Search';
@@ -26,6 +27,7 @@ const drawerWidth = 220;
 const navItems = [
   { to: '/resources', labelKey: 'nav.resources', icon: <AccountTreeIcon /> },
   { to: '/topology', labelKey: 'nav.topology', icon: <HubIcon /> },
+  { to: '/snapshots', labelKey: 'nav.snapshots', icon: <HistoryIcon /> },
   { to: '/search', labelKey: 'nav.search', icon: <SearchIcon /> },
   { to: '/docs', labelKey: 'nav.docs', icon: <MenuBookIcon /> },
 ];

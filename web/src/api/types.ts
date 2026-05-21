@@ -122,9 +122,55 @@ export interface NetworkPolicySelectedResponse {
 
 // Body of GET /api/v1/networkpolicy/{ns}/{name}/allow-graph — the
 // declared ingress sources (allowFrom) and egress destinations
-// (allowTo) of a NetworkPolicy (F-109).
+// (allowTo) of a NetworkPolicy.
 export interface NetworkPolicyAllowGraphResponse {
   networkPolicy: Resource;
   allowFrom: Resource[];
   allowTo: Resource[];
+}
+
+// Snapshot history. Tier 2 only — a Tier 1 install (or one with
+// snapshots.enabled=false) answers 503 on these endpoints. The UI
+// surfaces the 503 as a "snapshots not enabled" message rather than
+// a generic error.
+
+export type EventType = 'add' | 'update' | 'delete';
+
+export type SnapshotTrigger = 'startup' | 'periodic' | 'manual';
+
+// One periodic full-sync marker (snapshot_meta row). The diff
+// endpoint anchors time windows against these.
+export interface SnapshotMeta {
+  id: number;
+  ts: string;
+  clusterId?: string;
+  resourceCount: number;
+  edgeCount: number;
+  durationMs: number;
+  trigger: SnapshotTrigger;
+}
+
+export interface SnapshotListResponse {
+  snapshots: SnapshotMeta[];
+}
+
+// One row of a diff result — an identity-only record of a resource
+// that changed inside the window. The diff endpoint never carries
+// full Resource payloads (would balloon a wide window); the UI
+// links the rows to the resource-detail page for the current state.
+export interface DiffEntry {
+  namespace: string;
+  kind: string;
+  name: string;
+  uid?: string;
+  eventType: EventType;
+  ts: string;
+}
+
+export interface DiffResult {
+  from: string;
+  to: string;
+  added: DiffEntry[];
+  removed: DiffEntry[];
+  modified: DiffEntry[];
 }

@@ -6,6 +6,7 @@ import { DocsPage } from './pages/DocsPage';
 import { ResourcePage } from './pages/ResourcePage';
 import { ResourcesPage } from './pages/ResourcesPage';
 import { SearchPage } from './pages/SearchPage';
+import { SnapshotsPage } from './pages/SnapshotsPage';
 import { TopologyPage } from './pages/TopologyPage';
 
 // App is the routing root. AppShell renders the persistent chrome
@@ -28,6 +29,7 @@ export function App() {
           <Route path="/resources" element={<ResourcesPage />} />
           <Route path="/resources/:namespace/:kind/:name" element={<ResourcePage />} />
           <Route path="/topology" element={<TopologyPage />} />
+          <Route path="/snapshots" element={<SnapshotsPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/docs" element={<DocsPage />} />
         </Routes>
