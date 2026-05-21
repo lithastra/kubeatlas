@@ -1127,9 +1127,13 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("GetEdgesAcrossClusters with an empty cluster list returns nil", func(t *testing.T) {
 		ctx := context.Background()
 		s := factory(t)
-		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"})
-		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1", ClusterID: "prod"})
-		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/b", Type: graph.EdgeTypeOwns})
+		// Use Resource.ID() everywhere — multi-cluster IDs now carry
+		// a <clusterID>: prefix.
+		a := graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"}
+		b := graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1", ClusterID: "prod"}
+		_ = s.UpsertResource(ctx, a)
+		_ = s.UpsertResource(ctx, b)
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
 
 		edges, err := s.GetEdgesAcrossClusters(ctx, nil)
 		if err != nil {
@@ -1146,18 +1150,21 @@ func Run(t *testing.T, factory Factory) {
 		// prod: a, b. staging: x. Edges: a->b (in-set), b->x (out
 		// when "staging" is excluded), and an edge with a dangling
 		// To target that must be dropped regardless.
-		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"})
-		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1", ClusterID: "prod"})
-		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "x", Namespace: "ns1", ClusterID: "staging"})
-		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/b", Type: graph.EdgeTypeOwns})
-		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/b", To: "ns1/Pod/x", Type: graph.EdgeTypeRoutesTo})
-		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/missing", Type: graph.EdgeTypeRoutesTo})
+		a := graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"}
+		b := graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1", ClusterID: "prod"}
+		x := graph.Resource{Kind: "Pod", Name: "x", Namespace: "ns1", ClusterID: "staging"}
+		_ = s.UpsertResource(ctx, a)
+		_ = s.UpsertResource(ctx, b)
+		_ = s.UpsertResource(ctx, x)
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: b.ID(), To: x.ID(), Type: graph.EdgeTypeRoutesTo})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: "prod:ns1/Pod/missing", Type: graph.EdgeTypeRoutesTo})
 
 		edges, err := s.GetEdgesAcrossClusters(ctx, []string{"prod"})
 		if err != nil {
 			t.Fatalf("GetEdgesAcrossClusters prod: %v", err)
 		}
-		if len(edges) != 1 || edges[0].From != "ns1/Pod/a" || edges[0].To != "ns1/Pod/b" {
+		if len(edges) != 1 || edges[0].From != a.ID() || edges[0].To != b.ID() {
 			t.Errorf("got %+v, want only a->b", edges)
 		}
 
@@ -1175,18 +1182,22 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("GetEdgesAcrossClusters with empty clusterID returns the single-cluster subgraph", func(t *testing.T) {
 		ctx := context.Background()
 		s := factory(t)
-		// Single-cluster path: ClusterID unset everywhere.
-		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1"})
-		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1"})
-		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "c", Namespace: "ns1", ClusterID: "prod"})
-		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/b", Type: graph.EdgeTypeOwns})
-		_ = s.UpsertEdge(ctx, graph.Edge{From: "ns1/Pod/a", To: "ns1/Pod/c", Type: graph.EdgeTypeRoutesTo})
+		// Single-cluster path: ClusterID unset on a + b; c is
+		// tagged so cross-tag edges drop out.
+		a := graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1"}
+		b := graph.Resource{Kind: "Pod", Name: "b", Namespace: "ns1"}
+		c := graph.Resource{Kind: "Pod", Name: "c", Namespace: "ns1", ClusterID: "prod"}
+		_ = s.UpsertResource(ctx, a)
+		_ = s.UpsertResource(ctx, b)
+		_ = s.UpsertResource(ctx, c)
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
+		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: c.ID(), Type: graph.EdgeTypeRoutesTo})
 
 		edges, err := s.GetEdgesAcrossClusters(ctx, []string{""})
 		if err != nil {
 			t.Fatalf("GetEdgesAcrossClusters: %v", err)
 		}
-		if len(edges) != 1 || edges[0].To != "ns1/Pod/b" {
+		if len(edges) != 1 || edges[0].To != b.ID() {
 			t.Errorf("got %+v, want only the single-cluster a->b edge", edges)
 		}
 	})

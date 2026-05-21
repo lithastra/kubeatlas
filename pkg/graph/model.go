@@ -49,10 +49,20 @@ type OwnerRef struct {
 }
 
 // ID returns the resource's unique identifier within KubeAtlas.
-// Format: <namespace>/<kind>/<name>; namespace is empty for cluster-
-// scoped resources (e.g. "/Namespace/demo").
+//
+// Single-cluster (ClusterID==""), the format is the v1.2 baseline:
+// <namespace>/<kind>/<name>; namespace is empty for cluster-scoped
+// resources (e.g. "/Namespace/demo"). Multi-cluster (ClusterID set)
+// prepends <clusterID>: so two clusters with the same
+// (namespace, kind, name) do not collide in the shared store
+// (P3-T21). The colon is not a legal kubeconfig context character,
+// so the prefix is unambiguous.
 func (r Resource) ID() string {
-	return r.Namespace + "/" + r.Kind + "/" + r.Name
+	base := r.Namespace + "/" + r.Kind + "/" + r.Name
+	if r.ClusterID == "" {
+		return base
+	}
+	return r.ClusterID + ":" + base
 }
 
 // EdgeType is the strongly-typed enumeration of supported edge kinds.

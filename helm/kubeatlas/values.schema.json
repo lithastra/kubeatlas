@@ -362,10 +362,43 @@
         }
       }
     },
+    "multicluster": {
+      "type": "object",
+      "description": "Multi-cluster federation (F-201, v1.3). When enabled, KubeAtlas attaches an informer to every kubeconfig in the named Secret and tags every Resource with its ClusterID.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "kubeconfigSecret": {
+          "description": "Secret holding member kubeconfigs (key = cluster name, value = kubeconfig YAML). Required when enabled.",
+          "type": "string"
+        }
+      }
+    },
     "extraLabels": { "type": "object" }
   },
   "required": ["image", "service", "ingress", "podSecurityContext", "securityContext", "persistence"],
   "allOf": [
+    {
+      "comment": "Multi-cluster federation requires a kubeconfigSecret to point the runtime at. multicluster.enabled=true with an empty kubeconfigSecret is rejected at chart-render time (P3-T21).",
+      "if": {
+        "properties": {
+          "multicluster": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["multicluster"]
+      },
+      "then": {
+        "properties": {
+          "multicluster": {
+            "required": ["kubeconfigSecret"],
+            "properties": {
+              "kubeconfigSecret": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
     {
       "comment": "Snapshots (F-111) require Tier 2 — the event stream is a PostgreSQL table. snapshots.enabled=true without persistence.enabled=true is rejected (guide invariant 2.2: no Tier 1 snapshots).",
       "if": {
