@@ -55,11 +55,17 @@ func TestOpenAPI_TopLevelShape(t *testing.T) {
 func TestOpenAPI_PathsMatchRegisteredRoutes(t *testing.T) {
 	srv := api.New(":0", memory.New(), aggregator.NewRegistry())
 
-	// Every route the server registers.
-	registered := srv.PathPatterns()
+	// Compare against the v1 spec, which is the superset — it carries
+	// the v1-aliased v1alpha1 paths plus the v1-only additions (e.g.
+	// /api/v1/federation/...). Normalise PathPatterns the same way so
+	// the comparison is apples-to-apples.
+	registered := make([]string, 0)
+	for _, p := range srv.PathPatterns() {
+		registered = append(registered, strings.Replace(p, "/api/v1alpha1/", "/api/v1/", 1))
+	}
+	sort.Strings(registered)
 
-	// Every path the spec advertises.
-	spec := pullSpec(t)
+	spec := pullSpecV1(t)
 	pathsObj, _ := spec["paths"].(map[string]any)
 	specPaths := make([]string, 0, len(pathsObj))
 	for p := range pathsObj {
@@ -186,6 +192,24 @@ func pullSpec(t *testing.T) map[string]any {
 	base, _, stop := seedAndServe(t, nil)
 	defer stop()
 	resp, body := getJSON(t, base+"/api/v1alpha1/openapi.json", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	var spec map[string]any
+	if err := json.Unmarshal(body, &spec); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return spec
+}
+
+// pullSpecV1 is pullSpec for the v1 superset spec. Used by the route-
+// vs-spec contract test, which compares against the full surface
+// (alpha1 + v1-only additions like /api/v1/federation/...).
+func pullSpecV1(t *testing.T) map[string]any {
+	t.Helper()
+	base, _, stop := seedAndServe(t, nil)
+	defer stop()
+	resp, body := getJSON(t, base+"/api/v1/openapi.json", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}

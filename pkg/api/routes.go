@@ -288,5 +288,29 @@ func (s *Server) Routes() []RouteInfo {
 			Response: ResponseSpec{Description: "Rendered SVG or PNG image", ContentType: "image/svg+xml"},
 			handler:  s.handleExport,
 		},
+
+		// Multi-cluster federation (P3-T22). v1-only — v1alpha1 is
+		// frozen, and federation is the v1.3 net-new surface. Routes
+		// without the /api/v1alpha1/ prefix register exactly once
+		// (versionedPattern returns them unchanged).
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/federation/clusters",
+			Summary:     "List attached member clusters",
+			Description: "Returns the set of clusters the multicluster.Manager is currently driving. Mode='single' with an empty cluster list means multicluster is disabled on this server.",
+			Response:    ResponseSpec{Description: "Attached cluster list", SchemaRef: "FederationClustersResponse"},
+			handler:     s.handleFederationClusters,
+		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/federation/graph",
+			Summary:     "Federated graph across multiple clusters",
+			Description: "Returns a flat union of resources and intra-cluster edges across the named member clusters. Every node carries its ClusterID so the UI can group / colour by cluster. 503 when multicluster is not enabled.",
+			QueryParams: []ParamSpec{
+				{Name: "cluster", Required: true, Description: "Comma-separated or repeated cluster names; every name must be attached.", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Federated graph view", SchemaRef: "FederatedView"},
+			handler:  s.handleFederationGraph,
+		},
 	}
 }

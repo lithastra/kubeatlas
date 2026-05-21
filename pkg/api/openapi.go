@@ -78,6 +78,11 @@ func (s *Server) OpenAPISpecV1() map[string]any {
 func (s *Server) openAPIPathsFor(version string) map[string]any {
 	paths := map[string]any{}
 	for _, r := range s.Routes() {
+		// v1-only routes (e.g. /api/v1/federation/...) must not leak
+		// into the v1alpha1 spec — that surface is frozen.
+		if version == APIVersionV1Alpha1 && strings.HasPrefix(r.Pattern, apiPrefixV1) {
+			continue
+		}
 		pattern := versionedPattern(r.Pattern, version)
 		entry, ok := paths[pattern].(map[string]any)
 		if !ok {
@@ -255,6 +260,39 @@ func openAPIComponentsFor(version string) map[string]any {
 				"inCycle":          map[string]any{"type": "boolean", "description": "True when the resource participates in a strongly connected component of size >= 2."},
 			},
 			"required": []any{"resource", "incoming", "outgoing", "blastRadiusCount", "isOrphan", "inCycle"},
+		}
+		// P3-T22 federation surface — v1-only, since v1alpha1 is frozen.
+		schemas["FederationClustersResponse"] = map[string]any{
+			"type":        "object",
+			"description": "Body of /api/v1/federation/clusters. mode='single' means multicluster is disabled on this server; mode='federated' returns the attached member-cluster names.",
+			"properties": map[string]any{
+				"mode":     map[string]any{"type": "string", "enum": []any{"single", "federated"}},
+				"clusters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			},
+			"required": []any{"mode", "clusters"},
+		}
+		schemas["FederatedNode"] = map[string]any{
+			"type":        "object",
+			"description": "A node in the federation view. Mirrors a raw graph resource and always carries its ClusterID for UI grouping.",
+			"properties": map[string]any{
+				"id":        map[string]any{"type": "string"},
+				"type":      map[string]any{"type": "string", "enum": []any{"resource"}},
+				"clusterId": map[string]any{"type": "string"},
+				"kind":      map[string]any{"type": "string"},
+				"namespace": map[string]any{"type": "string"},
+				"name":      map[string]any{"type": "string"},
+			},
+			"required": []any{"id", "type", "clusterId", "kind", "name"},
+		}
+		schemas["FederatedView"] = map[string]any{
+			"type":        "object",
+			"description": "Body of /api/v1/federation/graph. Flat union of resources and intra-cluster edges across the named clusters; cross-cluster edges are deferred to a follow-up.",
+			"properties": map[string]any{
+				"clusters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"nodes":    map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/FederatedNode"}},
+				"edges":    map[string]any{"$ref": "#/components/schemas/EdgeList"},
+			},
+			"required": []any{"clusters", "nodes", "edges"},
 		}
 	}
 	return c
