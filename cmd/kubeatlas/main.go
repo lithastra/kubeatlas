@@ -594,9 +594,14 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		baseInformerOpts = append(baseInformerOpts, discovery.WithSnapshotSink(snapWriter))
 	}
 
+	// Build the multicluster.Manager ahead of api.New so it can be
+	// passed in via WithClusterLister (P3-T22). The Manager is the
+	// federation surface's source-of-truth list of attached clusters.
 	var (
 		informerStarter componentStarter
 		crdStarter      componentStarter
+		mcMgr           *multicluster.Manager
+		mcKubeconfigs   map[string][]byte
 	)
 	if os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") == "true" {
 		mcDir := os.Getenv("KUBEATLAS_MULTICLUSTER_KUBECONFIG_DIR")
@@ -610,14 +615,10 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		if len(kubeconfigs) == 0 {
 			log.Fatalf("multicluster: no kubeconfig files found in %s", mcDir)
 		}
-		mcMgr := multicluster.New(graphStore,
+		mcKubeconfigs = kubeconfigs
+		mcMgr = multicluster.New(graphStore,
 			multicluster.WithFactory(multicluster.DefaultInformerFactory(baseInformerOpts...)),
 		)
-		informerStarter = &multiclusterStarter{
-			mgr:         mcMgr,
-			kubeconfigs: kubeconfigs,
-			onReady:     srv.Readiness().MarkReady,
-		}
 		// CRD discovery is per-cluster work that doesn't fit the
 		// single-shared-CRD-informer model. P3-T21 ships the core-GVR
 		// federation; per-cluster CRD discovery is a follow-up.
@@ -631,6 +632,19 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		crdStarter = crd.New(client.Dynamic(), graphStore,
 			crd.WithRegoEvaluator(regoEngine),
 		)
+	}
+	if mcMgr != nil {
+		// Re-bind srv with the cluster lister now that mcMgr exists.
+		// api.New is cheap (no listener until Start) so building it
+		// twice in the multicluster branch is fine; baseInformerOpts
+		// holds no reference to srv, so the swap is safe.
+		apiOpts = append(apiOpts, api.WithClusterLister(mcMgr))
+		srv = api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(), apiOpts...)
+		informerStarter = &multiclusterStarter{
+			mgr:         mcMgr,
+			kubeconfigs: mcKubeconfigs,
+			onReady:     srv.Readiness().MarkReady,
+		}
 	}
 
 	// Run all three components under the same cancellable context.

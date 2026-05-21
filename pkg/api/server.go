@@ -77,6 +77,22 @@ type Server struct {
 	// memory-bound; excess callers get 429 rather than piling up
 	// dot processes (ADR 0012).
 	exportSem chan struct{}
+
+	// clusterLister is the federation surface's source of truth for
+	// "which clusters are attached?" (P3-T22). main.go wires it from
+	// the multicluster.Manager when multicluster.enabled=true; left
+	// nil otherwise so /api/v1/federation/clusters reports
+	// single-cluster mode (an empty list) and /federation/graph
+	// returns 503.
+	clusterLister ClusterLister
+}
+
+// ClusterLister returns the names of every cluster the federation
+// surface should expose. The multicluster.Manager satisfies it; the
+// interface keeps pkg/api free of a hard dependency on
+// pkg/multicluster (and lets tests stub a fixed list).
+type ClusterLister interface {
+	ListClusters() []string
 }
 
 // ServerOption tweaks an optional aspect of the Server. Required
@@ -84,6 +100,14 @@ type Server struct {
 // UI, future hooks) ride on options so existing call sites and tests
 // don't break each time something is added.
 type ServerOption func(*Server)
+
+// WithClusterLister registers the source of truth for the federation
+// surface (P3-T22). main.go passes the multicluster.Manager when
+// multicluster.enabled=true; the federation handlers report
+// single-cluster mode when no lister is wired.
+func WithClusterLister(l ClusterLister) ServerOption {
+	return func(s *Server) { s.clusterLister = l }
+}
 
 // WithWebFS mounts the given filesystem under "/" so the Web UI
 // bundle can be served from the same binary as the API. The handler
