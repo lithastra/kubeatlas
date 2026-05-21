@@ -71,6 +71,11 @@ func Default() *Registry {
 	r.Register(&SelectsNPExtractor{})
 	r.Register(&AllowsFromExtractor{})
 	r.Register(&AllowsToExtractor{})
+	// F-209.1 (P3-T23). Safe to register on every cluster — the
+	// extractor no-ops on non-EKS resources (non-SA, or SAs without
+	// the eks.amazonaws.com/role-arn annotation) so the cost on
+	// non-EKS installs is one map lookup per SA event.
+	r.Register(&EKSIdentityExtractor{})
 	return r
 }
 
