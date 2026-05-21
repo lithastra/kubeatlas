@@ -106,6 +106,16 @@ const (
 	EdgeTypeSelectsNP  EdgeType = "SELECTS_NP"
 	EdgeTypeAllowsFrom EdgeType = "ALLOWS_FROM"
 	EdgeTypeAllowsTo   EdgeType = "ALLOWS_TO"
+
+	// Phase 3 F-209 platform-identity edges. KubeAtlas does NOT call
+	// any cloud SDK (invariant 2.7); the edges are derived purely
+	// from K8s metadata the platform's identity webhook writes —
+	// EKS IRSA annotations, AKS Workload Identity labels, GKE
+	// Workload Identity annotations. The To endpoint is a synthetic
+	// "ExternalIdentity" id that no informer creates as a resource
+	// row; UI consumers decide whether to render dangling endpoints
+	// (same convention as RBAC User / Group subjects).
+	EdgeTypeBindsPlatformIdentity EdgeType = "BINDS_PLATFORM_IDENTITY"
 )
 
 // AllEdgeTypes is the canonical edge-type list. Adding a new type
@@ -127,6 +137,7 @@ var AllEdgeTypes = []EdgeType{
 	EdgeTypeSelectsNP,
 	EdgeTypeAllowsFrom,
 	EdgeTypeAllowsTo,
+	EdgeTypeBindsPlatformIdentity,
 }
 
 // Edge represents a directed dependency between two resources.
