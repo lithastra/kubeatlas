@@ -71,11 +71,14 @@ func Default() *Registry {
 	r.Register(&SelectsNPExtractor{})
 	r.Register(&AllowsFromExtractor{})
 	r.Register(&AllowsToExtractor{})
-	// F-209.1 (P3-T23). Safe to register on every cluster — the
-	// extractor no-ops on non-EKS resources (non-SA, or SAs without
-	// the eks.amazonaws.com/role-arn annotation) so the cost on
-	// non-EKS installs is one map lookup per SA event.
-	r.Register(&EKSIdentityExtractor{})
+	// F-209 platform-identity extractors. Safe to register on every
+	// cluster — each no-ops on the metadata it doesn't recognise, so
+	// the cost on non-cloud installs is a few map lookups per SA
+	// event. Edges share BINDS_PLATFORM_IDENTITY but the synthetic
+	// endpoint id encodes the platform so the UI can distinguish.
+	r.Register(&EKSIdentityExtractor{}) // F-209.1, P3-T23
+	r.Register(&AKSIdentityExtractor{}) // F-209.2, P3-T24
+	r.Register(&GKEIdentityExtractor{}) // F-209.3, P3-T25
 	return r
 }
 
