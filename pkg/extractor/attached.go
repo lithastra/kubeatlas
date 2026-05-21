@@ -40,7 +40,7 @@ func (AttachedExtractor) Extract(_ context.Context, r graph.Resource, _ graph.Re
 		if ns == "" {
 			ns = defaultNS
 		}
-		to := graph.Resource{Kind: kind, Name: name, Namespace: ns}.ID()
+		to := graph.Resource{Kind: kind, Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
 		if _, ok := seen[to]; ok {
 			continue
 		}

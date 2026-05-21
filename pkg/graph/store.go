@@ -298,10 +298,17 @@ type TraverseOptions struct {
 // Filter narrows down ListResources results. Empty fields mean "any".
 // Labels match exactly; selector-style matching belongs to the
 // extractor layer, not the store.
+//
+// ClusterID is the federation gate (P3-T26 follow-up to P3-T20).
+// Empty matches every cluster (the single-cluster v1.2 baseline);
+// non-empty matches exactly that ClusterID. Selector extractors set
+// it from their source resource's ClusterID so a multi-cluster
+// Service does not match Pods in a sibling cluster.
 type Filter struct {
 	Kind      string
 	Namespace string
 	Labels    map[string]string
+	ClusterID string
 }
 
 // ErrNotFound is returned by GetResource when the requested ID does

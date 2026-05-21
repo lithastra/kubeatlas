@@ -28,7 +28,7 @@ func (ConfigMapExtractor) Extract(_ context.Context, r graph.Resource, _ graph.R
 		if name == "" {
 			return nil
 		}
-		to := graph.Resource{Kind: "ConfigMap", Name: name, Namespace: ns}.ID()
+		to := graph.Resource{Kind: "ConfigMap", Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
 		if _, ok := seen[to]; ok {
 			return nil
 		}

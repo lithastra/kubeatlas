@@ -228,8 +228,9 @@ func (s *Store) ListResources(ctx context.Context, filter graph.Filter) ([]graph
 		    $3::jsonb IS NULL
 		    OR (data->'labels') @> $3::jsonb
 		  )
+		  AND ($4::text = '' OR cluster_id = $4)
 	`
-	rows, err := s.pool.Query(ctx, sql, filter.Kind, filter.Namespace, labelsJSON)
+	rows, err := s.pool.Query(ctx, sql, filter.Kind, filter.Namespace, labelsJSON, filter.ClusterID)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.ListResources: query: %w", err)
 	}

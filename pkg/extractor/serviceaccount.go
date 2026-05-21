@@ -32,6 +32,6 @@ func (ServiceAccountExtractor) Extract(_ context.Context, r graph.Resource, _ gr
 	if name == "" {
 		name = "default"
 	}
-	to := graph.Resource{Kind: "ServiceAccount", Name: name, Namespace: r.Namespace}.ID()
+	to := graph.Resource{Kind: "ServiceAccount", Name: name, Namespace: r.Namespace, ClusterID: r.ClusterID}.ID()
 	return []graph.Edge{{From: r.ID(), To: to, Type: graph.EdgeTypeUsesServiceAccount}}, nil
 }

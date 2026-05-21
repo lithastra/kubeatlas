@@ -53,7 +53,7 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 		}
 		out = append(out, graph.Edge{
 			From: r.ID(),
-			To:   graph.Resource{Kind: kind, Namespace: ns, Name: name}.ID(),
+			To:   graph.Resource{Kind: kind, Namespace: ns, Name: name, ClusterID: r.ClusterID}.ID(),
 			Type: graph.EdgeTypeBindsSubject,
 		})
 	}
@@ -92,7 +92,7 @@ func (BindsRoleExtractor) Extract(_ context.Context, r graph.Resource, _ graph.R
 	}
 	return []graph.Edge{{
 		From: r.ID(),
-		To:   graph.Resource{Kind: kind, Namespace: targetNS, Name: name}.ID(),
+		To:   graph.Resource{Kind: kind, Namespace: targetNS, Name: name, ClusterID: r.ClusterID}.ID(),
 		Type: graph.EdgeTypeBindsRole,
 	}}, nil
 }
