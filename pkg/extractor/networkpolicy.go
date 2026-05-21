@@ -71,8 +71,12 @@ func (SelectsNPExtractor) Extract(ctx context.Context, r graph.Resource, q graph
 		return nil, nil
 	}
 	selector := nestedStringMap(r.Raw, "spec", "podSelector", "matchLabels")
-	// podSelector resolves only against the policy's own namespace.
-	candidates, err := q.ListResources(ctx, graph.Filter{Namespace: r.Namespace})
+	// podSelector resolves only against the policy's own namespace,
+	// and only its own cluster in multi-cluster mode.
+	candidates, err := q.ListResources(ctx, graph.Filter{
+		Namespace: r.Namespace,
+		ClusterID: r.ClusterID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("SelectsNPExtractor: list namespace %q: %w", r.Namespace, err)
 	}
@@ -191,7 +195,7 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 
 	// namespaceSelector only — edge target is each matching Namespace.
 	if hasNsSel && !hasPodSel {
-		namespaces, err := q.ListResources(ctx, graph.Filter{Kind: "Namespace"})
+		namespaces, err := q.ListResources(ctx, graph.Filter{Kind: "Namespace", ClusterID: r.ClusterID})
 		if err != nil {
 			return nil, fmt.Errorf("peerEdges: list namespaces: %w", err)
 		}
@@ -208,7 +212,10 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 	// podSelector only — edge target is each matching Pod in
 	// r.Namespace (the policy's own namespace).
 	if hasPodSel && !hasNsSel {
-		candidates, err := q.ListResources(ctx, graph.Filter{Namespace: r.Namespace})
+		candidates, err := q.ListResources(ctx, graph.Filter{
+			Namespace: r.Namespace,
+			ClusterID: r.ClusterID,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("peerEdges: list namespace %q: %w", r.Namespace, err)
 		}
@@ -225,7 +232,7 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 	// Both selectors — pods in matching namespaces whose labels
 	// match podSelector. Resolve namespaces first (small set) then
 	// list each matching namespace's resources.
-	namespaces, err := q.ListResources(ctx, graph.Filter{Kind: "Namespace"})
+	namespaces, err := q.ListResources(ctx, graph.Filter{Kind: "Namespace", ClusterID: r.ClusterID})
 	if err != nil {
 		return nil, fmt.Errorf("peerEdges: list namespaces: %w", err)
 	}
@@ -234,7 +241,7 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 		if !matchLabelSelector(nsRes.Labels, nsSel) {
 			continue
 		}
-		pods, err := q.ListResources(ctx, graph.Filter{Namespace: nsRes.Name})
+		pods, err := q.ListResources(ctx, graph.Filter{Namespace: nsRes.Name, ClusterID: r.ClusterID})
 		if err != nil {
 			return nil, fmt.Errorf("peerEdges: list namespace %q: %w", nsRes.Name, err)
 		}

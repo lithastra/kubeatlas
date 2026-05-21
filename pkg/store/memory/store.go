@@ -136,6 +136,9 @@ func (s *Store) ListResources(_ context.Context, filter graph.Filter) ([]graph.R
 	defer s.mu.RUnlock()
 	out := make([]graph.Resource, 0, len(s.resources))
 	for _, r := range s.resources {
+		if filter.ClusterID != "" && r.ClusterID != filter.ClusterID {
+			continue
+		}
 		if filter.Kind != "" && r.Kind != filter.Kind {
 			continue
 		}

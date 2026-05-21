@@ -27,7 +27,7 @@ func (VolumeExtractor) Extract(_ context.Context, r graph.Resource, _ graph.Reso
 		if name == "" {
 			continue
 		}
-		to := graph.Resource{Kind: "PersistentVolumeClaim", Name: name, Namespace: ns}.ID()
+		to := graph.Resource{Kind: "PersistentVolumeClaim", Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
 		if _, ok := seen[to]; ok {
 			continue
 		}

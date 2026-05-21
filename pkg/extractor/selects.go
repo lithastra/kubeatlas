@@ -26,7 +26,12 @@ func (SelectsExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 	}
 	// A Service only selects Pods in its own namespace, so the query
 	// is scoped to that namespace rather than the whole graph.
-	candidates, err := q.ListResources(ctx, graph.Filter{Namespace: r.Namespace})
+	// ClusterID further scopes the query in multi-cluster mode so a
+	// prod Service does not select a staging Pod (P3-T21 followup).
+	candidates, err := q.ListResources(ctx, graph.Filter{
+		Namespace: r.Namespace,
+		ClusterID: r.ClusterID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("SelectsExtractor: list namespace %q: %w", r.Namespace, err)
 	}

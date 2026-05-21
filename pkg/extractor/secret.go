@@ -28,7 +28,7 @@ func (SecretExtractor) Extract(_ context.Context, r graph.Resource, _ graph.Reso
 		if name == "" {
 			return nil
 		}
-		to := graph.Resource{Kind: "Secret", Name: name, Namespace: ns}.ID()
+		to := graph.Resource{Kind: "Secret", Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
 		if _, ok := seen[to]; ok {
 			return nil
 		}

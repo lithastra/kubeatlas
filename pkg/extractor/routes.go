@@ -47,7 +47,7 @@ func ingressEdges(r graph.Resource) []graph.Edge {
 			if name == "" {
 				continue
 			}
-			to := graph.Resource{Kind: "Service", Name: name, Namespace: ns}.ID()
+			to := graph.Resource{Kind: "Service", Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
 			if _, ok := seen[to]; ok {
 				continue
 			}
@@ -118,7 +118,7 @@ func httpRouteBackendEdges(r graph.Resource) []graph.Edge {
 			if ns == "" {
 				ns = defaultNS
 			}
-			to := graph.Resource{Kind: kind, Name: name, Namespace: ns}.ID()
+			to := graph.Resource{Kind: kind, Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
 			if _, ok := seen[to]; ok {
 				continue
 			}

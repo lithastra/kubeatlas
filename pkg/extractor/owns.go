@@ -25,7 +25,7 @@ func (OwnsExtractor) Extract(_ context.Context, r graph.Resource, _ graph.Resour
 	for _, o := range r.OwnerReferences {
 		edges = append(edges, graph.Edge{
 			From: r.ID(),
-			To:   graph.Resource{Kind: o.Kind, Name: o.Name, Namespace: r.Namespace}.ID(),
+			To:   graph.Resource{Kind: o.Kind, Name: o.Name, Namespace: r.Namespace, ClusterID: r.ClusterID}.ID(),
 			Type: graph.EdgeTypeOwns,
 		})
 	}
