@@ -209,7 +209,13 @@ boundaries:
   new `pkg/multicluster/` package, a `ClusterID` on the graph
   model, federation aggregator and `/federation` route group, and
   cluster-scoped WebSocket subscriptions. `kubeatlas` accepts
-  `--kubeconfig=ctx1,ctx2` to attach multiple contexts.
+  `--kubeconfig=ctx1,ctx2` to attach multiple contexts. **v1.3.0
+  ships the data layer only** — informers, aggregator, and the
+  `GET /api/v1/federation/{clusters,graph}` endpoints. The Web UI
+  cluster switcher (multi-select picker plus per-cluster colouring
+  in the topology view) follows in **v1.3.1**; operators consume
+  the federation surface via the API, `kubectl atlas --server`, or
+  Headlamp in the interim.
 - **Platform-identity edges (F-209)** — model the K8s ⇄ cloud
   identity bindings that today live outside the graph as plain
   metadata:
@@ -227,6 +233,24 @@ boundaries:
 - **v1.3 perf baseline** — dual-tier (Tier 1 + Tier 2) on the
   10K-resource stress fixture; multi-cluster merge bench and a
   cluster-disconnect chaos scenario.
+
+### v1.3.1 (follow-up) — Federation Web UI cluster switcher
+
+A separate cut, decoupled from the v1.3.0 release so the UX gets
+its own design pass:
+
+- **Sidebar cluster picker** — multi-select against
+  `/api/v1/federation/clusters`; selection persists in the URL
+  search param (`?cluster=a,b`) so federated views are shareable.
+- **Per-cluster colouring in the topology view** — Cytoscape
+  reads `clusterId` on every node and renders one colour per
+  member cluster (MUI palette).
+- **Filter composition** — the cluster picker composes with the
+  v1.0 namespace dropdown and the v1.1 label filter (intersection
+  semantics).
+- **Single-cluster zero regression** — the picker hides itself
+  when the API reports `mode=single`; a single-cluster install
+  sees exactly the v1.3.0 UI.
 
 ## Beyond Phase 3 (sketch)
 

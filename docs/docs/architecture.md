@@ -5,10 +5,12 @@ title: Architecture
 
 # Architecture
 
-This page summarises the design as it stands in v1.0.0. Multi-
-cluster federation and the Headlamp plugin remain deferred to
-v1.1 and are called out inline; everything else from the Phase 2
-plan is shipped.
+This page summarises the design as it stands at v1.2.0 (with the
+v1.3 multi-cluster federation data layer landed in main). The
+Headlamp plugin shipped in v1.1; multi-cluster federation lands in
+v1.3 — its data layer + `/api/v1/federation/*` endpoints in v1.3.0,
+the Web UI cluster switcher in v1.3.1. Anything else flagged
+"deferred" inline below is called out at the place it matters.
 
 ## Six design principles
 
