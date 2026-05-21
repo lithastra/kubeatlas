@@ -575,7 +575,15 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 			api.WithSnapshotMetrics(snapWriter.Metrics(), snapWriter.QueueDepth),
 			api.WithSnapshots(snapRetention))
 	}
-	srv := api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(), apiOpts...)
+	// KUBEATLAS_API_ADDR overrides the default ":8080" listen address.
+	// The Helm chart never sets it (the Pod always serves :8080 on the
+	// PodSpec port); local perf / chaos harnesses set it to avoid
+	// clashing with anything else already on the host.
+	apiAddr := os.Getenv("KUBEATLAS_API_ADDR")
+	if apiAddr == "" {
+		apiAddr = api.DefaultAddr
+	}
+	srv := api.New(apiAddr, graphStore, aggregator.NewRegistry(), apiOpts...)
 
 	// Informer options. WithOnSynced / WithBroadcaster depend on srv,
 	// so this list is built after srv exists. The snapshot sink is
@@ -639,7 +647,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		// twice in the multicluster branch is fine; baseInformerOpts
 		// holds no reference to srv, so the swap is safe.
 		apiOpts = append(apiOpts, api.WithClusterLister(mcMgr))
-		srv = api.New(api.DefaultAddr, graphStore, aggregator.NewRegistry(), apiOpts...)
+		srv = api.New(apiAddr, graphStore, aggregator.NewRegistry(), apiOpts...)
 		informerStarter = &multiclusterStarter{
 			mgr:         mcMgr,
 			kubeconfigs: mcKubeconfigs,
