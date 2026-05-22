@@ -1,5 +1,5 @@
 {
-  "description": "v1.3.0 perf baseline. Captured against the two-cluster federation fixture (kubeatlas-prod + kubeatlas-staging kind clusters, each loaded with the stress-test-5k generator). The federation endpoints are the v1.3 addition; single-cluster numbers are unchanged from v1.2.0 and continue to live in perf-baseline-v1.2.json. The federation/graph latency reflects the cost of serialising a flat union of every resource and intra-cluster edge across the named members — at ~15K nodes and ~26K edges the JSON marshal dominates; a paginated or streaming federation read is a likely v1.3.x candidate.",
+  "description": "v1.3.0 perf baseline. Captured against the two-cluster federation fixture (kubeatlas-prod + kubeatlas-staging kind clusters, each loaded with the stress-test-5k generator). /federation/graph supports two zoom levels: 'resource' (the default flat union — every resource across the named members) and 'cluster' (one summary Node per cluster with a resource count and a top-N kind summary). The resource-level latency is JSON-marshal-bound at this scale; the cluster-level summary is the small-payload form intended for the federation landing page and runs ~200x faster on the same fixture. Single-cluster numbers are unchanged from v1.2.0 and continue to live in perf-baseline-v1.2.json.",
   "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
   "phase": "3-v1.3.0",
   "fixture": {
@@ -15,15 +15,18 @@
     "samples_per_endpoint": 100
   },
   "federation": {
-    "captured_at": "2026-05-22T09:20:58+09:00",
+    "captured_at": "2026-05-22T22:24:00+09:00",
     "member_count": 2,
     "samples_per_endpoint": 100,
     "federation_clusters_p50_ms": 1.150,
     "federation_clusters_p95_ms": 1.508,
     "federation_clusters_p99_ms": 2.521,
-    "federation_graph_p50_ms": 2170.475,
-    "federation_graph_p95_ms": 2385.586,
-    "federation_graph_p99_ms": 2472.749,
+    "federation_graph_resource_p50_ms": 2177.028,
+    "federation_graph_resource_p95_ms": 2244.095,
+    "federation_graph_resource_p99_ms": 2273.994,
+    "federation_graph_cluster_p50_ms": 5.977,
+    "federation_graph_cluster_p95_ms": 11.269,
+    "federation_graph_cluster_p99_ms": 13.905,
     "captured_on": {
       "os": "linux",
       "arch": "x86_64",

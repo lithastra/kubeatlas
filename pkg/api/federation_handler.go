@@ -6,6 +6,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
@@ -80,7 +81,22 @@ func (s *Server) handleFederationGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	view, err := aggregator.MergeClusters(r.Context(), s.store, clusters)
+	level := strings.TrimSpace(r.URL.Query().Get("level"))
+	if level == "" {
+		level = "resource"
+	}
+	var view *aggregator.FederatedView
+	var err error
+	switch level {
+	case "resource":
+		view, err = aggregator.MergeClusters(r.Context(), s.store, clusters)
+	case "cluster":
+		view, err = aggregator.MergeClustersAtClusterLevel(r.Context(), s.store, clusters)
+	default:
+		writeJSONError(w, http.StatusBadRequest,
+			"unknown level "+strconv.Quote(level)+" (want 'resource' or 'cluster')")
+		return
+	}
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
