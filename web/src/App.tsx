@@ -1,6 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
-import { AppShell } from './components/AppShell';
+import { AtlasShell } from './shell';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { DocsPage } from './pages/DocsPage';
 import { ResourcePage } from './pages/ResourcePage';
@@ -9,7 +9,7 @@ import { SearchPage } from './pages/SearchPage';
 import { SnapshotsPage } from './pages/SnapshotsPage';
 import { TopologyPage } from './pages/TopologyPage';
 
-// App is the routing root. AppShell renders the persistent chrome
+// App is the routing root. AtlasShell renders the persistent chrome
 // (top bar + nav drawer); each route renders inside its main area.
 //
 // Routes are wrapped in an ErrorBoundary so a render-time throw in a
@@ -18,11 +18,11 @@ import { TopologyPage } from './pages/TopologyPage';
 // route change.
 //
 // Adding a page means: create the component under src/pages/, add a
-// <Route> here, and add a nav entry in AppShell's navItems.
+// <Route> here, and add a nav entry in AtlasShell's navItems.
 export function App() {
   const location = useLocation();
   return (
-    <AppShell>
+    <AtlasShell>
       <ErrorBoundary resetKey={location.pathname}>
         <Routes>
           <Route path="/" element={<Navigate to="/resources" replace />} />
@@ -34,6 +34,6 @@ export function App() {
           <Route path="/docs" element={<DocsPage />} />
         </Routes>
       </ErrorBoundary>
-    </AppShell>
+    </AtlasShell>
   );
 }
