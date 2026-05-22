@@ -89,6 +89,103 @@ func TestMergeClusters_DedupesClusterIDsAndSortsDeterministically(t *testing.T) 
 	}
 }
 
+func TestMergeClustersAtClusterLevel_OneNodePerCluster(t *testing.T) {
+	ctx := context.Background()
+	s := memory.New()
+	// prod gets 2 Pods + 1 ConfigMap across two namespaces.
+	for _, r := range []graph.Resource{
+		{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"},
+		{Kind: "Pod", Name: "b", Namespace: "ns2", ClusterID: "prod"},
+		{Kind: "ConfigMap", Name: "c", Namespace: "ns1", ClusterID: "prod"},
+		// staging gets one Pod, one namespace.
+		{Kind: "Pod", Name: "x", Namespace: "ns1", ClusterID: "staging"},
+	} {
+		if err := s.UpsertResource(ctx, r); err != nil {
+			t.Fatalf("UpsertResource: %v", err)
+		}
+	}
+	view, err := MergeClustersAtClusterLevel(ctx, s, []string{"prod", "staging"})
+	if err != nil {
+		t.Fatalf("MergeClustersAtClusterLevel: %v", err)
+	}
+	if view.Level != "cluster" {
+		t.Errorf("Level = %q, want 'cluster'", view.Level)
+	}
+	if len(view.Nodes) != 2 {
+		t.Fatalf("len(Nodes) = %d, want 2 (one per cluster)", len(view.Nodes))
+	}
+	if len(view.Edges) != 0 {
+		t.Errorf("len(Edges) = %d, want 0 (v1.3 federation has no cross-cluster edges)", len(view.Edges))
+	}
+
+	byID := map[string]FederatedNode{}
+	for _, n := range view.Nodes {
+		byID[n.ID] = n
+	}
+	prod := byID["prod"]
+	if prod.Type != "cluster" || prod.ClusterID != "prod" || prod.Label != "prod" {
+		t.Errorf("prod node = %+v", prod)
+	}
+	if prod.ResourceCount != 3 {
+		t.Errorf("prod.ResourceCount = %d, want 3", prod.ResourceCount)
+	}
+	if prod.NamespaceCount != 2 {
+		t.Errorf("prod.NamespaceCount = %d, want 2", prod.NamespaceCount)
+	}
+	// KindSummary folds via foldKindSummary; prod has Pod=2,
+	// ConfigMap=1 — both fit under summaryKindLimit (5).
+	if prod.KindSummary["Pod"] != 2 || prod.KindSummary["ConfigMap"] != 1 {
+		t.Errorf("prod.KindSummary = %v", prod.KindSummary)
+	}
+	staging := byID["staging"]
+	if staging.ResourceCount != 1 || staging.NamespaceCount != 1 {
+		t.Errorf("staging summary wrong: %+v", staging)
+	}
+}
+
+func TestMergeClustersAtClusterLevel_EmptyClusterStillGetsANode(t *testing.T) {
+	// A federation member that's attached but holds no resources
+	// should still appear in the cluster-level view — the UI needs
+	// to render it as a cluster card with zero resources, not omit
+	// it. Confirms zero-count clusters survive the aggregation.
+	ctx := context.Background()
+	s := memory.New()
+	view, err := MergeClustersAtClusterLevel(ctx, s, []string{"prod", "staging"})
+	if err != nil {
+		t.Fatalf("MergeClustersAtClusterLevel: %v", err)
+	}
+	if len(view.Nodes) != 2 {
+		t.Fatalf("len(Nodes) = %d, want 2", len(view.Nodes))
+	}
+	for _, n := range view.Nodes {
+		if n.ResourceCount != 0 || n.NamespaceCount != 0 {
+			t.Errorf("empty cluster node has non-zero counts: %+v", n)
+		}
+	}
+}
+
+func TestMergeClustersAtClusterLevel_NoClustersIsError(t *testing.T) {
+	_, err := MergeClustersAtClusterLevel(context.Background(), memory.New(), nil)
+	if err == nil {
+		t.Fatal("want error for empty cluster list")
+	}
+}
+
+func TestMergeClusters_LevelSetToResource(t *testing.T) {
+	// MergeClusters sets Level="resource" so federation/graph
+	// responses self-identify their zoom.
+	ctx := context.Background()
+	s := memory.New()
+	_ = s.UpsertResource(ctx, graph.Resource{Kind: "Pod", Name: "a", Namespace: "ns1", ClusterID: "prod"})
+	v, err := MergeClusters(ctx, s, []string{"prod"})
+	if err != nil {
+		t.Fatalf("MergeClusters: %v", err)
+	}
+	if v.Level != "resource" {
+		t.Errorf("Level = %q, want 'resource'", v.Level)
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

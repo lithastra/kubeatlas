@@ -273,26 +273,34 @@ func openAPIComponentsFor(version string) map[string]any {
 		}
 		schemas["FederatedNode"] = map[string]any{
 			"type":        "object",
-			"description": "A node in the federation view. Mirrors a raw graph resource and always carries its ClusterID for UI grouping.",
+			"description": "A node in the federation view. The shape is a union: type='resource' carries Kind / Namespace / Name (raw graph resource); type='cluster' carries Label / ResourceCount / NamespaceCount / KindSummary (per-cluster summary, returned by level=cluster). Every node always carries ID and ClusterID.",
 			"properties": map[string]any{
-				"id":        map[string]any{"type": "string"},
-				"type":      map[string]any{"type": "string", "enum": []any{"resource"}},
-				"clusterId": map[string]any{"type": "string"},
-				"kind":      map[string]any{"type": "string"},
-				"namespace": map[string]any{"type": "string"},
-				"name":      map[string]any{"type": "string"},
+				"id":             map[string]any{"type": "string"},
+				"type":           map[string]any{"type": "string", "enum": []any{"resource", "cluster"}},
+				"clusterId":      map[string]any{"type": "string"},
+				"kind":           map[string]any{"type": "string"},
+				"namespace":      map[string]any{"type": "string"},
+				"name":           map[string]any{"type": "string"},
+				"label":          map[string]any{"type": "string"},
+				"resourceCount":  map[string]any{"type": "integer"},
+				"namespaceCount": map[string]any{"type": "integer"},
+				"kindSummary": map[string]any{
+					"type":                 "object",
+					"additionalProperties": map[string]any{"type": "integer"},
+				},
 			},
-			"required": []any{"id", "type", "clusterId", "kind", "name"},
+			"required": []any{"id", "type", "clusterId"},
 		}
 		schemas["FederatedView"] = map[string]any{
 			"type":        "object",
-			"description": "Body of /api/v1/federation/graph. Flat union of resources and intra-cluster edges across the named clusters; cross-cluster edges are deferred to a follow-up.",
+			"description": "Body of /api/v1/federation/graph. level='resource' is the default — a flat union of resources and intra-cluster edges across the named clusters. level='cluster' is the small-payload zoom — one Node per cluster with a resource count and a top-N kind summary; edges are always empty at this level. Cross-cluster edges are deferred to a follow-up release.",
 			"properties": map[string]any{
+				"level":    map[string]any{"type": "string", "enum": []any{"resource", "cluster"}},
 				"clusters": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 				"nodes":    map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/FederatedNode"}},
 				"edges":    map[string]any{"$ref": "#/components/schemas/EdgeList"},
 			},
-			"required": []any{"clusters", "nodes", "edges"},
+			"required": []any{"level", "clusters", "nodes", "edges"},
 		}
 	}
 	return c

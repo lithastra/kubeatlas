@@ -305,9 +305,10 @@ func (s *Server) Routes() []RouteInfo {
 			Method:      "GET",
 			Pattern:     "/api/v1/federation/graph",
 			Summary:     "Federated graph across multiple clusters",
-			Description: "Returns a flat union of resources and intra-cluster edges across the named member clusters. Every node carries its ClusterID so the UI can group / colour by cluster. 503 when multicluster is not enabled.",
+			Description: "Returns either a flat union of resources and intra-cluster edges across the named member clusters (level=resource, the default), or one Node per cluster with a resource count and a top-N kind summary (level=cluster, small payload). Every node carries its ClusterID so the UI can group / colour by cluster. 503 when multicluster is not enabled.",
 			QueryParams: []ParamSpec{
 				{Name: "cluster", Required: true, Description: "Comma-separated or repeated cluster names; every name must be attached.", Type: "string"},
+				{Name: "level", Description: "View zoom; defaults to 'resource'. 'cluster' returns one summary Node per attached cluster.", Type: "string", Enum: []string{"resource", "cluster"}},
 			},
 			Response: ResponseSpec{Description: "Federated graph view", SchemaRef: "FederatedView"},
 			handler:  s.handleFederationGraph,

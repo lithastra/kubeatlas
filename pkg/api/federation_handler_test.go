@@ -122,3 +122,86 @@ func TestFederationGraph_HappyPathMergesAttachedClusters(t *testing.T) {
 		t.Errorf("Edges = %d, want 1 (prod api→cfg)", len(view.Edges))
 	}
 }
+
+func TestFederationGraph_LevelClusterReturnsSummaries(t *testing.T) {
+	seed := func(s graph.GraphStore) {
+		ctx := context.Background()
+		for _, r := range []graph.Resource{
+			{Kind: "Pod", Name: "api", Namespace: "ns1", ClusterID: "prod"},
+			{Kind: "ConfigMap", Name: "cfg", Namespace: "ns1", ClusterID: "prod"},
+			{Kind: "Pod", Name: "api", Namespace: "ns1", ClusterID: "staging"},
+		} {
+			_ = s.UpsertResource(ctx, r)
+		}
+	}
+	base, _, stop := seedAndServe(t, seed,
+		api.WithClusterLister(stubLister{clusters: []string{"prod", "staging"}}),
+	)
+	defer stop()
+
+	resp, body := getJSON(t, base+"/api/v1/federation/graph?cluster=prod,staging&level=cluster", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", resp.StatusCode, body)
+	}
+	var view struct {
+		Level    string                   `json:"level"`
+		Clusters []string                 `json:"clusters"`
+		Nodes    []map[string]interface{} `json:"nodes"`
+		Edges    []map[string]interface{} `json:"edges"`
+	}
+	if err := json.Unmarshal(body, &view); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if view.Level != "cluster" {
+		t.Errorf("Level = %q, want 'cluster'", view.Level)
+	}
+	if len(view.Nodes) != 2 {
+		t.Fatalf("Nodes = %d, want 2 (one per cluster)", len(view.Nodes))
+	}
+	if len(view.Edges) != 0 {
+		t.Errorf("Edges = %d, want 0", len(view.Edges))
+	}
+	// Each summary node has type='cluster' and the counts populated.
+	byID := map[string]map[string]interface{}{}
+	for _, n := range view.Nodes {
+		byID[n["id"].(string)] = n
+	}
+	if byID["prod"]["type"] != "cluster" {
+		t.Errorf("prod type = %v, want 'cluster'", byID["prod"]["type"])
+	}
+	if byID["prod"]["resourceCount"].(float64) != 2 {
+		t.Errorf("prod.resourceCount = %v, want 2", byID["prod"]["resourceCount"])
+	}
+	if byID["staging"]["resourceCount"].(float64) != 1 {
+		t.Errorf("staging.resourceCount = %v, want 1", byID["staging"]["resourceCount"])
+	}
+}
+
+func TestFederationGraph_400OnUnknownLevel(t *testing.T) {
+	base, _, stop := seedAndServe(t, nil,
+		api.WithClusterLister(stubLister{clusters: []string{"prod"}}),
+	)
+	defer stop()
+	resp, _ := getJSON(t, base+"/api/v1/federation/graph?cluster=prod&level=bogus", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestFederationGraph_DefaultLevelIsResource(t *testing.T) {
+	base, _, stop := seedAndServe(t, nil,
+		api.WithClusterLister(stubLister{clusters: []string{"prod"}}),
+	)
+	defer stop()
+	resp, body := getJSON(t, base+"/api/v1/federation/graph?cluster=prod", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", resp.StatusCode, body)
+	}
+	var view struct {
+		Level string `json:"level"`
+	}
+	_ = json.Unmarshal(body, &view)
+	if view.Level != "resource" {
+		t.Errorf("Level = %q, want 'resource' as the default", view.Level)
+	}
+}
