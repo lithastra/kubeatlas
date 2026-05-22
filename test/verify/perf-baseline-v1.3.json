@@ -1,0 +1,34 @@
+{
+  "description": "v1.3.0 perf baseline. Captured against the two-cluster federation fixture (kubeatlas-prod + kubeatlas-staging kind clusters, each loaded with the stress-test-5k generator). The federation endpoints are the v1.3 addition; single-cluster numbers are unchanged from v1.2.0 and continue to live in perf-baseline-v1.2.json. The federation/graph latency reflects the cost of serialising a flat union of every resource and intra-cluster edge across the named members — at ~15K nodes and ~26K edges the JSON marshal dominates; a paginated or streaming federation read is a likely v1.3.x candidate.",
+  "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
+  "phase": "3-v1.3.0",
+  "fixture": {
+    "clusters": [
+      { "name": "prod", "approximate_resource_count": 7438 },
+      { "name": "staging", "approximate_resource_count": 7438 }
+    ],
+    "federation": {
+      "approximate_node_count": 14876,
+      "approximate_edge_count": 26290
+    },
+    "stress_generator": "test/perf/stress-5k-resources.sh per cluster",
+    "samples_per_endpoint": 100
+  },
+  "federation": {
+    "captured_at": "2026-05-22T09:20:58+09:00",
+    "member_count": 2,
+    "samples_per_endpoint": 100,
+    "federation_clusters_p50_ms": 1.150,
+    "federation_clusters_p95_ms": 1.508,
+    "federation_clusters_p99_ms": 2.521,
+    "federation_graph_p50_ms": 2170.475,
+    "federation_graph_p95_ms": 2385.586,
+    "federation_graph_p99_ms": 2472.749,
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2",
+      "runtime": "kubeatlas binary, KUBEATLAS_BACKEND=memory, multicluster.enabled=true, two kind clusters via Docker Desktop on WSL2"
+    }
+  }
+}

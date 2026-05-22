@@ -46,6 +46,12 @@ FIXTURE="${FIXTURE:-${REPO_ROOT}/test/perf/stress-5k-resources.sh}"
 KUBEATLAS_PORT="${KUBEATLAS_PORT:-18080}"
 
 CLUSTERS=(prod staging)
+# Each cluster's apiserver gets a fixed host port so Docker Desktop's
+# port forwarder doesn't have to allocate one — a workaround for a
+# recurring DD bug where dynamic port-publish requests fail with
+# "exposing port ... -> 127.0.0.1:0". The ports stay constant so the
+# kubeconfig exported in step 2 is stable across re-runs.
+declare -A CLUSTER_PORTS=( [prod]=16443 [staging]=16444 )
 
 PATH="${PATH}:/home/nick/go/bin"
 export PATH
@@ -59,18 +65,25 @@ mkdir -p "${STATE_DIR}/kubeconfigs" "${STATE_DIR}/logs"
 echo "==> Creating kind clusters"
 for c in "${CLUSTERS[@]}"; do
   name="kubeatlas-${c}"
+  port="${CLUSTER_PORTS[${c}]}"
   if kind get clusters | grep -qx "${name}"; then
-    echo "  reusing existing cluster ${name}"
+    echo "  reusing existing cluster ${name} (apiserver on 127.0.0.1:${port})"
   else
-    echo "  creating ${name}"
-    kind create cluster --name "${name}" --wait 120s >/dev/null
+    echo "  creating ${name} with apiserver on 127.0.0.1:${port}"
+    cfg="${STATE_DIR}/kind-${c}.yaml"
+    cat > "${cfg}" <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: ${port}
+EOF
+    kind create cluster --name "${name}" --config "${cfg}" --wait 120s >/dev/null
   fi
-  # Export the kubeconfig with internal kubelet-style endpoints so a
-  # process on the docker host (this script) can dial the apiserver.
-  # --internal would point at docker-container DNS names that only
-  # resolve inside the docker network; the default form uses
+  # Export the kubeconfig — the kind-default form uses
   # 127.0.0.1:<published-port> on the host's bridge, which is what
-  # we want here.
+  # we want for a process on the docker host (this script) to dial
+  # the apiserver.
   kind get kubeconfig --name "${name}" > "${STATE_DIR}/kubeconfigs/${c}"
 done
 
