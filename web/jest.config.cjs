@@ -22,9 +22,12 @@ const config = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
 
   // CSS imports become identity proxies so component tests can mount
-  // without a real bundler.
+  // without a real bundler. SVG imports (Vite resolves them via
+  // ?url / ?raw at build time) stub to a string so design primitives
+  // that consume the local icon sprite load under Jest too.
   moduleNameMapper: {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+    '\\.svg(\\?(url|raw))?$': '<rootDir>/test-stubs/svg.js',
   },
 
   // jest-dom matchers (toBeInTheDocument, etc.) load globally.
