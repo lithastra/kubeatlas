@@ -55,3 +55,98 @@ describe('elementsFromView', () => {
     expect(els[1].data.label).toBe('_cluster');
   });
 });
+
+import {
+  buildAtlasStylesheet,
+  classifyKind,
+  edgeStyleFor,
+  isInferredKind,
+  mix,
+  paletteFor,
+} from './cytoscape';
+
+describe('classifyKind (canonical + CRD fallback)', () => {
+  it('maps canonical Kinds to their family', () => {
+    expect(classifyKind('Deployment')).toBe('workload');
+    expect(classifyKind('ConfigMap')).toBe('configuration');
+    expect(classifyKind('ServiceAccount')).toBe('identity');
+    expect(classifyKind('Service')).toBe('network');
+    expect(classifyKind('PersistentVolumeClaim')).toBe('storage');
+  });
+
+  it('falls back on Binding suffix to identity', () => {
+    expect(classifyKind('AzureIdentityBinding')).toBe('identity');
+  });
+
+  it('falls back on Policy in the name to network', () => {
+    expect(classifyKind('PodSecurityPolicy')).toBe('network');
+  });
+
+  it('falls back on Route/Gateway suffix to network', () => {
+    expect(classifyKind('VirtualService')).toBe('network');
+    expect(classifyKind('TCPRoute')).toBe('network');
+  });
+
+  it('falls back to custom for truly unknown', () => {
+    expect(classifyKind('Workflow')).toBe('workload'); // ends in Set/Workload/Cluster/Job rule
+    expect(classifyKind('Frobnicator')).toBe('custom');
+  });
+});
+
+describe('isInferredKind', () => {
+  it('returns true for non-canonical Kinds', () => {
+    expect(isInferredKind('Workflow')).toBe(true);
+    expect(isInferredKind('Deployment')).toBe(false);
+  });
+});
+
+describe('edgeStyleFor', () => {
+  it('returns the canonical channel choices for OWNS', () => {
+    const s = edgeStyleFor('OWNS');
+    expect(s.weight).toBe('heavy');
+    expect(s.dash).toBe('solid');
+    expect(s.domain).toBe('structural');
+    expect(s.arrow).toBe('filled-tri');
+  });
+
+  it('flags ROUTES_TO as flow-animated', () => {
+    expect(edgeStyleFor('ROUTES_TO').flow).toBe(true);
+  });
+
+  it('falls back to a sensible default for unknown edges', () => {
+    const s = edgeStyleFor('UNKNOWN_EDGE_TYPE');
+    expect(s.weight).toBe('medium');
+    expect(s.domain).toBe('structural');
+  });
+});
+
+describe('mix', () => {
+  it('returns a at t=1 and b at t=0 (bg-dominant scale)', () => {
+    expect(mix('#ff0000', '#00ff00', 1).toLowerCase()).toBe('#ff0000');
+    expect(mix('#ff0000', '#00ff00', 0).toLowerCase()).toBe('#00ff00');
+  });
+
+  it('clamps near the midpoint', () => {
+    const m = mix('#ff0000', '#00ff00', 0.5);
+    expect(m.toLowerCase()).toBe('#808000');
+  });
+});
+
+describe('buildAtlasStylesheet', () => {
+  it('emits per-edge-type rules for every canonical edge type', () => {
+    const rules = buildAtlasStylesheet(paletteFor('parchment')) as Array<{
+      selector: string;
+    }>;
+    const edgeSelectors = rules.map((r) => r.selector).filter((s) => s.startsWith('edge[type ='));
+    expect(edgeSelectors).toContain('edge[type = "OWNS"]');
+    expect(edgeSelectors).toContain('edge[type = "USES_CONFIGMAP"]');
+    expect(edgeSelectors).toContain('edge[type = "BINDS_PLATFORM_IDENTITY"]');
+  });
+
+  it('emits a rule per node family', () => {
+    const rules = buildAtlasStylesheet(paletteFor('slate')) as Array<{ selector: string }>;
+    for (const f of ['workload', 'configuration', 'identity', 'network', 'storage', 'custom']) {
+      expect(rules.map((r) => r.selector)).toContain(`node[family = "${f}"]`);
+    }
+  });
+});
