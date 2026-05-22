@@ -1,0 +1,254 @@
+/* ============================================================
+ * atlas-themes.css — cartography design-system tokens for KubeAtlas.
+ *
+ * This file is a port of design/starter/atlas-themes.css. The source
+ * of truth is the design folder (the user maintains it as the
+ * lithastra/kubeatlas-design tree at /home/nick/kubeatlas-design/).
+ * To pick up changes, re-run that folder's generate.mjs and copy
+ * the new content over — see web/src/theme/README.md.
+ *
+ * Shape: shared :root scales (typography, spacing, motion, edge
+ * geometry, grid background, etc.) plus five per-theme blocks
+ * (parchment/survey/terrain/ink/slate). Flipping `data-theme` on
+ * <html> re-skins everything; components never hard-code colour or
+ * scale — they consume var(--atlas-*).
+ * ============================================================ */
+
+:root {
+  --atlas-font-display: Inria Serif, serif;
+  --atlas-font-ui: IBM Plex Sans, system-ui, sans-serif;
+  --atlas-font-mono: IBM Plex Mono, ui-monospace, monospace;
+  --atlas-font-tabular: IBM Plex Sans, monospace;
+  --atlas-text-display-size: 32px;
+  --atlas-text-display-lh: 38px;
+  --atlas-text-display-weight: 400;
+  --atlas-text-display-font: var(--atlas-font-display);
+  --atlas-text-heading-size: 18px;
+  --atlas-text-heading-lh: 24px;
+  --atlas-text-heading-weight: 400;
+  --atlas-text-heading-font: var(--atlas-font-display);
+  --atlas-text-body-size: 14px;
+  --atlas-text-body-lh: 20px;
+  --atlas-text-body-weight: 400;
+  --atlas-text-body-font: var(--atlas-font-ui);
+  --atlas-text-body-strong-size: 14px;
+  --atlas-text-body-strong-lh: 20px;
+  --atlas-text-body-strong-weight: 600;
+  --atlas-text-body-strong-font: var(--atlas-font-ui);
+  --atlas-text-caption-size: 12px;
+  --atlas-text-caption-lh: 16px;
+  --atlas-text-caption-weight: 400;
+  --atlas-text-caption-font: var(--atlas-font-ui);
+  --atlas-text-mono-size: 13px;
+  --atlas-text-mono-lh: 18px;
+  --atlas-text-mono-weight: 400;
+  --atlas-text-mono-font: var(--atlas-font-mono);
+  --atlas-text-scale-figure-size: 11px;
+  --atlas-text-scale-figure-lh: 14px;
+  --atlas-text-scale-figure-weight: 500;
+  --atlas-text-scale-figure-font: var(--atlas-font-tabular);
+  --atlas-space-0: 0;
+  --atlas-space-1: 4px;
+  --atlas-space-2: 8px;
+  --atlas-space-3: 12px;
+  --atlas-space-4: 16px;
+  --atlas-space-6: 24px;
+  --atlas-space-8: 32px;
+  --atlas-space-12: 48px;
+  --atlas-space-16: 64px;
+  --atlas-radius-0: 0;
+  --atlas-radius-1: 2px;
+  --atlas-radius-2: 4px;
+  --atlas-radius-pill: 9999px;
+  --atlas-chrome-top-bar: 48px;
+  --atlas-chrome-time-axis: 32px;
+  --atlas-chrome-left-cluster-strip: 56px;
+  --atlas-chrome-right-panel-width: 400px;
+  --atlas-chrome-right-panel-min: 240px;
+  --atlas-chrome-right-panel-max: 560px;
+  --atlas-edge-weight-heavy: 2.5px;
+  --atlas-edge-weight-medium: 1.75px;
+  --atlas-edge-weight-light: 1.25px;
+  --atlas-edge-weight-hairline: 0.75px;
+  --atlas-edge-dash-solid: 0;
+  --atlas-edge-dash-long-dash: 8 4;
+  --atlas-edge-dash-short-dash: 4 4;
+  --atlas-edge-dash-dotted: 2 3;
+  --atlas-edge-dash-long-short: 8 4 2 4;
+  --atlas-elevation-1: 0 1px 0 var(--atlas-border);
+  --atlas-elevation-2: 0 8px 24px rgba(43, 36, 24, 0.08);
+  --atlas-grid-size: 80px;
+  --atlas-grid-opacity: 0.30;
+  --atlas-grid-sub-size: 20px;
+  --atlas-grid-sub-opacity: 0.12;
+  --atlas-motion-instant: 0ms;
+  --atlas-motion-quick: 120ms;
+  --atlas-motion-standard: 400ms;
+  --atlas-motion-dramatic: 600ms;
+  --atlas-motion-entry: 700ms;
+  --atlas-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --atlas-ease-entry: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --atlas-ease-instant: linear;
+  --atlas-transition-quick: var(--atlas-motion-quick) var(--atlas-ease-standard);
+  --atlas-transition-standard: var(--atlas-motion-standard) var(--atlas-ease-standard);
+  --atlas-transition-dramatic: var(--atlas-motion-dramatic) var(--atlas-ease-standard);
+  --atlas-transition-entry: var(--atlas-motion-entry) var(--atlas-ease-entry);
+}
+
+/* Reduced motion: collapse all durations. Blast-radius dim/brighten
+ * stays a visual change, just instant — it is information, not
+ * decoration. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --atlas-motion-instant: 0.01ms;
+    --atlas-motion-quick: 0.01ms;
+    --atlas-motion-standard: 0.01ms;
+    --atlas-motion-dramatic: 0.01ms;
+    --atlas-motion-entry: 0.01ms;
+  }
+}
+
+:root[data-theme="parchment"] {
+  color-scheme: light;
+  --atlas-bg: #F4EFE6;
+  --atlas-surface: #ECE3D3;
+  --atlas-border: #DDD0BB;
+  --atlas-text-3: #B5A48A;
+  --atlas-text-2: #6B5A45;
+  --atlas-text-1: #2B2418;
+  --atlas-node-fill: #F4EFE6;
+  --atlas-healthy: #5C7F6B;
+  --atlas-warning: #B8893A;
+  --atlas-error: #A14638;
+  --atlas-orphan: #7E6BA8;
+  --atlas-select: #2F5E8C;
+  --edge-structural: #5C5142;
+  --edge-config: #6B8C76;
+  --edge-secret: #9B5B4E;
+  --edge-identity: #8A78B3;
+  --edge-traffic: #C49441;
+  --edge-policy: #4B6E94;
+  --edge-storage: #7A6B5A;
+  --edge-federation: #A14638;
+}
+
+:root[data-theme="survey"] {
+  color-scheme: light;
+  --atlas-bg: #EDF0F3;
+  --atlas-surface: #E0E6EC;
+  --atlas-border: #C9D2DB;
+  --atlas-text-3: #8A98A6;
+  --atlas-text-2: #51606E;
+  --atlas-text-1: #1E2A35;
+  --atlas-node-fill: #EDF0F3;
+  --atlas-healthy: #3F7D6E;
+  --atlas-warning: #A8742B;
+  --atlas-error: #A8443B;
+  --atlas-orphan: #665CA0;
+  --atlas-select: #1F6FA8;
+  --edge-structural: #4A5563;
+  --edge-config: #3F7D6E;
+  --edge-secret: #A8554A;
+  --edge-identity: #6E63A8;
+  --edge-traffic: #A8742B;
+  --edge-policy: #1F6FA8;
+  --edge-storage: #5E6B78;
+  --edge-federation: #A8443B;
+}
+
+:root[data-theme="terrain"] {
+  color-scheme: light;
+  --atlas-bg: #F1F0E4;
+  --atlas-surface: #E6E5D2;
+  --atlas-border: #D2D2BC;
+  --atlas-text-3: #A2A488;
+  --atlas-text-2: #5A5D43;
+  --atlas-text-1: #2C3019;
+  --atlas-node-fill: #F1F0E4;
+  --atlas-healthy: #5A7D4F;
+  --atlas-warning: #C08A2E;
+  --atlas-error: #A8503A;
+  --atlas-orphan: #7B6BA0;
+  --atlas-select: #386B5E;
+  --edge-structural: #5C5238;
+  --edge-config: #5A7D4F;
+  --edge-secret: #A8503A;
+  --edge-identity: #7B6BA0;
+  --edge-traffic: #C08A2E;
+  --edge-policy: #386B5E;
+  --edge-storage: #6E6446;
+  --edge-federation: #9E4030;
+}
+
+:root[data-theme="ink"] {
+  color-scheme: light;
+  --atlas-bg: #FAFAF8;
+  --atlas-surface: #F0F0EC;
+  --atlas-border: #D8D8D2;
+  --atlas-text-3: #9A9A92;
+  --atlas-text-2: #565650;
+  --atlas-text-1: #1A1A17;
+  --atlas-node-fill: #FAFAF8;
+  --atlas-healthy: #4F7060;
+  --atlas-warning: #9C7128;
+  --atlas-error: #983A2E;
+  --atlas-orphan: #6A5E8C;
+  --atlas-select: #1C5A86;
+  --edge-structural: #3A3A35;
+  --edge-config: #4F7060;
+  --edge-secret: #983A2E;
+  --edge-identity: #6A5E8C;
+  --edge-traffic: #8A6A2A;
+  --edge-policy: #1C5A86;
+  --edge-storage: #56564E;
+  --edge-federation: #8E3826;
+}
+
+:root[data-theme="slate"] {
+  color-scheme: dark;
+  --atlas-bg: #1B1D22;
+  --atlas-surface: #24272E;
+  --atlas-border: #353941;
+  --atlas-text-3: #6B7079;
+  --atlas-text-2: #A0A6B0;
+  --atlas-text-1: #E8E6DF;
+  --atlas-node-fill: #24272E;
+  --atlas-healthy: #6FA88A;
+  --atlas-warning: #D3A55C;
+  --atlas-error: #C46857;
+  --atlas-orphan: #9A87C6;
+  --atlas-select: #5B92C9;
+  --edge-structural: #9A8E78;
+  --edge-config: #7FAE8C;
+  --edge-secret: #C4796B;
+  --edge-identity: #A593CE;
+  --edge-traffic: #D3A55C;
+  --edge-policy: #6699C9;
+  --edge-storage: #9A8B78;
+  --edge-federation: #C46857;
+}
+
+/* Default theme when no data-theme attribute is set yet (first
+ * paint, before themeController runs). */
+:root:not([data-theme]) {
+  --atlas-bg: #F4EFE6;
+  --atlas-surface: #ECE3D3;
+  --atlas-border: #DDD0BB;
+  --atlas-text-3: #B5A48A;
+  --atlas-text-2: #6B5A45;
+  --atlas-text-1: #2B2418;
+  --atlas-node-fill: #F4EFE6;
+  --atlas-healthy: #5C7F6B;
+  --atlas-warning: #B8893A;
+  --atlas-error: #A14638;
+  --atlas-orphan: #7E6BA8;
+  --atlas-select: #2F5E8C;
+  --edge-structural: #5C5142;
+  --edge-config: #6B8C76;
+  --edge-secret: #9B5B4E;
+  --edge-identity: #8A78B3;
+  --edge-traffic: #C49441;
+  --edge-policy: #4B6E94;
+  --edge-storage: #7A6B5A;
+  --edge-federation: #A14638;
+}
