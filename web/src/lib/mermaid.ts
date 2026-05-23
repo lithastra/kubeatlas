@@ -1,9 +1,14 @@
 import mermaid from 'mermaid';
 
 // Single mermaid initialisation across the app. `securityLevel:
-// 'strict'` disables HTML in labels (the server already escapes
-// problematic chars; defence in depth). `theme: 'default'` is the
-// flat light palette that coordinates with our MUI theme.
+// 'strict'` disables HTML in labels and blocks script execution
+// inside any foreignObject the renderer emits — the server already
+// escapes problematic chars too, so flipping `htmlLabels: true`
+// is safe and required for correct label sizing on long names
+// (the SVG-text fallback mismeasures node-box widths and clips
+// strings like "HorizontalPodAutoscaler/podinfo"). `theme:
+// 'default'` is the flat light palette that coordinates with our
+// MUI theme.
 let initialized = false;
 function ensureInit() {
   if (initialized) return;
@@ -12,7 +17,8 @@ function ensureInit() {
     securityLevel: 'strict',
     theme: 'default',
     flowchart: {
-      htmlLabels: false,
+      htmlLabels: true,
+      useMaxWidth: true,
     },
   });
   initialized = true;
