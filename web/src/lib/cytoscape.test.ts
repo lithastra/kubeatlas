@@ -23,7 +23,10 @@ describe('elementsFromView', () => {
     expect(els[0].group).toBe('nodes');
     expect(els[0].data.id).toBe('demo/Deployment/api');
     expect(els[0].data.kind).toBe('Deployment');
-    expect(els[0].data.label).toBe('api');
+    // nodeLabel reconstructs "Kind/Name" when the view doesn't
+    // supply an explicit label, so passthrough kinds (HPA,
+    // ConfigMap, ServiceAccount) read the same way as workloads.
+    expect(els[0].data.label).toBe('Deployment/api');
     expect(els[0].data.type).toBe('aggregated');
   });
 
