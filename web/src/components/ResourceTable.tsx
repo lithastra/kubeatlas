@@ -36,7 +36,10 @@ export function ResourceTable() {
 
   const columns: GridColDef[] = useMemo(
     () => [
-      { field: 'kind', headerName: t('list.column.kind'), width: 160 },
+      // 220px fits "HorizontalPodAutoscaler" (the longest core kind)
+      // plus cell padding and the sort indicator. Anything narrower
+      // ellipsises on CRDs with long PascalCase names.
+      { field: 'kind', headerName: t('list.column.kind'), width: 220 },
       { field: 'name', headerName: t('list.column.name'), flex: 1, minWidth: 200 },
       { field: 'namespace', headerName: t('list.column.namespace'), width: 160 },
       { field: 'age', headerName: t('list.column.age'), width: 100 },
