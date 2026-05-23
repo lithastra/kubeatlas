@@ -20,13 +20,15 @@
  * lithastra/kubeatlas-headlamp-plugin integration.
  * ============================================================ */
 import { Box } from '@mui/material';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { Panel } from '../design';
+import { CommandPalette } from './CommandPalette';
 import { CompassWidget } from './CompassWidget';
 import { GridBackground } from './GridBackground';
 import { LeftClusterStrip } from './LeftClusterStrip';
 import { useRightPanel } from './RightPanelContext';
+import { useSearchOverlay } from './SearchContext';
 import { TimeAxisBar } from './TimeAxisBar';
 import { TopBar } from './TopBar';
 
@@ -45,9 +47,31 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
   // descendant view via useRightPanel().setContent(...). Prop takes
   // priority so callers that want full control keep it.
   const ctx = useRightPanel();
+  const search = useSearchOverlay();
   const liveContent = contextPanel ?? ctx.content;
   const [panelOpen, setPanelOpen] = useState(liveContent != null);
   if (liveContent != null && !panelOpen) setPanelOpen(true);
+
+  // Global ⌘K / Ctrl-K handler. Lives at the shell so any view (and
+  // the Headlamp embed once the embedded branch lands) can summon
+  // the palette without wiring its own keymap. Skip while focus is
+  // inside a text-input so typing K in a search box doesn't fight.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        const t = e.target as HTMLElement | null;
+        const tag = t?.tagName ?? '';
+        const inEditable =
+          (tag === 'INPUT' || tag === 'TEXTAREA' || t?.isContentEditable) &&
+          !search.open;
+        if (inEditable) return;
+        e.preventDefault();
+        search.toggle();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [search]);
   const closePanel = () => {
     setPanelOpen(false);
     if (contextPanel == null) ctx.setContent(null);
@@ -115,6 +139,7 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
           </Panel>
         )}
       </Box>
+      <CommandPalette />
     </Box>
   );
 }

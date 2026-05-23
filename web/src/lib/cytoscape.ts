@@ -286,6 +286,18 @@ export function buildAtlasStylesheet(palette: AtlasPalette): cytoscape.Styleshee
     },
     { selector: 'node[?dimmed]', style: { opacity: 0.2 } },
     { selector: 'node[?highlighted]', style: { opacity: 1, 'z-index': 10 } },
+    // ⌘K palette match — thick select-coloured outline so matches
+    // stay legible after the overlay closes (search-folds-into-graph).
+    {
+      selector: 'node[?match]',
+      style: {
+        'overlay-color': palette.select,
+        'overlay-opacity': 0.18,
+        'overlay-padding': 6,
+        'border-color': palette.select,
+        'border-width': 2,
+      },
+    },
 
     // Aggregated nodes (cluster / namespace view) still render in
     // the canonical aggregated shape from the legacy backend.

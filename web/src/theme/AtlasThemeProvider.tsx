@@ -22,6 +22,7 @@ import {
 } from './themeController';
 import { type AtlasThemeName } from './themePalettes';
 import { RightPanelProvider } from '../shell/RightPanelContext';
+import { SearchProvider } from '../shell/SearchContext';
 
 interface AtlasThemeContextValue {
   name: AtlasThemeName;
@@ -68,7 +69,9 @@ export function AtlasThemeProvider({ hostScheme, children }: AtlasThemeProviderP
     <AtlasThemeContext.Provider value={value}>
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
-        <RightPanelProvider>{children}</RightPanelProvider>
+        <RightPanelProvider>
+          <SearchProvider>{children}</SearchProvider>
+        </RightPanelProvider>
       </ThemeProvider>
     </AtlasThemeContext.Provider>
   );

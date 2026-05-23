@@ -4,6 +4,7 @@ import type { Core, EventObject } from 'cytoscape';
 
 import type { View } from '../api/types';
 import { applyAtlasPalette, createCytoscape, paletteFor, updateCytoscape } from '../lib/cytoscape';
+import { useSearchOverlay } from '../shell';
 import { useAtlasTheme } from '../theme';
 
 // TopologyView renders one cytoscape canvas using the cartography
@@ -30,6 +31,7 @@ export function TopologyView({ view, height = '100%', onSelect }: TopologyViewPr
   onSelectRef.current = onSelect;
 
   const { name: themeName } = useAtlasTheme();
+  const { matchedIds } = useSearchOverlay();
 
   // Effect 1: create / update cytoscape from props.view.
   useEffect(() => {
@@ -79,6 +81,23 @@ export function TopologyView({ view, height = '100%', onSelect }: TopologyViewPr
       applyAtlasPalette(cyRef.current, paletteFor(themeName));
     }
   }, [themeName]);
+
+  // Effect 5: project the ⌘K palette's matched IDs onto the canvas
+  // as a `match` data flag. The stylesheet's node[?match] rule does
+  // the rest — palette closes, matches stay highlighted (the
+  // search-folds-into-graph IA principle).
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.batch(() => {
+      cy.nodes().forEach((n) => {
+        const id = String(n.id());
+        const isMatch = matchedIds.has(id);
+        if (isMatch) n.data('match', true);
+        else n.removeData('match');
+      });
+    });
+  }, [matchedIds, view]);
 
   return (
     <Box
