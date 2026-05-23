@@ -18,7 +18,16 @@ function ensureInit() {
     theme: 'default',
     flowchart: {
       htmlLabels: true,
-      useMaxWidth: true,
+      // Render at the diagram's natural width so node boxes stay
+      // sized to their labels. useMaxWidth=true scales the whole
+      // SVG to fit the container, which also shrinks the boxes
+      // and causes long names like HorizontalPodAutoscaler/podinfo
+      // to clip even though htmlLabels measured them correctly.
+      // The NeighborView container handles overflow.
+      useMaxWidth: false,
+      nodeSpacing: 40,
+      rankSpacing: 60,
+      padding: 12,
     },
   });
   initialized = true;

@@ -73,7 +73,14 @@ export function NeighborView({ mermaidText }: NeighborViewProps) {
       <Box
         ref={containerRef}
         sx={{
-          '& svg': { maxWidth: '100%', height: 'auto' },
+          overflowX: 'auto',
+          // Natural-width mermaid SVG: don't clamp to 100% (that
+          // shrinks node boxes and re-introduces label clipping).
+          // Let it render at its measured size and scroll if it
+          // overflows the panel.
+          '& svg': { display: 'block', maxWidth: 'none', height: 'auto' },
+          '& .nodeLabel, & .nodeLabel *': { whiteSpace: 'nowrap !important' },
+          '& foreignObject': { overflow: 'visible' },
         }}
       />
     </Box>
