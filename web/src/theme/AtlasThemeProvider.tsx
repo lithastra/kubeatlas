@@ -21,6 +21,7 @@ import {
   setTheme as persistTheme,
 } from './themeController';
 import { type AtlasThemeName } from './themePalettes';
+import { RightPanelProvider } from '../shell/RightPanelContext';
 
 interface AtlasThemeContextValue {
   name: AtlasThemeName;
@@ -67,7 +68,7 @@ export function AtlasThemeProvider({ hostScheme, children }: AtlasThemeProviderP
     <AtlasThemeContext.Provider value={value}>
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
-        {children}
+        <RightPanelProvider>{children}</RightPanelProvider>
       </ThemeProvider>
     </AtlasThemeContext.Provider>
   );
