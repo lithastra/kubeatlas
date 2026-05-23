@@ -6,6 +6,7 @@ import type {
   NetworkPolicyAllowGraphResponse,
   NetworkPolicySelectedResponse,
   ResourceDetailResponse,
+  SearchResponse,
   View,
 } from './types';
 
@@ -107,6 +108,33 @@ export function useNetworkPolicyAllowGraph(namespace: string, name: string, enab
     queryFn: ({ signal }) =>
       fetchJSON<NetworkPolicyAllowGraphResponse>(networkPolicyURL(namespace, name, 'allow-graph'), { signal }),
     enabled: enabled && Boolean(namespace && name),
+  });
+}
+
+// Params for GET /api/v1alpha1/search.
+export interface SearchParams {
+  q: string;
+  limit?: number;
+}
+
+function searchURL(p: SearchParams): string {
+  const q = new URLSearchParams({ q: p.q });
+  if (p.limit) q.set('limit', String(p.limit));
+  return `${apiBase}/search?${q.toString()}`;
+}
+
+// useSearch wraps GET /search. Fires only when q is non-empty so the
+// command palette can render before the operator types anything. The
+// query is debounced at the call site (CommandPalette) so we don't
+// throttle here — server-side it's a single GIN match on Tier 2.
+export function useSearch(p: SearchParams) {
+  const q = p.q.trim();
+  return useQuery<SearchResponse>({
+    queryKey: ['search', q, p.limit ?? 20],
+    queryFn: ({ signal }) =>
+      fetchJSON<SearchResponse>(searchURL({ q, limit: p.limit ?? 20 }), { signal }),
+    enabled: q.length > 0,
+    staleTime: 30_000,
   });
 }
 

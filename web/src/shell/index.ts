@@ -1,5 +1,7 @@
 export { AtlasShell } from './AtlasShell';
 export { RightPanelProvider, useRightPanel } from './RightPanelContext';
+export { SearchProvider, useSearchOverlay } from './SearchContext';
+export { CommandPalette } from './CommandPalette';
 export { TopBar } from './TopBar';
 export { ThemeSwitcher } from './ThemeSwitcher';
 export { LeftClusterStrip } from './LeftClusterStrip';
