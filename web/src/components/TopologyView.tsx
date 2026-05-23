@@ -4,7 +4,8 @@ import type { Core, EventObject } from 'cytoscape';
 
 import type { View } from '../api/types';
 import { applyAtlasPalette, createCytoscape, paletteFor, updateCytoscape } from '../lib/cytoscape';
-import { useSearchOverlay } from '../shell';
+import { computeBlastRadius } from '../lib/blastRadius';
+import { useBlastRadius, useSearchOverlay } from '../shell';
 import { useAtlasTheme } from '../theme';
 
 // TopologyView renders one cytoscape canvas using the cartography
@@ -49,6 +50,7 @@ export function TopologyView({ view, height = '100%', onSelect, onZoom, onReady 
 
   const { name: themeName } = useAtlasTheme();
   const { matchedIds } = useSearchOverlay();
+  const blast = useBlastRadius();
 
   // Effect 1: create / update cytoscape from props.view.
   useEffect(() => {
@@ -125,6 +127,36 @@ export function TopologyView({ view, height = '100%', onSelect, onZoom, onReady 
       });
     });
   }, [matchedIds, view]);
+
+  // Effect 6: blast-radius dim/brighten. When active, every node
+  // and edge not in the reachable set gets the `dimmed` flag; the
+  // reachable subgraph stays at full opacity. The root node also
+  // gets selected so its glow is visible. Clearing the mode wipes
+  // the flags so the canvas snaps back.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.batch(() => {
+      if (!blast.active || !blast.rootId || !view) {
+        cy.nodes().removeData('dimmed');
+        cy.edges().removeData('dimmed');
+        return;
+      }
+      const result = computeBlastRadius(view, blast.rootId, blast.direction, blast.depth);
+      const reachable = result.reachable;
+      const reachableEdges = new Set(result.edges);
+      cy.nodes().forEach((n) => {
+        if (reachable.has(String(n.id()))) n.removeData('dimmed');
+        else n.data('dimmed', true);
+      });
+      cy.edges().forEach((e) => {
+        const inSet = reachableEdges.has(e.data() as never) ||
+          (reachable.has(String(e.source().id())) && reachable.has(String(e.target().id())));
+        if (inSet) e.removeData('dimmed');
+        else e.data('dimmed', true);
+      });
+    });
+  }, [blast.active, blast.rootId, blast.depth, blast.direction, view]);
 
   return (
     <Box

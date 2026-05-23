@@ -15,6 +15,7 @@ import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 
 import { useResource } from '../api/graph';
 import { Panel, StatusPill } from '../design';
+import { useBlastRadius } from '../shell';
 
 interface NodeDetailPanelProps {
   /** graph.Resource.ID() — namespace/kind/name (cluster-prefixed in
@@ -24,6 +25,7 @@ interface NodeDetailPanelProps {
 
 export function NodeDetailPanel({ nodeId }: NodeDetailPanelProps) {
   const parsed = parseNodeId(nodeId);
+  const blast = useBlastRadius();
   const { data, isLoading, isError } = useResource({
     namespace: parsed.namespace ?? null,
     kind: parsed.kind ?? null,
@@ -33,6 +35,28 @@ export function NodeDetailPanel({ nodeId }: NodeDetailPanelProps) {
   return (
     <Stack spacing={2}>
       <Header parsed={parsed} />
+      <Box
+        component="button"
+        type="button"
+        onClick={() => blast.enter(nodeId)}
+        sx={{
+          alignSelf: 'flex-start',
+          padding: '6px 12px',
+          border: '1px solid var(--atlas-border)',
+          background: 'transparent',
+          fontFamily: 'var(--atlas-font-ui)',
+          fontSize: 12,
+          color: 'var(--atlas-text-1)',
+          cursor: 'pointer',
+          '&:hover': { borderColor: 'var(--atlas-select)', color: 'var(--atlas-select)' },
+          '&:focus-visible': {
+            outline: '2px solid var(--atlas-select)',
+            outlineOffset: 1,
+          },
+        }}
+      >
+        ↯ Show blast radius
+      </Box>
       {isLoading && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <CircularProgress size={14} />
