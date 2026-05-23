@@ -28,7 +28,13 @@
 #                    out of the box.
 #   PG_PORT          Host port for the postgres container.
 #                    Default: 5432.
-#   PG_IMAGE         Postgres image to run. Default: postgres:16.
+#   PG_IMAGE         Postgres image to run. Default:
+#                    apache/age:release_PG16_1.6.0 — the upstream
+#                    Apache AGE image, required by the kubeatlas
+#                    Tier 2 schema (uses the `age` extension for
+#                    cypher-style graph traversal). Plain postgres:16
+#                    will not work; the schema migration fails with
+#                    'extension "age" is not available'.
 #   PG_NAME          Container name. Default: kubeatlas-pg.
 #   SNAPSHOT_RETENTION  Passed through as KUBEATLAS_SNAPSHOTS_RETENTION.
 #                       Default: 7d (the server's own default).
@@ -41,7 +47,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="${STATE_DIR:-/tmp/kubeatlas-dev}"
 KUBEATLAS_PORT="${KUBEATLAS_PORT:-8080}"
 PG_PORT="${PG_PORT:-5432}"
-PG_IMAGE="${PG_IMAGE:-postgres:16}"
+PG_IMAGE="${PG_IMAGE:-apache/age:release_PG16_1.6.0}"
 PG_NAME="${PG_NAME:-kubeatlas-pg}"
 SNAPSHOT_RETENTION="${SNAPSHOT_RETENTION:-7d}"
 KUBEATLAS_BIN="${KUBEATLAS_BIN:-${REPO_ROOT}/bin/kubeatlas}"
