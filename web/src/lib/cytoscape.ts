@@ -215,10 +215,17 @@ export function buildAtlasStylesheet(palette: AtlasPalette): cytoscape.Styleshee
         'text-halign': 'center',
         'font-family': '"IBM Plex Sans", system-ui, sans-serif',
         'font-size': 11,
-        'text-max-width': 100,
-        'text-wrap': 'ellipsis',
-        width: 110,
+        // Auto-fit node width to the label. Fixed 110px clipped long
+        // ids like "Deployment/podinfo" to "Deployment/podi…"; the
+        // explorer's value is reading those names at a glance, so
+        // sizing trumps grid uniformity. The padding + minimum keep
+        // very short labels from collapsing into tiny chips.
+        width: 'label',
         height: 40,
+        padding: '12px',
+        'min-width': 90,
+        'text-wrap': 'wrap',
+        'text-max-width': 220,
         shape: 'rectangle',
       },
     },
@@ -342,7 +349,10 @@ export function buildAtlasStylesheet(palette: AtlasPalette): cytoscape.Styleshee
     // the canonical aggregated shape from the legacy backend.
     {
       selector: 'node[type = "aggregated"]',
-      style: { shape: 'round-rectangle', width: 110 },
+      // Aggregated nodes (cluster / namespace view) also auto-fit
+      // their labels — a namespace like "kube-public-images" used
+      // to clip at the same 110px the resource nodes did.
+      style: { shape: 'round-rectangle' },
     },
 
     // Edges — base + per-type cascades.
@@ -462,7 +472,12 @@ export function elementsFromView(view: View): ElementDefinition[] {
 }
 
 function nodeLabel(n: ViewNode): string {
+  // Prefer the server-supplied label (workload aggregator emits
+  // "Kind/Name"); otherwise reconstruct it client-side so the
+  // passthrough kinds (HPA, ConfigMap, ServiceAccount, etc.) read
+  // the same way instead of showing the bare name.
   if (n.label) return n.label;
+  if (n.kind && n.name) return `${n.kind}/${n.name}`;
   if (n.name) return n.name;
   return n.id;
 }
