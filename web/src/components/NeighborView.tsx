@@ -126,8 +126,22 @@ export function NeighborView({ mermaidText }: NeighborViewProps) {
             whiteSpace: 'nowrap !important',
             overflow: 'visible !important',
             textOverflow: 'clip !important',
+            textAlign: 'center !important',
           },
-          '& foreignObject': { overflow: 'visible' },
+          // After the post-process widens the foreignObject, the
+          // inner label div needs to fill its full width so its
+          // text-align:center actually re-centers the text. Without
+          // this the label sticks to the left edge of the grown box.
+          '& foreignObject': {
+            overflow: 'visible',
+            display: 'block',
+          },
+          '& foreignObject > div': {
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          },
         }}
       />
     </Box>
