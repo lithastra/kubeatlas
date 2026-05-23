@@ -23,6 +23,9 @@ import { Box } from '@mui/material';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { Panel } from '../design';
+import { BlastRadiusBanner } from './BlastRadiusBanner';
+import { BlastRadiusControls } from './BlastRadiusControls';
+import { useBlastRadius } from './BlastRadiusContext';
 import { CommandPalette } from './CommandPalette';
 import { CompassWidget } from './CompassWidget';
 import { GridBackground } from './GridBackground';
@@ -48,6 +51,7 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
   // priority so callers that want full control keep it.
   const ctx = useRightPanel();
   const search = useSearchOverlay();
+  const blast = useBlastRadius();
   const liveContent = contextPanel ?? ctx.content;
   const [panelOpen, setPanelOpen] = useState(liveContent != null);
   if (liveContent != null && !panelOpen) setPanelOpen(true);
@@ -72,6 +76,21 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [search]);
+
+  // Global Esc handler: closes the blast-radius mode if active.
+  // Stays out of the way otherwise so MUI dialogs / menus can keep
+  // owning Esc for their own dismiss semantics.
+  useEffect(() => {
+    if (!blast.active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        blast.exit();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [blast]);
   const closePanel = () => {
     setPanelOpen(false);
     if (contextPanel == null) ctx.setContent(null);
@@ -97,6 +116,8 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
         <GridBackground>
           {children}
           <CompassWidget />
+          <BlastRadiusBanner />
+          <BlastRadiusControls />
         </GridBackground>
         {panelOpen && liveContent != null && (
           <Panel

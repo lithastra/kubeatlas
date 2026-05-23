@@ -7,10 +7,11 @@ import type { Level } from '../api/types';
 import { LabelFilter } from '../components/LabelFilter';
 import { LevelTabs } from '../components/LevelTabs';
 import { NamespacePicker } from '../components/NamespacePicker';
+import { BlastRadiusPanel } from '../components/BlastRadiusPanel';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { TopologyView, type TopologyControls } from '../components/TopologyView';
 import { Panel } from '../design';
-import { useRightPanel, ZoomScaleWidget } from '../shell';
+import { useBlastRadius, useRightPanel, ZoomScaleWidget } from '../shell';
 import { useAppSelector } from '../store';
 
 // TopologyPage is the cartography graph view. The canvas fills the
@@ -23,6 +24,7 @@ export function TopologyPage() {
   const [labelFilter, setLabelFilter] = useState<Record<string, string>>({});
   const namespace = useAppSelector((s) => s.filter.namespace);
   const { setContent } = useRightPanel();
+  const blast = useBlastRadius();
   const [zoom, setZoom] = useState(1);
   const controlsRef = useRef<TopologyControls | null>(null);
 
@@ -34,6 +36,25 @@ export function TopologyPage() {
 
   // Clear the right panel when leaving the topology page.
   useEffect(() => () => setContent(null), [setContent]);
+
+  // While blast-radius mode is active, the right panel shows the
+  // hop-by-hop summary instead of the single-node detail. Restores
+  // the detail view (for the root) on exit so the operator doesn't
+  // lose their selection.
+  useEffect(() => {
+    if (blast.active && blast.rootId) {
+      setContent(
+        <BlastRadiusPanel
+          view={data}
+          rootId={blast.rootId}
+          depth={blast.depth}
+          direction={blast.direction}
+        />,
+      );
+    } else if (blast.rootId) {
+      setContent(<NodeDetailPanel nodeId={blast.rootId} />);
+    }
+  }, [blast.active, blast.rootId, blast.depth, blast.direction, data, setContent]);
 
   const handleSelect = (id: string | null) => {
     setContent(id ? <NodeDetailPanel nodeId={id} /> : null);

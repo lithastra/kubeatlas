@@ -23,6 +23,7 @@ import {
 import { type AtlasThemeName } from './themePalettes';
 import { RightPanelProvider } from '../shell/RightPanelContext';
 import { SearchProvider } from '../shell/SearchContext';
+import { BlastRadiusProvider } from '../shell/BlastRadiusContext';
 
 interface AtlasThemeContextValue {
   name: AtlasThemeName;
@@ -70,7 +71,9 @@ export function AtlasThemeProvider({ hostScheme, children }: AtlasThemeProviderP
       <ThemeProvider theme={muiTheme}>
         <CssBaseline />
         <RightPanelProvider>
-          <SearchProvider>{children}</SearchProvider>
+          <SearchProvider>
+            <BlastRadiusProvider>{children}</BlastRadiusProvider>
+          </SearchProvider>
         </RightPanelProvider>
       </ThemeProvider>
     </AtlasThemeContext.Provider>
