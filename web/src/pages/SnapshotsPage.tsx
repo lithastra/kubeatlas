@@ -62,14 +62,17 @@ export function SnapshotsPage() {
 
   if (notEnabled) {
     return (
-      <Stack spacing={2}>
-        <Typography variant="h4">{t('page.snapshots.title')}</Typography>
-        <Alert severity="info">{t('page.snapshots.notEnabled')}</Alert>
-      </Stack>
+      <Box sx={{ padding: 'var(--atlas-space-5)', width: '100%', overflow: 'auto' }}>
+        <Stack spacing={2}>
+          <Typography variant="h4">{t('page.snapshots.title')}</Typography>
+          <Alert severity="info">{t('page.snapshots.notEnabled')}</Alert>
+        </Stack>
+      </Box>
     );
   }
 
   return (
+    <Box sx={{ padding: 'var(--atlas-space-5)', width: '100%', overflow: 'auto' }}>
     <Stack spacing={3}>
       <Typography variant="h4">{t('page.snapshots.title')}</Typography>
       <Typography variant="body2" color="text.secondary">
@@ -107,6 +110,7 @@ export function SnapshotsPage() {
 
       <TimelineSection snapshots={snapshots} />
     </Stack>
+    </Box>
   );
 }
 
