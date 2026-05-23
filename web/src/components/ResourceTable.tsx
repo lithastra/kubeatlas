@@ -34,16 +34,16 @@ export function ResourceTable() {
     }));
   }, [data]);
 
+  // Columns declare only minWidths; DataGrid's autosizeOnMount
+  // measures cell content and resizes each column to fit, so a
+  // CRD with a long PascalCase kind name doesn't ellipse.
   const columns: GridColDef[] = useMemo(
     () => [
-      // 220px fits "HorizontalPodAutoscaler" (the longest core kind)
-      // plus cell padding and the sort indicator. Anything narrower
-      // ellipsises on CRDs with long PascalCase names.
-      { field: 'kind', headerName: t('list.column.kind'), width: 220 },
+      { field: 'kind', headerName: t('list.column.kind'), minWidth: 140 },
       { field: 'name', headerName: t('list.column.name'), flex: 1, minWidth: 200 },
-      { field: 'namespace', headerName: t('list.column.namespace'), width: 160 },
-      { field: 'age', headerName: t('list.column.age'), width: 100 },
-      { field: 'status', headerName: t('list.column.status'), width: 120 },
+      { field: 'namespace', headerName: t('list.column.namespace'), minWidth: 120 },
+      { field: 'age', headerName: t('list.column.age'), minWidth: 80 },
+      { field: 'status', headerName: t('list.column.status'), minWidth: 100 },
     ],
     [t]
   );
@@ -75,6 +75,17 @@ export function ResourceTable() {
         autoHeight
         rows={rows}
         columns={columns}
+        autosizeOnMount
+        autosizeOptions={{
+          includeHeaders: true,
+          includeOutliers: true,
+          // Cap so a single absurdly long resource name doesn't
+          // stretch the column past readable width — the cell
+          // still ellipses beyond this and the full value shows
+          // in the row's hover tooltip / detail page.
+          outliersFactor: 1.5,
+          expand: true,
+        }}
         initialState={{
           pagination: { paginationModel: { pageSize: 25, page: 0 } },
         }}
