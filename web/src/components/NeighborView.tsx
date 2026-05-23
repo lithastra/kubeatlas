@@ -68,6 +68,16 @@ export function NeighborView({ mermaidText }: NeighborViewProps) {
             const x = parseFloat(fo.getAttribute('x') ?? '0');
             fo.setAttribute('width', String(wanted));
             fo.setAttribute('x', String(x - delta / 2));
+            // Clear Mermaid's inline width on the inner div so the
+            // CSS flex centering can take effect — the inline
+            // width pinned the label to its original (narrow)
+            // measurement and beat the stylesheet.
+            const inner = fo.querySelector<HTMLElement>(':scope > div');
+            if (inner) {
+              inner.style.width = '';
+              inner.style.height = '';
+              inner.style.maxWidth = '';
+            }
             // Widen any rect sibling (rectangle/round-rectangle nodes).
             node.querySelectorAll('rect').forEach((rect) => {
               const w = parseFloat(rect.getAttribute('width') ?? '0');
@@ -136,11 +146,22 @@ export function NeighborView({ mermaidText }: NeighborViewProps) {
             overflow: 'visible',
             display: 'block',
           },
+          // !important is required: Mermaid v11 inlines width/height
+          // on the foreignObject's inner div based on its initial
+          // measurement, which beats normal CSS specificity. Without
+          // these overrides the inner div keeps its original narrow
+          // width pinned to the left of the widened foreignObject,
+          // so the label appears left-aligned inside the bigger box.
           '& foreignObject > div': {
-            width: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
+            width: '100% !important',
+            height: '100% !important',
+            display: 'flex !important',
+            justifyContent: 'center !important',
+            alignItems: 'center !important',
+          },
+          '& foreignObject .nodeLabel': {
+            display: 'inline-block !important',
+            transform: 'none !important',
           },
         }}
       />
