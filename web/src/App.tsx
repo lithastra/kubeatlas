@@ -2,10 +2,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { AtlasShell } from './shell';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { DocsPage } from './pages/DocsPage';
 import { ResourcePage } from './pages/ResourcePage';
 import { ResourcesPage } from './pages/ResourcesPage';
-import { SearchPage } from './pages/SearchPage';
 import { SnapshotsPage } from './pages/SnapshotsPage';
 import { TopologyPage } from './pages/TopologyPage';
 
@@ -30,8 +28,6 @@ export function App() {
           <Route path="/resources/:namespace/:kind/:name" element={<ResourcePage />} />
           <Route path="/topology" element={<TopologyPage />} />
           <Route path="/snapshots" element={<SnapshotsPage />} />
-          <Route path="/search" element={<SearchPage />} />
-          <Route path="/docs" element={<DocsPage />} />
         </Routes>
       </ErrorBoundary>
     </AtlasShell>
