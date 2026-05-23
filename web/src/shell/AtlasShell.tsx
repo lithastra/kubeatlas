@@ -26,6 +26,8 @@ import { Panel } from '../design';
 import { BlastRadiusBanner } from './BlastRadiusBanner';
 import { BlastRadiusControls } from './BlastRadiusControls';
 import { useBlastRadius } from './BlastRadiusContext';
+import { DiffModeBanner } from './DiffModeBanner';
+import { useDiffMode } from './DiffModeContext';
 import { CommandPalette } from './CommandPalette';
 import { CompassWidget } from './CompassWidget';
 import { GridBackground } from './GridBackground';
@@ -52,6 +54,7 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
   const ctx = useRightPanel();
   const search = useSearchOverlay();
   const blast = useBlastRadius();
+  const diff = useDiffMode();
   const liveContent = contextPanel ?? ctx.content;
   const [panelOpen, setPanelOpen] = useState(liveContent != null);
   if (liveContent != null && !panelOpen) setPanelOpen(true);
@@ -77,20 +80,21 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
     return () => window.removeEventListener('keydown', onKey);
   }, [search]);
 
-  // Global Esc handler: closes the blast-radius mode if active.
-  // Stays out of the way otherwise so MUI dialogs / menus can keep
-  // owning Esc for their own dismiss semantics.
+  // Global Esc handler: closes whichever explorer mode is active.
+  // Blast radius is preferred when both are on (a rare composite);
+  // diff anchor clears on Esc too. Stays out of the way otherwise
+  // so MUI dialogs / menus keep owning Esc for their own dismisses.
   useEffect(() => {
-    if (!blast.active) return;
+    if (!blast.active && !diff.active) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        blast.exit();
-      }
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      if (blast.active) blast.exit();
+      else diff.exit();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [blast]);
+  }, [blast, diff]);
   const closePanel = () => {
     setPanelOpen(false);
     if (contextPanel == null) ctx.setContent(null);
@@ -118,6 +122,7 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
           <CompassWidget />
           <BlastRadiusBanner />
           <BlastRadiusControls />
+          <DiffModeBanner />
         </GridBackground>
         {panelOpen && liveContent != null && (
           <Panel

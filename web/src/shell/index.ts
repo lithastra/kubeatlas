@@ -5,6 +5,8 @@ export { CommandPalette } from './CommandPalette';
 export { BlastRadiusProvider, useBlastRadius } from './BlastRadiusContext';
 export { BlastRadiusBanner } from './BlastRadiusBanner';
 export { BlastRadiusControls } from './BlastRadiusControls';
+export { DiffModeProvider, useDiffMode } from './DiffModeContext';
+export { DiffModeBanner } from './DiffModeBanner';
 export { TopBar } from './TopBar';
 export { ThemeSwitcher } from './ThemeSwitcher';
 export { LeftClusterStrip } from './LeftClusterStrip';

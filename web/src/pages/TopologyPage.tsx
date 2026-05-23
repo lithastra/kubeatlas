@@ -8,10 +8,11 @@ import { LabelFilter } from '../components/LabelFilter';
 import { LevelTabs } from '../components/LevelTabs';
 import { NamespacePicker } from '../components/NamespacePicker';
 import { BlastRadiusPanel } from '../components/BlastRadiusPanel';
+import { DiffChangeLog } from '../components/DiffChangeLog';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { TopologyView, type TopologyControls } from '../components/TopologyView';
 import { Panel } from '../design';
-import { useBlastRadius, useRightPanel, ZoomScaleWidget } from '../shell';
+import { useBlastRadius, useDiffMode, useRightPanel, ZoomScaleWidget } from '../shell';
 import { useAppSelector } from '../store';
 
 // TopologyPage is the cartography graph view. The canvas fills the
@@ -25,6 +26,7 @@ export function TopologyPage() {
   const namespace = useAppSelector((s) => s.filter.namespace);
   const { setContent } = useRightPanel();
   const blast = useBlastRadius();
+  const diff = useDiffMode();
   const [zoom, setZoom] = useState(1);
   const controlsRef = useRef<TopologyControls | null>(null);
 
@@ -42,6 +44,10 @@ export function TopologyPage() {
   // the detail view (for the root) on exit so the operator doesn't
   // lose their selection.
   useEffect(() => {
+    if (diff.active && diff.anchor) {
+      setContent(<DiffChangeLog anchor={diff.anchor} namespace={namespace ?? ''} />);
+      return;
+    }
     if (blast.active && blast.rootId) {
       setContent(
         <BlastRadiusPanel
@@ -54,7 +60,17 @@ export function TopologyPage() {
     } else if (blast.rootId) {
       setContent(<NodeDetailPanel nodeId={blast.rootId} />);
     }
-  }, [blast.active, blast.rootId, blast.depth, blast.direction, data, setContent]);
+  }, [
+    blast.active,
+    blast.rootId,
+    blast.depth,
+    blast.direction,
+    diff.active,
+    diff.anchor,
+    namespace,
+    data,
+    setContent,
+  ]);
 
   const handleSelect = (id: string | null) => {
     setContent(id ? <NodeDetailPanel nodeId={id} /> : null);

@@ -298,6 +298,41 @@ export function buildAtlasStylesheet(palette: AtlasPalette): cytoscape.Styleshee
         'border-width': 2,
       },
     },
+    // Time-axis diff overlays — added (healthy green halo),
+    // removed (dashed muted outline), modified (warning amber).
+    // Per the design: green halo for added, ochre pulse for
+    // modified, dashed outline for deleted. No animation here —
+    // prefers-reduced-motion applies and a thick outline reads as
+    // well as a pulse on a still canvas.
+    {
+      selector: 'node[?added]',
+      style: {
+        'border-color': palette.healthy,
+        'border-width': 2.5,
+        'overlay-color': palette.healthy,
+        'overlay-opacity': 0.10,
+        'overlay-padding': 4,
+      },
+    },
+    {
+      selector: 'node[?removed]',
+      style: {
+        'border-color': palette.text3,
+        'border-width': 1.5,
+        'border-style': 'dashed',
+        opacity: 0.55,
+      },
+    },
+    {
+      selector: 'node[?modified]',
+      style: {
+        'border-color': palette.warning,
+        'border-width': 2.5,
+        'overlay-color': palette.warning,
+        'overlay-opacity': 0.10,
+        'overlay-padding': 4,
+      },
+    },
 
     // Aggregated nodes (cluster / namespace view) still render in
     // the canonical aggregated shape from the legacy backend.
