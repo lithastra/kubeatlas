@@ -41,6 +41,30 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
         borderBottom: '1px solid var(--atlas-border)',
       }}
     >
+      {/* Skip-to-content link — visually hidden until keyboard-focused,
+          then becomes a visible chip in the top-left so keyboard users
+          can bypass the chrome and land on the main canvas region. */}
+      <Box
+        component="a"
+        href="#atlas-main"
+        sx={{
+          position: 'absolute',
+          left: 'var(--atlas-space-2)',
+          top: 'var(--atlas-space-2)',
+          padding: '4px 10px',
+          backgroundColor: 'var(--atlas-select)',
+          color: 'var(--atlas-bg)',
+          fontFamily: 'var(--atlas-font-ui)',
+          fontSize: 'var(--atlas-text-caption-size)',
+          textDecoration: 'none',
+          borderRadius: 'var(--atlas-radius-1)',
+          transform: 'translateY(-150%)',
+          transition: 'transform var(--atlas-transition-quick)',
+          '&:focus-visible': { transform: 'translateY(0)' },
+        }}
+      >
+        Skip to graph
+      </Box>
       <Typography
         component="div"
         sx={{

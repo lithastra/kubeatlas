@@ -64,7 +64,11 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
     >
       {!embedded && <TopBar />}
       {!embedded && <TimeAxisBar />}
-      <Box sx={{ display: 'flex', flexGrow: 1, minHeight: 0 }}>
+      <Box
+        id="atlas-main"
+        component="main"
+        sx={{ display: 'flex', flexGrow: 1, minHeight: 0 }}
+      >
         {!embedded && <LeftClusterStrip />}
         <GridBackground>
           {children}
@@ -102,7 +106,12 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
             >
               close ✕
             </Box>
-            <Box sx={{ padding: 'var(--atlas-space-4)' }}>{liveContent}</Box>
+            <Box
+              aria-live="polite"
+              sx={{ padding: 'var(--atlas-space-4)' }}
+            >
+              {liveContent}
+            </Box>
           </Panel>
         )}
       </Box>
