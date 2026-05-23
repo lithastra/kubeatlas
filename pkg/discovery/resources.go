@@ -43,6 +43,13 @@ var CoreGVRs = []schema.GroupVersionResource{
 	{Group: "batch", Version: "v1", Resource: "jobs"},
 	{Group: "batch", Version: "v1", Resource: "cronjobs"},
 
+	// autoscaling/v2 — HorizontalPodAutoscaler. The SCALES extractor
+	// reads spec.scaleTargetRef and emits one edge per HPA to its
+	// target workload. v2 has been the GA API since Kubernetes 1.23;
+	// v1 / v2beta* HPAs still appear here because the apiserver
+	// serves them through the same v2 endpoint by default.
+	{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"},
+
 	// networking.k8s.io/v1.
 	{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
 	// P3-T1 (F-109) — NetworkPolicy edges (SELECTS_NP / ALLOWS_FROM /

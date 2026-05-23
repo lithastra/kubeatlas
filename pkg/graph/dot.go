@@ -37,6 +37,10 @@ var edgeColors = map[EdgeType]string{
 	EdgeTypeAttachedTo:         "#FF8C00",
 	EdgeTypeBindsSubject:       "#8A2BE2",
 	EdgeTypeBindsRole:          "#9932CC",
+	// SCALES is a control-loop relationship inside the workload
+	// domain — same family as OWNS but distinct enough to read
+	// apart at a glance. Slate keeps the visual gravity neutral.
+	EdgeTypeScales: "#4A6B7A",
 }
 
 // DOTOptions narrows what ToDOT renders. Empty Namespace = whole

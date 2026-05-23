@@ -18,7 +18,9 @@ export type EdgeType =
   // Phase 3 P3-T1 (F-109) NetworkPolicy edge types.
   | 'SELECTS_NP'
   | 'ALLOWS_FROM'
-  | 'ALLOWS_TO';
+  | 'ALLOWS_TO'
+  // HorizontalPodAutoscaler → workload (control-loop relationship).
+  | 'SCALES';
 
 export interface ViewNode {
   id: string;
