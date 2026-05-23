@@ -5,7 +5,8 @@ import type { Core, EventObject } from 'cytoscape';
 import type { View } from '../api/types';
 import { applyAtlasPalette, createCytoscape, paletteFor, updateCytoscape } from '../lib/cytoscape';
 import { computeBlastRadius } from '../lib/blastRadius';
-import { useBlastRadius, useSearchOverlay } from '../shell';
+import { useSnapshotDiff } from '../api/snapshots';
+import { useBlastRadius, useDiffMode, useSearchOverlay } from '../shell';
 import { useAtlasTheme } from '../theme';
 
 // TopologyView renders one cytoscape canvas using the cartography
@@ -51,6 +52,12 @@ export function TopologyView({ view, height = '100%', onSelect, onZoom, onReady 
   const { name: themeName } = useAtlasTheme();
   const { matchedIds } = useSearchOverlay();
   const blast = useBlastRadius();
+  const diff = useDiffMode();
+  // Diff fetch lives in the canvas effect because the decoration is
+  // a per-node flag that depends on the API result. The right panel
+  // (DiffChangeLog) issues the same query — React Query dedupes by
+  // key so it's one network call.
+  const { data: diffData } = useSnapshotDiff(diff.anchor ?? '', 'now', '');
 
   // Effect 1: create / update cytoscape from props.view.
   useEffect(() => {
@@ -127,6 +134,36 @@ export function TopologyView({ view, height = '100%', onSelect, onZoom, onReady 
       });
     });
   }, [matchedIds, view]);
+
+  // Effect 7: diff-mode decoration. Translates the snapshot diff
+  // (DiffEntry { namespace, kind, name }) into node-id matches
+  // against the current canvas. Sets `added`/`removed`/`modified`
+  // data flags; the stylesheet's node[?…] rules handle the look.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    cy.batch(() => {
+      cy.nodes().forEach((n) => {
+        n.removeData('added');
+        n.removeData('removed');
+        n.removeData('modified');
+      });
+      if (!diff.active || !diffData) return;
+      const idFor = (ns: string, kind: string, name: string) => `${ns || '_'}/${kind}/${name}`;
+      for (const e of diffData.added ?? []) {
+        const n = cy.getElementById(idFor(e.namespace, e.kind, e.name));
+        if (n.length) n.data('added', true);
+      }
+      for (const e of diffData.removed ?? []) {
+        const n = cy.getElementById(idFor(e.namespace, e.kind, e.name));
+        if (n.length) n.data('removed', true);
+      }
+      for (const e of diffData.modified ?? []) {
+        const n = cy.getElementById(idFor(e.namespace, e.kind, e.name));
+        if (n.length) n.data('modified', true);
+      }
+    });
+  }, [diff.active, diffData, view]);
 
   // Effect 6: blast-radius dim/brighten. When active, every node
   // and edge not in the reachable set gets the `dimmed` flag; the
