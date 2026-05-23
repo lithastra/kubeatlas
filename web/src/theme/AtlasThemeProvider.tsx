@@ -25,6 +25,7 @@ import { RightPanelProvider } from '../shell/RightPanelContext';
 import { SearchProvider } from '../shell/SearchContext';
 import { BlastRadiusProvider } from '../shell/BlastRadiusContext';
 import { DiffModeProvider } from '../shell/DiffModeContext';
+import { ClusterSelectionProvider } from '../shell/ClusterSelectionContext';
 
 interface AtlasThemeContextValue {
   name: AtlasThemeName;
@@ -74,7 +75,9 @@ export function AtlasThemeProvider({ hostScheme, children }: AtlasThemeProviderP
         <RightPanelProvider>
           <SearchProvider>
             <BlastRadiusProvider>
-              <DiffModeProvider>{children}</DiffModeProvider>
+              <DiffModeProvider>
+                <ClusterSelectionProvider>{children}</ClusterSelectionProvider>
+              </DiffModeProvider>
             </BlastRadiusProvider>
           </SearchProvider>
         </RightPanelProvider>
