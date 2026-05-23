@@ -129,7 +129,11 @@ const EDGE_STYLES: Record<string, EdgeStyleSpec> = {
   SELECTS_NP: { weight: 'light', dash: 'dotted', domain: 'policy', arrow: 'diamond' },
   ALLOWS_FROM: { weight: 'light', dash: 'dotted', domain: 'policy', arrow: 'diamond' },
   ALLOWS_TO: { weight: 'light', dash: 'dotted', domain: 'policy', arrow: 'diamond' },
-  SCALES: { weight: 'light', dash: 'dotted', domain: 'policy', arrow: 'diamond' },
+  // HPA → workload. Controller-style relationship, same family as
+  // OWNS but lighter and dashed so the two read apart: OWNS is the
+  // hard "this resource owns that resource" graph, SCALES is the
+  // softer "this autoscaler drives the replica count".
+  SCALES: { weight: 'medium', dash: 'longShort', domain: 'structural', arrow: 'filled-tri' },
   PROTECTS: { weight: 'light', dash: 'dotted', domain: 'policy', arrow: 'diamond' },
   BINDS_PLATFORM_IDENTITY: { weight: 'medium', dash: 'longShort', domain: 'federation', arrow: 'double-tri' },
   CRD_REF: { weight: 'light', dash: 'longDash', domain: 'structural', arrow: 'open' },

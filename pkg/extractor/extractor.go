@@ -79,6 +79,10 @@ func Default() *Registry {
 	r.Register(&EKSIdentityExtractor{}) // F-209.1, P3-T23
 	r.Register(&AKSIdentityExtractor{}) // F-209.2, P3-T24
 	r.Register(&GKEIdentityExtractor{}) // F-209.3, P3-T25
+	// HorizontalPodAutoscaler → workload (Deployment / StatefulSet /
+	// ReplicaSet / any /scale-bearing kind). Cheap — kind-gated on
+	// the first line so non-HPA events return immediately.
+	r.Register(&ScalesExtractor{})
 	return r
 }
 

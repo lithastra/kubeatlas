@@ -116,6 +116,15 @@ const (
 	// row; UI consumers decide whether to render dangling endpoints
 	// (same convention as RBAC User / Group subjects).
 	EdgeTypeBindsPlatformIdentity EdgeType = "BINDS_PLATFORM_IDENTITY"
+
+	// EdgeTypeScales connects an autoscaler to the workload it
+	// scales. Source is a HorizontalPodAutoscaler (and, when added
+	// later, VerticalPodAutoscaler); target is whatever resource
+	// spec.scaleTargetRef names — typically a Deployment,
+	// StatefulSet, or ReplicaSet. The edge describes a control-loop
+	// relationship, not data flow, so the encoding sits in the
+	// workload domain alongside OWNS.
+	EdgeTypeScales EdgeType = "SCALES"
 )
 
 // AllEdgeTypes is the canonical edge-type list. Adding a new type
@@ -138,6 +147,7 @@ var AllEdgeTypes = []EdgeType{
 	EdgeTypeAllowsFrom,
 	EdgeTypeAllowsTo,
 	EdgeTypeBindsPlatformIdentity,
+	EdgeTypeScales,
 }
 
 // Edge represents a directed dependency between two resources.
