@@ -26,6 +26,7 @@ import { Panel } from '../design';
 import { CompassWidget } from './CompassWidget';
 import { GridBackground } from './GridBackground';
 import { LeftClusterStrip } from './LeftClusterStrip';
+import { useRightPanel } from './RightPanelContext';
 import { TimeAxisBar } from './TimeAxisBar';
 import { TopBar } from './TopBar';
 
@@ -40,7 +41,17 @@ interface AtlasShellProps {
 }
 
 export function AtlasShell({ embedded = false, contextPanel, children }: AtlasShellProps) {
-  const [panelOpen, setPanelOpen] = useState(contextPanel != null);
+  // The panel slot can come from a prop (legacy) or from any
+  // descendant view via useRightPanel().setContent(...). Prop takes
+  // priority so callers that want full control keep it.
+  const ctx = useRightPanel();
+  const liveContent = contextPanel ?? ctx.content;
+  const [panelOpen, setPanelOpen] = useState(liveContent != null);
+  if (liveContent != null && !panelOpen) setPanelOpen(true);
+  const closePanel = () => {
+    setPanelOpen(false);
+    if (contextPanel == null) ctx.setContent(null);
+  };
   return (
     <Box
       sx={{
@@ -59,7 +70,7 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
           {children}
           <CompassWidget />
         </GridBackground>
-        {(contextPanel || panelOpen) && (
+        {panelOpen && liveContent != null && (
           <Panel
             variant="panel"
             padding={0}
@@ -74,7 +85,7 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
             <Box
               component="button"
               type="button"
-              onClick={() => setPanelOpen(false)}
+              onClick={closePanel}
               sx={{
                 width: '100%',
                 textAlign: 'right',
@@ -91,7 +102,7 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
             >
               close ✕
             </Box>
-            <Box sx={{ padding: 'var(--atlas-space-4)' }}>{contextPanel}</Box>
+            <Box sx={{ padding: 'var(--atlas-space-4)' }}>{liveContent}</Box>
           </Panel>
         )}
       </Box>
