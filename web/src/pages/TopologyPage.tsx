@@ -9,6 +9,11 @@ import { LevelTabs } from '../components/LevelTabs';
 import { NamespacePicker } from '../components/NamespacePicker';
 import { BlastRadiusPanel } from '../components/BlastRadiusPanel';
 import { DiffChangeLog } from '../components/DiffChangeLog';
+import {
+  EdgeTypeFilter,
+  EDGE_PRESET_TYPES,
+  type EdgeFilterPreset,
+} from '../components/EdgeTypeFilter';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { TopologyView, type TopologyControls } from '../components/TopologyView';
 import { Panel } from '../design';
@@ -28,6 +33,7 @@ export function TopologyPage() {
   const blast = useBlastRadius();
   const diff = useDiffMode();
   const [zoom, setZoom] = useState(1);
+  const [edgePreset, setEdgePreset] = useState<EdgeFilterPreset>('all');
   const controlsRef = useRef<TopologyControls | null>(null);
 
   const params =
@@ -102,6 +108,7 @@ export function TopologyPage() {
           <LevelTabs value={level} onChange={setLevel} disableWorkload disableResource />
           {level === 'namespace' && <NamespacePicker />}
           <LabelFilter value={labelFilter} onChange={setLabelFilter} />
+          <EdgeTypeFilter value={edgePreset} onChange={setEdgePreset} />
         </Box>
       </Panel>
 
@@ -127,6 +134,7 @@ export function TopologyPage() {
               controlsRef.current = c;
               setZoom(c.currentZoom());
             }}
+            visibleEdgeTypes={EDGE_PRESET_TYPES[edgePreset]}
           />
           <ZoomScaleWidget
             zoom={zoom}
