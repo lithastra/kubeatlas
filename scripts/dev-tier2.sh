@@ -93,11 +93,12 @@ if ! docker exec "${PG_NAME}" pg_isready -U kubeatlas -d kubeatlas >/dev/null 2>
   exit 1
 fi
 
-# 2. Build the binary if missing ---------------------------------------
-if [[ ! -x "${KUBEATLAS_BIN}" ]]; then
-  echo "==> Building kubeatlas binary"
-  ( cd "${REPO_ROOT}" && CGO_ENABLED=0 go build -o bin/kubeatlas ./cmd/kubeatlas )
-fi
+# 2. Build the binary every run -------------------------------------
+# Always rebuild — local dev iterates on extractor + handler code and
+# a stale binary silently masks the change. Go's build cache makes
+# the no-op case effectively free.
+echo "==> Building kubeatlas binary"
+( cd "${REPO_ROOT}" && CGO_ENABLED=0 go build -o bin/kubeatlas ./cmd/kubeatlas )
 
 # 3. Kill any prior kubeatlas-dev process the script started ----------
 if [[ -f "${STATE_DIR}/kubeatlas.pid" ]]; then
