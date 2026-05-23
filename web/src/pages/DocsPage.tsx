@@ -7,7 +7,7 @@ export function DocsPage() {
   const { t } = useTranslation('translation');
   const { t: tApp } = useTranslation('app');
   return (
-    <Box sx={{ padding: 'var(--atlas-space-5)', width: '100%', overflow: 'auto' }}>
+    <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
       <Stack spacing={2}>
         <Typography variant="h4">{t('page.docs.title')}</Typography>
         <Typography variant="body1">{t('page.docs.intro')}</Typography>
