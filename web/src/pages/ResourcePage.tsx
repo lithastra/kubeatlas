@@ -1,10 +1,21 @@
-import { useEffect } from 'react';
-import { Alert, CircularProgress, Stack } from '@mui/material';
+import { useEffect, type ReactNode } from 'react';
+import { Alert, Box, CircularProgress, Stack } from '@mui/material';
 import { useParams } from 'react-router-dom';
 
 import { useGraph, useResource } from '../api/graph';
 import { getWatchClient } from '../api/watchClient';
 import { ResourceDetailPanel } from '../components/ResourceDetailPanel';
+
+// Outer Box owns the chrome inset so the content doesn't butt up
+// against the LeftClusterStrip. Same convention as the other framed
+// pages — TopologyPage skips it because the canvas is full-bleed.
+function Framed({ children }: { children: ReactNode }) {
+  return (
+    <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
+      {children}
+    </Box>
+  );
+}
 
 // ResourcePage handles /resources/:namespace/:kind/:name. It fires
 // two queries in parallel: the detail bundle (resource + edges) and
@@ -39,21 +50,31 @@ export function ResourcePage() {
 
   if (detail.isLoading) {
     return (
-      <Stack alignItems="center" sx={{ py: 4 }}>
-        <CircularProgress size={24} />
-      </Stack>
+      <Framed>
+        <Stack alignItems="center" sx={{ py: 4 }}>
+          <CircularProgress size={24} />
+        </Stack>
+      </Framed>
     );
   }
   if (detail.isError || !detail.data) {
-    return <Alert severity="error">{(detail.error as Error)?.message ?? 'failed to load resource'}</Alert>;
+    return (
+      <Framed>
+        <Alert severity="error">
+          {(detail.error as Error)?.message ?? 'failed to load resource'}
+        </Alert>
+      </Framed>
+    );
   }
 
   return (
-    <ResourceDetailPanel
-      resource={detail.data.resource}
-      incoming={detail.data.incoming}
-      outgoing={detail.data.outgoing}
-      mermaidText={view.data?.mermaid}
-    />
+    <Framed>
+      <ResourceDetailPanel
+        resource={detail.data.resource}
+        incoming={detail.data.incoming}
+        outgoing={detail.data.outgoing}
+        mermaidText={view.data?.mermaid}
+      />
+    </Framed>
   );
 }
