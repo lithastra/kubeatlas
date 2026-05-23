@@ -8,3 +8,4 @@ export { LeftClusterStrip } from './LeftClusterStrip';
 export { TimeAxisBar } from './TimeAxisBar';
 export { CompassWidget } from './CompassWidget';
 export { GridBackground } from './GridBackground';
+export { ZoomScaleWidget, LEVEL_ZOOMS, levelForZoom, type ZoomLevel } from './ZoomScaleWidget';

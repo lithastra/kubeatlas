@@ -18,17 +18,34 @@ import { useAtlasTheme } from '../theme';
 // canvas background is tapped (the conventional "clear selection"
 // gesture). Callers route the selection into the right context
 // panel via useRightPanel().
+//
+// onZoom fires (rate-limited by cy) whenever zoom changes — the
+// shell's ZoomScaleWidget consumes this to keep its scale chip in
+// sync with the canvas. onReady hands back a controls handle once
+// cytoscape has mounted so callers can animate zoom programmatically
+// from the widget without poking at cyRef themselves.
+export interface TopologyControls {
+  zoomTo: (level: number) => void;
+  currentZoom: () => number;
+}
+
 export interface TopologyViewProps {
   view: View | undefined;
   height?: number | string;
   onSelect?: (nodeId: string | null) => void;
+  onZoom?: (zoom: number) => void;
+  onReady?: (controls: TopologyControls) => void;
 }
 
-export function TopologyView({ view, height = '100%', onSelect }: TopologyViewProps) {
+const ZOOM_ANIM_MS = 400;
+
+export function TopologyView({ view, height = '100%', onSelect, onZoom, onReady }: TopologyViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onZoomRef = useRef(onZoom);
+  onZoomRef.current = onZoom;
 
   const { name: themeName } = useAtlasTheme();
   const { matchedIds } = useSearchOverlay();
@@ -47,6 +64,16 @@ export function TopologyView({ view, height = '100%', onSelect }: TopologyViewPr
       });
       cy.on('tap', (ev: EventObject) => {
         if (ev.target === cy) onSelectRef.current?.(null);
+      });
+      // Zoom broadcast for the ZoomScaleWidget. Fires on every
+      // scroll/pinch tick; the consumer can debounce if needed.
+      cy.on('zoom', () => onZoomRef.current?.(cy.zoom()));
+      // Initial zoom + controls handoff (after the first fit settles).
+      onZoomRef.current?.(cy.zoom());
+      onReady?.({
+        zoomTo: (level: number) =>
+          cy.animate({ zoom: level, center: { eles: cy.elements() } }, { duration: ZOOM_ANIM_MS }),
+        currentZoom: () => cy.zoom(),
       });
     }
     // theme name is intentionally NOT a dependency here — we want

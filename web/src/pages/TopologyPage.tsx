@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Box, CircularProgress } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
@@ -8,9 +8,9 @@ import { LabelFilter } from '../components/LabelFilter';
 import { LevelTabs } from '../components/LevelTabs';
 import { NamespacePicker } from '../components/NamespacePicker';
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
-import { TopologyView } from '../components/TopologyView';
+import { TopologyView, type TopologyControls } from '../components/TopologyView';
 import { Panel } from '../design';
-import { useRightPanel } from '../shell';
+import { useRightPanel, ZoomScaleWidget } from '../shell';
 import { useAppSelector } from '../store';
 
 // TopologyPage is the cartography graph view. The canvas fills the
@@ -23,6 +23,8 @@ export function TopologyPage() {
   const [labelFilter, setLabelFilter] = useState<Record<string, string>>({});
   const namespace = useAppSelector((s) => s.filter.namespace);
   const { setContent } = useRightPanel();
+  const [zoom, setZoom] = useState(1);
+  const controlsRef = useRef<TopologyControls | null>(null);
 
   const params =
     level === 'cluster'
@@ -79,7 +81,22 @@ export function TopologyPage() {
           <Alert severity="error">{(error as Error)?.message ?? 'unknown error'}</Alert>
         </CenteredOverlay>
       ) : (
-        <TopologyView view={data} onSelect={handleSelect} />
+        <>
+          <TopologyView
+            view={data}
+            onSelect={handleSelect}
+            onZoom={setZoom}
+            onReady={(c) => {
+              controlsRef.current = c;
+              setZoom(c.currentZoom());
+            }}
+          />
+          <ZoomScaleWidget
+            zoom={zoom}
+            nodeCount={data?.nodes.length}
+            onPickLevel={(targetZoom) => controlsRef.current?.zoomTo(targetZoom)}
+          />
+        </>
       )}
     </Box>
   );
