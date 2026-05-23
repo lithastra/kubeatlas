@@ -35,11 +35,16 @@ var workloadKinds = map[string]bool{
 
 // raw passthroughKinds keep their resource node form.
 var passthroughKinds = map[string]bool{
-	"ConfigMap":             true,
-	"Secret":                true,
-	"ServiceAccount":        true,
-	"PersistentVolumeClaim": true,
-	"Gateway":               true,
+	"ConfigMap":               true,
+	"Secret":                  true,
+	"ServiceAccount":          true,
+	"PersistentVolumeClaim":   true,
+	"Gateway":                 true,
+	// HorizontalPodAutoscaler is a controller that *targets* a
+	// workload rather than something a workload references; it
+	// stays a raw node at namespace level so the outgoing SCALES
+	// edge to its target is reachable from the view.
+	"HorizontalPodAutoscaler": true,
 }
 
 // absorbedKinds are folded into their owners' ChildrenCount and not
