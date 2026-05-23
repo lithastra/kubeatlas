@@ -7,6 +7,7 @@ export { BlastRadiusBanner } from './BlastRadiusBanner';
 export { BlastRadiusControls } from './BlastRadiusControls';
 export { DiffModeProvider, useDiffMode } from './DiffModeContext';
 export { DiffModeBanner } from './DiffModeBanner';
+export { ClusterSelectionProvider, useClusterSelection } from './ClusterSelectionContext';
 export { TopBar } from './TopBar';
 export { ThemeSwitcher } from './ThemeSwitcher';
 export { LeftClusterStrip } from './LeftClusterStrip';
