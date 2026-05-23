@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
 import type { Core, EventObject } from 'cytoscape';
 
-import type { View } from '../api/types';
+import type { EdgeType, View } from '../api/types';
 import { applyAtlasPalette, createCytoscape, paletteFor, updateCytoscape } from '../lib/cytoscape';
 import { computeBlastRadius } from '../lib/blastRadius';
 import { useSnapshotDiff } from '../api/snapshots';
@@ -37,11 +37,22 @@ export interface TopologyViewProps {
   onSelect?: (nodeId: string | null) => void;
   onZoom?: (zoom: number) => void;
   onReady?: (controls: TopologyControls) => void;
+  // Edge-type allow-list. null means show every edge; a set means
+  // edges with a `type` outside the set get the `dimmed` flag and
+  // nodes that become orphaned (no visible edges) get dimmed too.
+  visibleEdgeTypes?: ReadonlySet<EdgeType> | null;
 }
 
 const ZOOM_ANIM_MS = 400;
 
-export function TopologyView({ view, height = '100%', onSelect, onZoom, onReady }: TopologyViewProps) {
+export function TopologyView({
+  view,
+  height = '100%',
+  onSelect,
+  onZoom,
+  onReady,
+  visibleEdgeTypes = null,
+}: TopologyViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
   const onSelectRef = useRef(onSelect);
@@ -165,35 +176,55 @@ export function TopologyView({ view, height = '100%', onSelect, onZoom, onReady 
     });
   }, [diff.active, diffData, view]);
 
-  // Effect 6: blast-radius dim/brighten. When active, every node
-  // and edge not in the reachable set gets the `dimmed` flag; the
-  // reachable subgraph stays at full opacity. The root node also
-  // gets selected so its glow is visible. Clearing the mode wipes
-  // the flags so the canvas snaps back.
+  // Effect 6: composite dim/brighten. Blast-radius mode wins when
+  // active (every non-reachable node/edge dims, the reachable
+  // subgraph stays bright). When blast is off, the edge-type
+  // filter takes over: edges with a `type` outside the allow-list
+  // dim, and nodes that lose every visible incident edge dim too.
+  // No active mode → wipe all dimmed flags so the canvas snaps
+  // back to normal.
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
     cy.batch(() => {
-      if (!blast.active || !blast.rootId || !view) {
-        cy.nodes().removeData('dimmed');
-        cy.edges().removeData('dimmed');
+      if (blast.active && blast.rootId && view) {
+        const result = computeBlastRadius(view, blast.rootId, blast.direction, blast.depth);
+        const reachable = result.reachable;
+        cy.nodes().forEach((n) => {
+          if (reachable.has(String(n.id()))) n.removeData('dimmed');
+          else n.data('dimmed', true);
+        });
+        cy.edges().forEach((e) => {
+          const inSet =
+            reachable.has(String(e.source().id())) && reachable.has(String(e.target().id()));
+          if (inSet) e.removeData('dimmed');
+          else e.data('dimmed', true);
+        });
         return;
       }
-      const result = computeBlastRadius(view, blast.rootId, blast.direction, blast.depth);
-      const reachable = result.reachable;
-      const reachableEdges = new Set(result.edges);
-      cy.nodes().forEach((n) => {
-        if (reachable.has(String(n.id()))) n.removeData('dimmed');
-        else n.data('dimmed', true);
-      });
-      cy.edges().forEach((e) => {
-        const inSet = reachableEdges.has(e.data() as never) ||
-          (reachable.has(String(e.source().id())) && reachable.has(String(e.target().id())));
-        if (inSet) e.removeData('dimmed');
-        else e.data('dimmed', true);
-      });
+      if (visibleEdgeTypes) {
+        const visibleNodeIds = new Set<string>();
+        cy.edges().forEach((e) => {
+          const t = e.data('type') as EdgeType | undefined;
+          const ok = t != null && visibleEdgeTypes.has(t);
+          if (ok) {
+            e.removeData('dimmed');
+            visibleNodeIds.add(String(e.source().id()));
+            visibleNodeIds.add(String(e.target().id()));
+          } else {
+            e.data('dimmed', true);
+          }
+        });
+        cy.nodes().forEach((n) => {
+          if (visibleNodeIds.has(String(n.id()))) n.removeData('dimmed');
+          else n.data('dimmed', true);
+        });
+        return;
+      }
+      cy.nodes().removeData('dimmed');
+      cy.edges().removeData('dimmed');
     });
-  }, [blast.active, blast.rootId, blast.depth, blast.direction, view]);
+  }, [blast.active, blast.rootId, blast.depth, blast.direction, view, visibleEdgeTypes]);
 
   return (
     <Box
