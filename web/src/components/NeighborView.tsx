@@ -46,6 +46,38 @@ export function NeighborView({ mermaidText }: NeighborViewProps) {
         const c = containerRef.current;
         while (c.firstChild) c.removeChild(c.firstChild);
         c.appendChild(root);
+        // Post-process: Mermaid v11 sometimes sizes node boxes
+        // slightly narrower than the rendered label, clipping
+        // long names like HorizontalPodAutoscaler/podinfo. Walk
+        // every .node, measure the actual label width, and grow
+        // the foreignObject + shape (rect / polygon path bbox)
+        // to fit. Runs on a rAF so layout has settled.
+        requestAnimationFrame(() => {
+          if (!c) return;
+          const NODE_PADDING = 24; // 12px each side
+          c.querySelectorAll('g.node').forEach((node) => {
+            const label = node.querySelector<HTMLElement>('.nodeLabel');
+            const fo = node.querySelector<SVGForeignObjectElement>('foreignObject');
+            if (!label || !fo) return;
+            const textWidth = Math.ceil(label.getBoundingClientRect().width);
+            const wanted = textWidth + NODE_PADDING;
+            const have = parseFloat(fo.getAttribute('width') ?? '0');
+            if (wanted <= have) return;
+            const delta = wanted - have;
+            // Widen the foreignObject and re-center it.
+            const x = parseFloat(fo.getAttribute('x') ?? '0');
+            fo.setAttribute('width', String(wanted));
+            fo.setAttribute('x', String(x - delta / 2));
+            // Widen any rect sibling (rectangle/round-rectangle nodes).
+            node.querySelectorAll('rect').forEach((rect) => {
+              const w = parseFloat(rect.getAttribute('width') ?? '0');
+              if (w <= 0) return;
+              const rx = parseFloat(rect.getAttribute('x') ?? '0');
+              rect.setAttribute('width', String(w + delta));
+              rect.setAttribute('x', String(rx - delta / 2));
+            });
+          });
+        });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -74,12 +106,27 @@ export function NeighborView({ mermaidText }: NeighborViewProps) {
         ref={containerRef}
         sx={{
           overflowX: 'auto',
-          // Natural-width mermaid SVG: don't clamp to 100% (that
-          // shrinks node boxes and re-introduces label clipping).
-          // Let it render at its measured size and scroll if it
-          // overflows the panel.
-          '& svg': { display: 'block', maxWidth: 'none', height: 'auto' },
-          '& .nodeLabel, & .nodeLabel *': { whiteSpace: 'nowrap !important' },
+          // Mermaid v11 emits svg width="100%" even with
+          // useMaxWidth=false. Override every level so the SVG
+          // renders at its natural intrinsic size (driven by node
+          // box widths), then the container scrolls if needed.
+          '& svg': {
+            display: 'block',
+            width: 'auto !important',
+            height: 'auto !important',
+            maxWidth: 'none !important',
+          },
+          // Mermaid v11 wraps each htmlLabel in
+          //   <foreignObject><div class="nodeLabel"><p>…</p></div></foreignObject>
+          // The default styles wrap the <p> text at the foreignObject's
+          // computed width and round it down — long labels clip.
+          // Force nowrap on the label DOM so the layout engine picks
+          // a foreignObject width that actually fits.
+          '& .nodeLabel, & .nodeLabel *, & .label, & .label *': {
+            whiteSpace: 'nowrap !important',
+            overflow: 'visible !important',
+            textOverflow: 'clip !important',
+          },
           '& foreignObject': { overflow: 'visible' },
         }}
       />
