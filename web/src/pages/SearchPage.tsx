@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 export function SearchPage() {
   const { t } = useTranslation('translation');
   return (
-    <Box sx={{ padding: 'var(--atlas-space-5)', width: '100%', overflow: 'auto' }}>
+    <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
       <Stack spacing={1}>
         <Typography variant="h4">{t('page.search.title')}</Typography>
         <Typography variant="body2" color="text.secondary">

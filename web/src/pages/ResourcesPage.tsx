@@ -16,7 +16,7 @@ import { ResourceTable } from '../components/ResourceTable';
 export function ResourcesPage() {
   const { t } = useTranslation('translation');
   return (
-    <Box sx={{ padding: 'var(--atlas-space-5)', width: '100%', overflow: 'auto' }}>
+    <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
       <Stack spacing={2}>
         <Typography variant="h4">{t('page.resources.title')}</Typography>
         <NamespacePicker />

@@ -62,7 +62,7 @@ export function SnapshotsPage() {
 
   if (notEnabled) {
     return (
-      <Box sx={{ padding: 'var(--atlas-space-5)', width: '100%', overflow: 'auto' }}>
+      <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
         <Stack spacing={2}>
           <Typography variant="h4">{t('page.snapshots.title')}</Typography>
           <Alert severity="info">{t('page.snapshots.notEnabled')}</Alert>
@@ -72,7 +72,7 @@ export function SnapshotsPage() {
   }
 
   return (
-    <Box sx={{ padding: 'var(--atlas-space-5)', width: '100%', overflow: 'auto' }}>
+    <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
     <Stack spacing={3}>
       <Typography variant="h4">{t('page.snapshots.title')}</Typography>
       <Typography variant="body2" color="text.secondary">
