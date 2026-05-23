@@ -1,6 +1,6 @@
 {
   "name": "KubeAtlas",
-  "version": "v0.1.0-{{build}}",
+  "version": "v1.3.0-{{build}}",
   "tagline": "Kubernetes resource dependency graph",
   "docs": {
     "url": "https://docs.kubeatlas.lithastra.com",
@@ -11,6 +11,6 @@
     "label": "GitHub"
   },
   "phaseBanner": {
-    "preAlpha": "Pre-Alpha — APIs may change before v0.1.0."
+    "preAlpha": "v1.3 — federation + cartography UI."
   }
 }

@@ -45,6 +45,9 @@ export function useSnapshotDiff(
     enabled: from !== '',
     queryFn: ({ signal }) =>
       fetchJSON<DiffResult>(`${apiBase}/snapshots/diff?${params.toString()}`, { signal }),
-    retry: (_, err) => !(err instanceof ApiError) || err.status >= 500,
+    retry: (_, err) =>
+      // 503 means snapshots aren't enabled — same Tier 1 short-circuit
+      // as useSnapshots. Other server errors get the default retries.
+      !(err instanceof ApiError) || err.status !== 503,
   });
 }
