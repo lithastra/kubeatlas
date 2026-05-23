@@ -1,42 +1,34 @@
 /* ============================================================
- * CompassWidget — bottom-right cartography signature.
+ * CompassWidget — cartography signature rose.
  *
- * A small SVG rose (north arrow + cardinal marks) plus a numeric
- * scale chip. Positioned absolutely inside the canvas area so it
- * sits over the graph without participating in layout.
+ * A small SVG north arrow positioned top-right of the canvas. The
+ * scale chip was removed once ZoomScaleWidget shipped (bottom-right,
+ * shows the actual cytoscape zoom × L-band) — keeping the static
+ * "50,000 ft" placeholder alongside a live scale was misleading.
  *
  * Drawn inline (not via the icon sprite) so it can scale freely
- * and the cardinal labels stay legible at the design's 64px size.
+ * and the N glyph stays legible at the design's 56px size.
  * ============================================================ */
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 
-interface CompassWidgetProps {
-  /** Optional viewport-zoom-to-label. M5 wires this from cytoscape's
-   *  current zoom; for now it shows a static scale label. */
-  scaleLabel?: string;
-}
-
-export function CompassWidget({ scaleLabel = '50,000 ft' }: CompassWidgetProps) {
+export function CompassWidget() {
   return (
     <Box
       role="img"
-      aria-label={`Compass · scale ${scaleLabel}`}
+      aria-label="Compass · north up"
       sx={{
         position: 'absolute',
         right: 'var(--atlas-space-4)',
-        bottom: 'var(--atlas-space-4)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-end',
-        gap: 'var(--atlas-space-1)',
+        top: 'var(--atlas-space-4)',
         pointerEvents: 'none',
         color: 'var(--atlas-text-2)',
+        opacity: 0.7,
       }}
     >
       <Box
         component="svg"
         viewBox="0 0 64 64"
-        sx={{ width: 64, height: 64 }}
+        sx={{ width: 56, height: 56 }}
         aria-hidden
       >
         <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeOpacity="0.4" />
@@ -63,20 +55,6 @@ export function CompassWidget({ scaleLabel = '50,000 ft' }: CompassWidgetProps) 
           N
         </text>
       </Box>
-      <Typography
-        component="span"
-        sx={{
-          fontFamily: 'var(--atlas-font-mono)',
-          fontSize: 'var(--atlas-text-scale-figure-size)',
-          color: 'var(--atlas-text-3)',
-          backgroundColor: 'var(--atlas-bg)',
-          borderRadius: 'var(--atlas-radius-1)',
-          padding: '2px 6px',
-          border: '1px solid var(--atlas-border)',
-        }}
-      >
-        {scaleLabel}
-      </Typography>
     </Box>
   );
 }
