@@ -23,6 +23,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lithastra/kubeatlas/pkg/version"
+
 	// Register the client-go auth plugins (OIDC and friends) so the
 	// plugin can authenticate to clusters that need them — a Krew
 	// best practice. Exec-credential auth (EKS, GKE, AKS) is built
@@ -105,6 +107,14 @@ func newRootCmd(a *app) *cobra.Command {
 		// "atlas". kubectl invokes the plugin as `kubectl atlas`.
 		Use:   "kubectl-atlas <kind> <name>",
 		Short: "Show a KubeAtlas view of a Kubernetes resource",
+		// Cobra wires --version (and -v shorthand) automatically when
+		// the field is set; the template prints "<binary> version <X>"
+		// so `kubectl atlas --version` and `kubectl-atlas --version`
+		// both render the same string. Values come from pkg/version,
+		// which goreleaser ldflags-stamps at release time. Local
+		// `go build` shows "dev (commit none, built unknown)".
+		Version: fmt.Sprintf("%s (commit %s, built %s)",
+			version.Version, version.Commit, version.Date),
 		Long: "kubectl-atlas shows a KubeAtlas view of a resource, namespace,\n" +
 			"or the whole cluster.\n\n" +
 			"Offline (the default): builds the dependency graph straight from\n" +
