@@ -103,7 +103,7 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
         {tApp('version', { build: version })}
       </Typography>
       <Box sx={{ flexGrow: 1 }} />
-      <Stack direction="row" spacing={2} component="nav" aria-label="Primary">
+      <Stack direction="row" spacing={2} alignItems="center" component="nav" aria-label="Primary">
         {ROUTES.map((entry) => {
           const label = t(entry.labelKey);
           if (entry.kind === 'route') {
@@ -139,10 +139,18 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
   );
 }
 
-// Shared visual treatment so route, action, and external nav items
-// read as a single nav row instead of three different elements.
+// Shared visual treatment so route and external nav items read as
+// one nav row. Each item is an inline-flex centered box so the
+// label sits horizontally and vertically centered inside the click
+// target, and the active underline sits flush against the bottom
+// edge of the box rather than the baseline of an inline element.
 function navItemStyle(isActive: boolean) {
   return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 32,
+    paddingInline: 4,
     fontFamily: 'var(--atlas-font-ui)',
     fontSize: 'var(--atlas-text-caption-size)',
     color: isActive ? 'var(--atlas-text-1)' : 'var(--atlas-text-2)',
@@ -150,6 +158,6 @@ function navItemStyle(isActive: boolean) {
     borderBottom: isActive
       ? '2px solid var(--atlas-select)'
       : '2px solid transparent',
-    paddingBottom: 2,
+    lineHeight: 1,
   } as const;
 }
