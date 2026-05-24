@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Box, CircularProgress } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
+import { useFederationGraph } from '../api/federation';
 import { useGraph } from '../api/graph';
 import type { Level } from '../api/types';
 import { LabelFilter } from '../components/LabelFilter';
@@ -17,7 +18,7 @@ import {
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { TopologyView, type TopologyControls } from '../components/TopologyView';
 import { Panel } from '../design';
-import { CompassWidget, useBlastRadius, useDiffMode, useRightPanel, ZoomScaleWidget } from '../shell';
+import { CompassWidget, useBlastRadius, useClusterSelection, useDiffMode, useRightPanel, ZoomScaleWidget } from '../shell';
 import { useAppSelector } from '../store';
 
 // TopologyPage is the cartography graph view. The canvas fills the
@@ -32,15 +33,38 @@ export function TopologyPage() {
   const { setContent } = useRightPanel();
   const blast = useBlastRadius();
   const diff = useDiffMode();
+  const cluster = useClusterSelection();
   const [zoom, setZoom] = useState(1);
   const [edgePreset, setEdgePreset] = useState<EdgeFilterPreset>('all');
   const controlsRef = useRef<TopologyControls | null>(null);
 
+  // Fetch dispatch. Two paths share the same View shape so the rest
+  // of the page is unchanged:
+  //
+  //   - Federated path (`cluster.selected != null`):
+  //       useFederationGraph hits /api/v1/federation/graph?cluster=…
+  //       — every node carries a clusterId so the cytoscape
+  //       per-cluster border-tint rule lights up.
+  //   - Single-cluster path (`cluster.selected == null`):
+  //       useGraph hits /api/v1alpha1/graph at cluster or namespace
+  //       level (the v1.3.0 behaviour). Honours the label filter +
+  //       LevelTabs picker.
+  //
+  // Both hooks are always mounted; React Query disables the inactive
+  // one via its `enabled` flag (federation: enabled iff cluster set;
+  // useGraph: enabled iff scope is complete). Single-cluster installs
+  // never see the federated path because cluster.selected stays null
+  // (the picker has no member to pick).
+  const fedQuery = useFederationGraph({
+    clusters: cluster.selected ? [cluster.selected] : [],
+    level: 'resource',
+  });
   const params =
     level === 'cluster'
       ? { level: 'cluster' as const, labels: labelFilter }
       : { level: 'namespace' as const, namespace: namespace ?? undefined, labels: labelFilter };
-  const { data, isLoading, isError, error } = useGraph(params);
+  const localQuery = useGraph(params);
+  const { data, isLoading, isError, error } = cluster.selected ? fedQuery : localQuery;
 
   // Clear the right panel when leaving the topology page.
   useEffect(() => () => setContent(null), [setContent]);

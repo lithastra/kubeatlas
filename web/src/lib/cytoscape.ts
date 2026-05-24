@@ -4,6 +4,7 @@ import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import * as cytoscapeDagre from 'cytoscape-dagre';
 
 import type { View, ViewEdge, ViewNode } from '../api/types';
+import { clusterColour } from './clusterColour';
 import {
   themePalettes,
   DEFAULT_THEME,
@@ -297,6 +298,19 @@ export function buildAtlasStylesheet(palette: AtlasPalette): cytoscape.Styleshee
     },
     { selector: 'node[?dimmed]', style: { opacity: 0.2 } },
     { selector: 'node[?highlighted]', style: { opacity: 1, 'z-index': 10 } },
+    // Per-cluster border tint. borderColor is set on the node's data
+    // by elementsFromView when the source is a FederatedView
+    // (clusterColour() of the node's clusterId). The selector
+    // `node[borderColor]` matches only nodes that have a non-empty
+    // borderColor — single-cluster fetches leave it empty and this
+    // rule misses, preserving the family-default border.
+    {
+      selector: 'node[borderColor != ""]',
+      style: {
+        'border-color': 'data(borderColor)',
+        'border-width': 2.5,
+      },
+    },
     // ⌘K palette match — thick select-coloured outline so matches
     // stay legible after the overlay closes (search-folds-into-graph).
     {
@@ -443,6 +457,12 @@ export function elementsFromView(view: View): ElementDefinition[] {
   const elements: ElementDefinition[] = [];
   for (const n of view.nodes ?? []) {
     const kind = n.kind ?? '';
+    // FederatedView nodes carry a non-standard `clusterId` field; the
+    // adapter passes it straight through onto node data so the
+    // stylesheet's per-cluster border colour can read it. Empty on
+    // single-cluster fetches → the per-cluster style rule misses and
+    // the normal border colour applies.
+    const clusterId = (n as { clusterId?: string }).clusterId ?? '';
     elements.push({
       group: 'nodes',
       data: {
@@ -453,6 +473,12 @@ export function elementsFromView(view: View): ElementDefinition[] {
         family: kind ? classifyKind(kind) : 'custom',
         inferred: kind ? isInferredKind(kind) : true,
         state: 'healthy',
+        clusterId,
+        // borderColor is read by the `node[borderColor]` rule below.
+        // Empty on single-cluster fetches (clusterId is empty), so
+        // the per-cluster rule doesn't match and the family default
+        // applies.
+        borderColor: clusterId ? clusterColour(clusterId) : '',
       },
     });
   }
