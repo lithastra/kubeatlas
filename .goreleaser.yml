@@ -142,17 +142,16 @@ release:
     name: kubeatlas
   draft: true
   prerelease: auto
-  header: |
-    ## KubeAtlas {{ .Tag }}
-
-    See `docs/quick-start.md` for installation. The Helm Chart is
-    published to `oci://ghcr.io/lithastra/charts/kubeatlas` with the
-    same version tag.
-
-    Phase 1 release: no built-in authentication. Default deployment
-    is ClusterIP-only. To expose the UI via Ingress see
-    `docs/installation/security-warning.md` and the per-controller
-    guide (`ingress-nginx-f5.md` / `ingress-traefik.md` /
-    `ingress-alb.md`). KubeAtlas v0.1.0 does not ship examples for
-    the community ingress-nginx project, which is being retired in
-    March 2026.
+  # Body comes from CHANGELOG.md via --release-notes=FILE on the
+  # goreleaser CLI (see .github/workflows/release.yml). The release
+  # workflow runs `make changelog-extract VERSION=$TAG` first, which
+  # writes /tmp/release-notes.md from the matching `## [vX.Y.Z]`
+  # section. Keeping the body version-specific stops every release
+  # card looking identical — the old static header was the same
+  # Phase 1 boilerplate on every tag.
+  footer: |
+    ---
+    **Helm Chart:** `oci://ghcr.io/lithastra/charts/kubeatlas:{{ .Version }}`
+    **Container image:** `ghcr.io/lithastra/kubeatlas:{{ .Version }}`
+    **Quick start:** https://docs.kubeatlas.lithastra.com/quick-start
+    **Security:** https://docs.kubeatlas.lithastra.com/installation/security-warning
