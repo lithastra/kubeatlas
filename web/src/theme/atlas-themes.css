@@ -209,7 +209,9 @@
   --atlas-bg: #1B1D22;
   --atlas-surface: #24272E;
   --atlas-border: #353941;
-  --atlas-text-3: #6B7079;
+  /* text-3 bumped from #6B7079 for WCAG AA contrast — see
+     themePalettes.ts comment. */
+  --atlas-text-3: #888E98;
   --atlas-text-2: #A0A6B0;
   --atlas-text-1: #E8E6DF;
   --atlas-node-fill: #24272E;
