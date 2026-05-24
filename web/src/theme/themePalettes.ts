@@ -151,7 +151,11 @@ export const themePalettes = {
     bg: '#1B1D22',
     surface: '#24272E',
     border: '#353941',
-    text3: '#6B7079',
+    // text3 bumped from #6B7079 in a v1.3.x a11y pass — the
+    // previous value failed WCAG AA normal-text contrast on both
+    // bg (3.39:1) and surface (3.00:1). #888E98 gives 5.11:1 on
+    // bg and 4.53:1 on surface, both clearing 4.5:1 with margin.
+    text3: '#888E98',
     text2: '#A0A6B0',
     text1: '#E8E6DF',
     nodeFill: '#24272E',

@@ -23,9 +23,11 @@ import { Box } from '@mui/material';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { Panel } from '../design';
+import { useAnnouncer } from './AnnouncerContext';
 import { BlastRadiusBanner } from './BlastRadiusBanner';
 import { BlastRadiusControls } from './BlastRadiusControls';
 import { useBlastRadius } from './BlastRadiusContext';
+import { useClusterSelection } from './ClusterSelectionContext';
 import { DiffModeBanner } from './DiffModeBanner';
 import { useDiffMode } from './DiffModeContext';
 import { CommandPalette } from './CommandPalette';
@@ -54,6 +56,34 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
   const search = useSearchOverlay();
   const blast = useBlastRadius();
   const diff = useDiffMode();
+  const cluster = useClusterSelection();
+  const { message: announceMessage, announce } = useAnnouncer();
+
+  // Screen-reader announcements on mode change. Each effect speaks
+  // a short sentence the polite live region (rendered at the foot
+  // of this component) will pick up. Skip the initial render so we
+  // don't announce "no mode" / "all clusters" on first paint.
+  useEffect(() => {
+    if (blast.active && blast.rootId) {
+      announce(`Blast radius on ${blast.rootId}, depth ${blast.depth === Infinity ? 'unbounded' : blast.depth}, ${blast.direction}.`);
+    }
+  }, [blast.active, blast.rootId, blast.depth, blast.direction, announce]);
+
+  useEffect(() => {
+    if (diff.active && diff.anchor) {
+      announce(`Diff mode against ${diff.anchor} ago.`);
+    }
+  }, [diff.active, diff.anchor, announce]);
+
+  useEffect(() => {
+    if (cluster.selected) {
+      announce(`Focused cluster ${cluster.selected}.`);
+    }
+  }, [cluster.selected, announce]);
+
+  useEffect(() => {
+    if (search.open) announce('Command palette open.');
+  }, [search.open, announce]);
   const liveContent = contextPanel ?? ctx.content;
   const [panelOpen, setPanelOpen] = useState(liveContent != null);
   if (liveContent != null && !panelOpen) setPanelOpen(true);
@@ -164,6 +194,28 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
         )}
       </Box>
       <CommandPalette />
+      {/* Polite live region for mode-change announcements. Visually
+          hidden via the same clip-path/position trick the WAI-ARIA
+          authoring practices recommend; stays in the accessibility
+          tree so screen readers speak each new message. */}
+      <Box
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        sx={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          clip: 'rect(0 0 0 0)',
+          whiteSpace: 'nowrap',
+          border: 0,
+        }}
+      >
+        {announceMessage}
+      </Box>
     </Box>
   );
 }
