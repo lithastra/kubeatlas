@@ -7,21 +7,71 @@ fixes bump the patch.
 
 ## [Unreleased]
 
-_Buffer for changes accumulating after v1.3.0. Move entries into a
-real `## [vX.Y.Z]` section when cutting the next release; see
+_Polish + tooling that landed after v1.3.0. Move into a real
+`## [vX.Y.Z]` section when cutting the next release; see
 [RELEASING.md](./RELEASING.md)._
 
 ### Added
 
-- _(none yet)_
+- **Cluster picker drives the topology fetch through federation
+  graph** — picking a cluster from the LeftClusterStrip now routes
+  the canvas query through `/api/v1/federation/graph?cluster=<id>`
+  (previously always `/api/v1alpha1/graph` regardless of
+  selection). Each node picks up a per-cluster border tint via a
+  shared deterministic hash so federated members are visually
+  distinct on the canvas without an extra legend.
+- **Keyboard graph traversal on the topology canvas** —
+  `role="application"` + `tabIndex=0` so the cytoscape canvas lands
+  in the tab order; Arrow keys walk the id-sorted node list,
+  Enter/Space opens the focused node in the right detail panel,
+  Esc clears (deferring to the shell-level Esc handler when blast-
+  radius or diff mode owns it).
+- **Drag-anchor scrubbing on the time-axis rail** — the rail is
+  now a real ARIA slider with drag + Arrow/Home/End/Shift-Arrow
+  keyboard support and a 30s right-edge snap to NOW. Picks an
+  arbitrary anchor within the last 7 days; preset chips still work
+  and the marker position is the real fraction of the rail span.
+- **RadialMenu primitive + right-click depth picker** — generic
+  wedge menu in `web/src/design/`, used as the right-click entry
+  path on the topology canvas to enter blast-radius mode at one of
+  three common depths (1 / 3 / ∞) in a single gesture. The linear
+  toolbar at canvas bottom stays as the always-visible alternative.
+- **Screen-reader announcements on mode change** — polite
+  `aria-live` region at the shell speaks on blast-radius enter,
+  diff anchor change, cluster focus, and command-palette open. A
+  zero-width-space toggler forces repeated identical messages to
+  re-fire (some SRs ignore unchanged textContent).
+- **`kubectl atlas --version` flag** — stamps `pkg/version`'s
+  Version + Commit + Date into the kubectl-atlas binary at release
+  time so installs can self-identify without poking around
+  `~/.krew/store`.
 
 ### Changed
 
-- _(none yet)_
+- **GitHub release bodies auto-populate from `CHANGELOG.md`** —
+  goreleaser now reads `/tmp/release-notes.md` (produced by a new
+  `make changelog-extract VERSION=vX.Y.Z` target) via
+  `--release-notes`. The previous static Phase-1-style header made
+  every release card look identical.
+- **`RELEASING.md` generalised** — replaces the one-time
+  `RELEASING-v1.3.0.md` with the steady-state recipe used for every
+  future release. Folds in the changelog-extract flow, the
+  kubectl-atlas --version sanity check, and the helm-pull 403 /
+  token-endpoint gotcha surfaced during the v1.3.0 cut.
+- **goreleaser `dockers` + `docker_manifests` → `dockers_v2`** —
+  one buildx-native block replaces the per-arch builds plus manual
+  manifest stitching; `goreleaser check` is now warning-free.
+- **krew plugin manifest bumped to v1.3.0** — six platforms, SHAs
+  verified locally via `kubectl krew install --manifest`.
 
 ### Fixed
 
-- _(none yet)_
+- **Slate theme `text-3` fails WCAG AA contrast** — bumped from
+  `#6B7079` to `#888E98` (3.39:1 → 5.11:1 on `bg`,
+  3.00:1 → 4.53:1 on `surface`). Both sources stay in sync
+  (`themePalettes.ts` and `atlas-themes.css`). `text-1` and
+  `text-2` already cleared AA on every Slate surface; `border`
+  fails 3:1 but is a decorative divider (WCAG 1.4.11 exempts).
 
 ## [v1.3.0] — multi-cluster federation, platform identity, cartography UI
 
