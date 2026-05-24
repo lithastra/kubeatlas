@@ -25,12 +25,35 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**Phase 3 in progress.** Phase 3 ships in three releases — v1.1
-(rule packs and plugins), v1.2 (offline rendering), and v1.3
-(multi-cluster, in preparation). The first two are out.
+**Phase 3 complete.** Three releases shipped — v1.1 (rule packs
+and plugins), v1.2 (offline rendering), and **v1.3** (multi-cluster
+federation, platform identity, cartography Web UI redesign).
 
-**v1.2.0 — offline rendering** (second Phase 3 release). Makes
-KubeAtlas usable without a server running in the cluster:
+**v1.3.0 — federation + cartography UI** (third Phase 3 release):
+
+- **Multi-cluster federation** — one KubeAtlas instance attaches
+  to N kubeconfigs, tags every resource with a `ClusterID`, and
+  serves `GET /api/v1/federation/{clusters,graph}`. The Web UI's
+  left cluster strip picks members from `/federation/clusters`.
+- **Platform-identity edges** — `BINDS_PLATFORM_IDENTITY` from a
+  ServiceAccount to a synthetic `ExternalIdentity` representing
+  the cloud account it's bound to (EKS IRSA, AKS Workload
+  Identity, GKE Workload Identity).
+- **HorizontalPodAutoscaler support** — new `SCALES` edge type
+  from an HPA to whatever its `spec.scaleTargetRef` names.
+- **`kubeatlas-action`** — a GitHub Action in
+  `lithastra/kubeatlas-action` renders the dependency graph as a
+  CI artifact.
+- **Cartography Web UI redesign** — full-bleed Cytoscape canvas,
+  5 runtime-switchable themes (Parchment / Survey / Terrain / Ink
+  / Slate), ⌘K command palette, blast-radius mode with depth +
+  direction controls, persistent time axis with diff-mode anchor
+  presets (1h / 4h / 24h / 7d), edge-type filter chip (All / RBAC
+  / Network / Config / Storage), zoom-scale widget mapping zoom ×
+  → L1–L4 bands.
+
+**v1.2.0 — offline rendering**. Makes KubeAtlas usable without a
+server running in the cluster:
 
 - **Offline `kubectl atlas`** — the `kubectl` plugin builds the
   dependency graph straight from the Kubernetes API and renders it
@@ -43,24 +66,17 @@ KubeAtlas usable without a server running in the cluster:
 - **Cluster selection** — the `kubeatlas` CLI and the plugin honour
   the standard `--context` / `--kubeconfig` flags.
 
-**v1.1.0** (first Phase 3 release). Built on the v1.0 GA foundation:
+**v1.1.0** built on the v1.0 GA foundation:
 
 - **Cloud-platform rule packs** — opt-in EKS / AKS / GKE add-on CRD
-  packs (AWS Load Balancer Controller, Karpenter, GKE Ingress,
-  Multi-cluster Services, and more) in the sibling
-  `kubeatlas-rules` repository.
+  packs in the sibling `kubeatlas-rules` repository.
 - **Historical snapshots** — record every resource change and ask
   "what changed in the last hour?" with the diff endpoint (Tier 2).
 - **Full-text search** — ranked search over resource names, kinds,
   namespaces, and label values; indexed on Tier 2.
-- **Label filtering** — narrow the cluster and namespace views by
-  `label.<key>=<value>`, with a `/api/v1/labels` endpoint listing
-  the cluster's label vocabulary.
-- **NetworkPolicy edges** — `NetworkPolicy` is first-class, exposing
-  the Pods a policy selects and the peers it allows.
-- **`kubectl` and Headlamp plugins** — first releases of the
-  `kubectl atlas` plugin and the [Headlamp](https://headlamp.dev)
-  plugin (separate repository).
+- **Label filtering** — narrow views by `label.<key>=<value>`.
+- **NetworkPolicy edges** — `NetworkPolicy` is first-class.
+- **`kubectl` and Headlamp plugins** — first releases.
 
 The v1.0 foundation is unchanged: Tier 2 PostgreSQL persistence,
 Rego rule packs, the RBAC graph, blast radius, orphan / cycle
@@ -69,10 +85,7 @@ analysis, and the frozen `v1alpha1` plus GA `/api/v1` surfaces.
 The v0.1.0 defaults still apply: in-memory unless you opt into
 Tier 2, single-replica, **no built-in authentication** — exposing
 via Ingress requires an external auth layer (oauth2-proxy /
-Pomerium / Cloudflare Access). Multi-cluster federation lands in
-v1.3 — Phase 3's final release, in preparation. v1.3.0 ships the
-federation data layer and the `/api/v1/federation/*` API; the Web
-UI cluster switcher follows in v1.3.1. See
+Pomerium / Cloudflare Access). See
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 Full release notes: [CHANGELOG.md](./CHANGELOG.md).
@@ -84,7 +97,7 @@ to a running UI):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.2.0 \
+  --version 1.3.0 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
@@ -95,7 +108,7 @@ Tier 2 + cert-manager TLS (production-shaped install):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.2.0 \
+  --version 1.3.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \
@@ -168,11 +181,10 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the
 [Code of Conduct](./CODE_OF_CONDUCT.md). Look for issues tagged
 [`good first issue`](https://github.com/lithastra/kubeatlas/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-v1.0, v1.1, and v1.2 shipped; **v1.3.0** — Phase 3's final release —
-is in preparation: multi-cluster federation, EKS / AKS / GKE
-platform-identity edges, and a `kubeatlas-action` for CI pipelines.
+All three Phase 3 releases shipped — v1.1, v1.2, and v1.3.
 Direction beyond Phase 3 — cloud-resource integration, third-party
-platform deep-dives — is tracked at
+platform deep-dives, federation cross-cluster edge inference, and
+the Web UI polish items queued in v1.3.x — is tracked at
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 ## Support the project
