@@ -11,19 +11,19 @@ import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { ThemeSwitcher } from './ThemeSwitcher';
-import { useSearchOverlay } from './SearchContext';
 
-// Nav items come in three flavours so the bar can dispatch each
-// click to the right effect:
+// Nav items come in two flavours:
 //   - 'route'    → react-router NavLink (internal page).
-//   - 'action'   → button that calls back into shell context
-//                   (Search opens the ⌘K palette, no separate page).
 //   - 'external' → <a target="_blank"> to a stable docs URL so the
 //                   docs site (Docusaurus) loads instead of an
 //                   in-app placeholder page.
+//
+// Search used to be a third 'action' kind that opened the ⌘K
+// palette, but it migrated to the Resources page where it's a
+// chip beside the title — closer to where operators are looking
+// when they want to find a resource.
 type NavEntry =
   | { kind: 'route'; to: string; labelKey: string }
-  | { kind: 'action'; id: 'search'; labelKey: string }
   | { kind: 'external'; href: string; labelKey: string };
 
 const DOCS_URL = 'https://docs.kubeatlas.lithastra.com/';
@@ -32,7 +32,6 @@ const ROUTES: NavEntry[] = [
   { kind: 'route', to: '/topology', labelKey: 'nav.topology' },
   { kind: 'route', to: '/resources', labelKey: 'nav.resources' },
   { kind: 'route', to: '/snapshots', labelKey: 'nav.snapshots' },
-  { kind: 'action', id: 'search', labelKey: 'nav.search' },
   { kind: 'external', href: DOCS_URL, labelKey: 'nav.docs' },
 ];
 
@@ -43,7 +42,6 @@ interface TopBarProps {
 export function TopBar({ version = 'dev' }: TopBarProps) {
   const { t } = useTranslation('translation');
   const { t: tApp } = useTranslation('app');
-  const search = useSearchOverlay();
   return (
     <Box
       component="header"
@@ -117,29 +115,6 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
               >
                 {label}
               </NavLink>
-            );
-          }
-          if (entry.kind === 'action') {
-            return (
-              <Box
-                key={entry.id}
-                component="button"
-                type="button"
-                onClick={() => search.setOpen(true)}
-                aria-label={`${label} (⌘K)`}
-                sx={{
-                  ...navItemStyle(false),
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: '2px solid transparent',
-                  cursor: 'pointer',
-                  padding: 0,
-                  paddingBottom: 2,
-                  '&:hover': { color: 'var(--atlas-text-1)' },
-                }}
-              >
-                {label}
-              </Box>
             );
           }
           // external

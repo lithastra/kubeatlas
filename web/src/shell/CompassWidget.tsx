@@ -1,10 +1,11 @@
 /* ============================================================
  * CompassWidget — cartography signature rose.
  *
- * A small SVG north arrow positioned top-right of the canvas. The
- * scale chip was removed once ZoomScaleWidget shipped (bottom-right,
- * shows the actual cytoscape zoom × L-band) — keeping the static
- * "50,000 ft" placeholder alongside a live scale was misleading.
+ * A small SVG north arrow positioned bottom-left of the topology
+ * canvas — bottom-right is owned by ZoomScaleWidget and top-right
+ * by the chrome (theme switcher, etc.). The widget is only useful
+ * over the graph canvas, so TopologyPage mounts it; framed pages
+ * (Resources, Snapshots) don't render it.
  *
  * Drawn inline (not via the icon sprite) so it can scale freely
  * and the N glyph stays legible at the design's 56px size.
@@ -18,11 +19,12 @@ export function CompassWidget() {
       aria-label="Compass · north up"
       sx={{
         position: 'absolute',
-        right: 'var(--atlas-space-4)',
-        top: 'var(--atlas-space-4)',
+        left: 'var(--atlas-space-4)',
+        bottom: 'var(--atlas-space-4)',
         pointerEvents: 'none',
         color: 'var(--atlas-text-2)',
         opacity: 0.7,
+        zIndex: 4,
       }}
     >
       <Box

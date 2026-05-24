@@ -29,7 +29,6 @@ import { useBlastRadius } from './BlastRadiusContext';
 import { DiffModeBanner } from './DiffModeBanner';
 import { useDiffMode } from './DiffModeContext';
 import { CommandPalette } from './CommandPalette';
-import { CompassWidget } from './CompassWidget';
 import { GridBackground } from './GridBackground';
 import { LeftClusterStrip } from './LeftClusterStrip';
 import { useRightPanel } from './RightPanelContext';
@@ -119,7 +118,6 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
         {!embedded && <LeftClusterStrip />}
         <GridBackground>
           {children}
-          <CompassWidget />
           <BlastRadiusBanner />
           <BlastRadiusControls />
           <DiffModeBanner />
