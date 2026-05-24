@@ -5,17 +5,21 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
-## [v1.3.0] — multi-cluster federation (data layer) and platform-identity edges
+## [v1.3.0] — multi-cluster federation, platform identity, cartography UI
 
-v1.3.0 is the third Phase 3 release. It stretches the dependency
-graph across cluster boundaries: a single KubeAtlas instance can now
-attach to several clusters, tag every resource with its origin, and
-serve a federated read surface. Edges between in-cluster identities
-and the cloud accounts that back them — EKS IAM roles, AKS managed
-identities, GKE service accounts — are now first-class graph edges,
-derived purely from the Kubernetes metadata KubeAtlas already
-watches. The `v1alpha1` and `/api/v1/*` surfaces are unchanged
-beyond the new federation paths; everything below is additive.
+v1.3.0 is the third and final Phase 3 release. It stretches the
+dependency graph across cluster boundaries (one KubeAtlas instance
+attaching to N kubeconfigs, every resource tagged with its origin,
+a federated read surface), promotes the cloud-identity bindings
+that until now lived as opaque annotations (EKS IRSA, AKS Workload
+Identity, GKE Workload Identity) into first-class graph edges, adds
+HorizontalPodAutoscaler as a watched kind with a new `SCALES` edge,
+and rebuilds the Web UI around a cartography design — one full-bleed
+graph canvas, five runtime-switchable themes, a ⌘K command palette,
+a blast-radius mode, a persistent time-axis diff, and an edge-type
+filter, all folding into the same canvas instead of replacing it.
+The `v1alpha1` and `/api/v1/*` surfaces are unchanged beyond the new
+federation paths; everything below is additive.
 
 ### Added
 
@@ -34,12 +38,13 @@ beyond the new federation paths; everything below is additive.
     bookmark doesn't silently render an empty selection.
   Cross-cluster edge inference is deliberately not done in v1.3;
   the design says explicit-only (planned via an
-  `kubeatlas.io/external-ref` annotation in a future release).
-  The **Web UI cluster switcher** (multi-select picker plus
-  per-cluster colouring in the topology view) is intentionally
-  deferred to v1.3.1 — the UX choices warrant a focused design
-  pass. Operators consume the federation surface in v1.3.0 via the
-  API, `kubectl atlas --server`, or Headlamp.
+  `kubeatlas.io/external-ref` annotation in a future release). The
+  Web UI's **left cluster strip** is wired to
+  `/api/v1/federation/clusters` for member selection with
+  deterministic per-cluster chip colours; routing the picked
+  cluster through `/federation/graph` for the topology fetch is a
+  v1.3.x polish item (the picker state is live today; the canvas
+  still uses `/api/v1alpha1/graph`).
 - **Platform-identity edges** — three new built-in extractors
   emit `BINDS_PLATFORM_IDENTITY` edges from a ServiceAccount to a
   synthetic `ExternalIdentity` endpoint that represents the cloud
@@ -65,6 +70,47 @@ beyond the new federation paths; everything below is additive.
   timeline of recent full-sync markers. A Tier 1 install (or one
   with snapshots disabled) sees a clear "snapshots not enabled"
   banner rather than a generic error.
+- **HorizontalPodAutoscaler graph support** — `autoscaling/v2`
+  HPAs are watched by a new built-in `ScalesExtractor` that emits
+  a `SCALES` edge from each HPA to whatever its
+  `spec.scaleTargetRef` names (Deployment, StatefulSet, or any
+  `/scale`-bearing kind). Multi-cluster aware — the target ID
+  carries the source HPA's `ClusterID`.
+- **Cartography Web UI redesign** — the whole web shell rebuilt
+  around the "one graph, many modes" design. A single full-bleed
+  Cytoscape canvas under a persistent shell replaces the
+  per-route MUI pages:
+  - **Five runtime-switchable themes** (Parchment / Survey /
+    Terrain / Ink / Slate) sharing one CSS-variable contract,
+    plus the corresponding Cytoscape palette swap that preserves
+    selection on theme change.
+  - **⌘K command palette** over `/api/v1alpha1/search` with
+    matched node IDs highlighted on the canvas — matches stay
+    legible after the overlay closes (the IA's
+    search-folds-into-graph principle).
+  - **Blast-radius mode** — BFS from the selected node with
+    depth (1 / 2 / 3 / 5 / ∞) and direction (↓ / ↑ / ↕) controls,
+    canvas dim/brighten, top banner with affected count, right-
+    panel hop-by-hop summary. Esc to exit.
+  - **Time-axis diff** — anchor preset chips (1h / 4h / 24h /
+    7d) on the persistent time bar enter diff mode; canvas
+    decorates added (green halo) / removed (dashed muted) /
+    modified (amber overlay) nodes from
+    `/api/v1/snapshots/diff`; right-panel change log.
+  - **Edge-type filter chip** — All / RBAC / Network / Config /
+    Storage presets fold a sub-graph into the canvas (dims
+    edges + orphaned nodes) without a route change.
+  - **Zoom-scale widget** — bottom-right chip maps the
+    cytoscape zoom × to one of four L-bands and offers
+    400 ms animated jumps between them.
+  - **Cartography signature** — north-up compass at the
+    canvas bottom-left, latitude/longitude grid background
+    via CSS gradients (zero cytoscape cost).
+  - **A11y starter pass** — skip-to-graph link in the top bar,
+    `aria-live` on the right panel, focus-visible rings on every
+    interactive surface, `prefers-reduced-motion` honoured.
+  - **Resources page** — Search chip beside the title opens the
+    same ⌘K palette; table columns autosize to content.
 
 ### Changed
 
