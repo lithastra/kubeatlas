@@ -62,6 +62,8 @@ kubectl -n kubeatlas port-forward svc/kubeatlas 8080:80
 Then open [http://localhost:8080](http://localhost:8080) in a browser. You should see the
 **Resources** page with a namespace dropdown.
 
+![Resources page — namespace dropdown, search chip, and auto-sizing kind / name / age / status columns.](/img/resources-table.png)
+
 ## 4. Walk the graph
 
 1. Pick a namespace from the dropdown — the table populates with
@@ -75,6 +77,9 @@ Then open [http://localhost:8080](http://localhost:8080) in a browser. You shoul
    loaded [Rego rule packs](./concepts/rego-rules.md).
 3. The **Neighborhood** panel at the bottom is a Mermaid flowchart
    of the resource and its one-hop neighbors.
+
+   ![Resource detail page — header, annotation summary, incoming and outgoing edge tables, and the Neighborhood Mermaid flowchart.](/img/details.png)
+
 4. Click **Topology** in the sidebar for the cluster-wide and
    namespace-level Cytoscape views.
 

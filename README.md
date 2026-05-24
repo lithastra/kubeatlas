@@ -7,6 +7,8 @@
 [![Helm](https://img.shields.io/badge/helm-oci%20chart-blue)](https://github.com/lithastra/kubeatlas/pkgs/container/charts%2Fkubeatlas)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](./LICENSE)
 
+![KubeAtlas topology canvas — full-bleed cartography view, five themes, blast-radius mode, time-axis diff.](./docs/static/img/topology-main.png)
+
 ## What is KubeAtlas
 
 KubeAtlas builds a directed dependency graph of all resources in a Kubernetes
@@ -51,6 +53,10 @@ federation, platform identity, cartography Web UI redesign).
   presets (1h / 4h / 24h / 7d), edge-type filter chip (All / RBAC
   / Network / Config / Storage), zoom-scale widget mapping zoom ×
   → L1–L4 bands.
+
+| Blast radius | Time-axis diff |
+|---|---|
+| ![Blast-radius mode highlighting downstream impact from a selected node.](./docs/static/img/topology-blast-radius.png) | ![Diff mode highlighting added / removed / modified resources between two snapshots.](./docs/static/img/topology-diffmode.png) |
 
 **v1.2.0 — offline rendering**. Makes KubeAtlas usable without a
 server running in the cluster:
