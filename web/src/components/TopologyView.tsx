@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Box } from '@mui/material';
 import type { Core, EventObject, NodeSingular } from 'cytoscape';
 
 import type { EdgeType, View } from '../api/types';
+import { RadialMenu, type RadialMenuOption } from '../design';
 import { applyAtlasPalette, createCytoscape, paletteFor, updateCytoscape } from '../lib/cytoscape';
 import { computeBlastRadius } from '../lib/blastRadius';
 import { useSnapshotDiff } from '../api/snapshots';
@@ -64,6 +65,10 @@ export function TopologyView({
   const { matchedIds } = useSearchOverlay();
   const blast = useBlastRadius();
   const diff = useDiffMode();
+  // Right-click radial menu state: viewport coords + the node id
+  // the menu acts on. null when closed. The cxttap handler below
+  // populates it inside the create-cytoscape branch.
+  const [radial, setRadial] = useState<{ x: number; y: number; nodeId: string } | null>(null);
   // Diff fetch lives in the canvas effect because the decoration is
   // a per-node flag that depends on the API result. The right panel
   // (DiffChangeLog) issues the same query — React Query dedupes by
@@ -84,6 +89,21 @@ export function TopologyView({
       });
       cy.on('tap', (ev: EventObject) => {
         if (ev.target === cy) onSelectRef.current?.(null);
+      });
+      // Right-click on a node opens the RadialMenu at the click
+      // position; the menu picks the blast-radius depth in one
+      // gesture. originalEvent is the underlying MouseEvent (cy
+      // augments it with rendered coords); we use clientX/Y to
+      // anchor the menu in viewport space.
+      cy.on('cxttap', 'node', (ev: EventObject) => {
+        const me = ev.originalEvent as MouseEvent | undefined;
+        if (!me) return;
+        me.preventDefault?.();
+        setRadial({
+          x: me.clientX,
+          y: me.clientY,
+          nodeId: String(ev.target.id()),
+        });
       });
       // Zoom broadcast for the ZoomScaleWidget. Fires on every
       // scroll/pinch tick; the consumer can debounce if needed.
@@ -293,7 +313,47 @@ export function TopologyView({
     [blast.active, diff.active],
   );
 
+  // Options for the right-click radial: pick a blast-radius depth.
+  // Selecting any option enters blast-radius mode on the right-
+  // clicked node at that depth (downstream direction, the default).
+  const radialOptions: RadialMenuOption[] = radial
+    ? [
+        {
+          id: 'd1',
+          label: '1 hop',
+          onSelect: () => {
+            blast.enter(radial.nodeId);
+            blast.setDepth(1);
+          },
+        },
+        {
+          id: 'd3',
+          label: '3 hops',
+          onSelect: () => {
+            blast.enter(radial.nodeId);
+            blast.setDepth(3);
+          },
+        },
+        {
+          id: 'dinf',
+          label: '∞',
+          onSelect: () => {
+            blast.enter(radial.nodeId);
+            blast.setDepth(Infinity);
+          },
+        },
+        {
+          id: 'cancel',
+          label: '×',
+          onSelect: () => {
+            /* close-only, no side effect */
+          },
+        },
+      ]
+    : [];
+
   return (
+    <>
     <Box
       ref={containerRef}
       data-testid="topology-canvas"
@@ -319,5 +379,13 @@ export function TopologyView({
         },
       }}
     />
+    <RadialMenu
+      open={radial != null}
+      anchor={radial ? { x: radial.x, y: radial.y } : null}
+      options={radialOptions}
+      onClose={() => setRadial(null)}
+      label="Blast radius depth"
+    />
+    </>
   );
 }
