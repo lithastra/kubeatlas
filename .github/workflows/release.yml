@@ -67,12 +67,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Extract the CHANGELOG section that matches this tag into a
+      # file goreleaser consumes via --release-notes. The old static
+      # `release.header:` block in .goreleaser.yml made every release
+      # card look identical; this pulls the real per-version content
+      # from CHANGELOG.md instead.
+      - name: Extract release notes from CHANGELOG
+        run: make changelog-extract VERSION=${{ github.ref_name }} OUT=/tmp/release-notes.md
+
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: release --clean
+          args: release --clean --release-notes=/tmp/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
