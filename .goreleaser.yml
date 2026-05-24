@@ -42,8 +42,9 @@ builds:
   # workstation, not in-cluster. embed_web bundles the Web UI so the
   # --local-ui offline mode can serve it from the in-process server;
   # the before-hook above has already copied web/dist into
-  # cmd/kubectl-atlas/web/dist. No version ldflags (it imports no
-  # pkg/version).
+  # cmd/kubectl-atlas/web/dist. Version ldflags stamp pkg/version so
+  # `kubectl atlas --version` reports the release tag (the binary
+  # imports pkg/version solely for that flag).
   - id: kubectl-atlas
     main: ./cmd/kubectl-atlas
     binary: kubectl-atlas
@@ -55,6 +56,9 @@ builds:
       - embed_web
     ldflags:
       - -s -w
+      - -X github.com/lithastra/kubeatlas/pkg/version.Version={{.Version}}
+      - -X github.com/lithastra/kubeatlas/pkg/version.Commit={{.Commit}}
+      - -X github.com/lithastra/kubeatlas/pkg/version.Date={{.Date}}
 
 archives:
   - id: kubeatlas
