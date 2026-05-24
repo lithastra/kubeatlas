@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
 import { Box } from '@mui/material';
-import type { Core, EventObject } from 'cytoscape';
+import type { Core, EventObject, NodeSingular } from 'cytoscape';
 
 import type { EdgeType, View } from '../api/types';
 import { applyAtlasPalette, createCytoscape, paletteFor, updateCytoscape } from '../lib/cytoscape';
@@ -226,15 +226,97 @@ export function TopologyView({
     });
   }, [blast.active, blast.rootId, blast.depth, blast.direction, view, visibleEdgeTypes]);
 
+  // Keyboard traversal. The canvas is focusable (tabIndex 0) so a
+  // screen-reader / keyboard-only operator can land on it via Tab.
+  // Once focused:
+  //
+  //   ArrowRight / ArrowDown → next node in id-sorted order
+  //   ArrowLeft  / ArrowUp   → previous node
+  //   Enter / Space          → open the focused node in the right
+  //                            detail panel (same path as a click)
+  //   Escape                 → clear focus / selection (unless
+  //                            blast / diff mode is on; those modes
+  //                            own Esc via the shell-level handler)
+  //
+  // The traversal walks the flat id-sorted list — a deterministic,
+  // edge-agnostic order that screen-reader users can predict. A
+  // direction-aware (geometric) traversal is a future enhancement;
+  // this one is good enough for the M6.1 a11y starter.
+  const onCanvasKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      const cy = cyRef.current;
+      if (!cy) return;
+      const nodes = cy.nodes().sort((a, b) => String(a.id()).localeCompare(String(b.id())));
+      if (nodes.length === 0) return;
+
+      const currentId = String(cy.$('node:selected').first().id() ?? '');
+      const currentIdx = nodes.toArray().findIndex((n) => String(n.id()) === currentId);
+
+      const focus = (idx: number) => {
+        const target = nodes[idx] as NodeSingular;
+        cy.elements().unselect();
+        target.select();
+        cy.animate({ center: { eles: target }, zoom: cy.zoom() }, { duration: 200 });
+      };
+
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'ArrowDown': {
+          e.preventDefault();
+          focus(currentIdx < 0 ? 0 : (currentIdx + 1) % nodes.length);
+          break;
+        }
+        case 'ArrowLeft':
+        case 'ArrowUp': {
+          e.preventDefault();
+          focus(currentIdx < 0 ? nodes.length - 1 : (currentIdx - 1 + nodes.length) % nodes.length);
+          break;
+        }
+        case 'Enter':
+        case ' ': {
+          if (currentIdx < 0) return;
+          e.preventDefault();
+          onSelectRef.current?.(String(nodes[currentIdx].id()));
+          break;
+        }
+        case 'Escape': {
+          if (blast.active || diff.active) return; // shell owns Esc
+          if (currentIdx >= 0) {
+            e.preventDefault();
+            cy.elements().unselect();
+            onSelectRef.current?.(null);
+          }
+          break;
+        }
+      }
+    },
+    [blast.active, diff.active],
+  );
+
   return (
     <Box
       ref={containerRef}
       data-testid="topology-canvas"
+      // role="application" tells screen readers that this region
+      // takes keyboard input directly (cytoscape canvas isn't a
+      // standard widget). tabIndex=0 puts it in the tab order so
+      // operators can land on it without a pointing device.
+      role="application"
+      aria-label="Topology graph. Arrow keys to traverse, Enter to open, Escape to clear."
+      tabIndex={0}
+      onKeyDown={onCanvasKeyDown}
       sx={{
         width: '100%',
         height,
         // Transparent — the GridBackground beneath shows through.
         backgroundColor: 'transparent',
+        outline: 'none',
+        '&:focus-visible': {
+          // Soft inset ring so the focus state is visible without
+          // disrupting the cartography aesthetic — same select hue
+          // the rest of the chrome uses.
+          boxShadow: 'inset 0 0 0 2px var(--atlas-select)',
+        },
       }}
     />
   );
