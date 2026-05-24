@@ -82,39 +82,33 @@ checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
 
-dockers:
-  - image_templates:
-      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-amd64"
-    use: buildx
+# Multi-arch container image. dockers_v2 collapses the previous
+# per-arch `dockers:` blocks + the cross-arch `docker_manifests:`
+# stitching into one buildx-native definition; goreleaser handles
+# the per-platform build + manifest push in a single invocation.
+# Replaces the deprecated dockers / docker_manifests pair (the v2
+# is the long-term replacement called out by the goreleaser
+# deprecation notice).
+#
+# Schema differences from v1: `images` lists the repos, `tags` the
+# templates, and `labels` is a map rather than a list of --label=
+# flags. The product of images × tags becomes the published tags.
+dockers_v2:
+  - id: kubeatlas
     dockerfile: Dockerfile
-    goarch: amd64
-    build_flag_templates:
-      - --platform=linux/amd64
-      - --label=org.opencontainers.image.title={{ .ProjectName }}
-      - --label=org.opencontainers.image.version={{ .Version }}
-      - --label=org.opencontainers.image.source=https://github.com/lithastra/kubeatlas
-      - --label=org.opencontainers.image.licenses=Apache-2.0
-  - image_templates:
-      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-arm64"
-    use: buildx
-    dockerfile: Dockerfile
-    goarch: arm64
-    build_flag_templates:
-      - --platform=linux/arm64
-      - --label=org.opencontainers.image.title={{ .ProjectName }}
-      - --label=org.opencontainers.image.version={{ .Version }}
-      - --label=org.opencontainers.image.source=https://github.com/lithastra/kubeatlas
-      - --label=org.opencontainers.image.licenses=Apache-2.0
-
-docker_manifests:
-  - name_template: "ghcr.io/lithastra/kubeatlas:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-amd64"
-      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/lithastra/kubeatlas:latest"
-    image_templates:
-      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-amd64"
-      - "ghcr.io/lithastra/kubeatlas:{{ .Version }}-arm64"
+    images:
+      - ghcr.io/lithastra/kubeatlas
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: https://github.com/lithastra/kubeatlas
+      org.opencontainers.image.licenses: Apache-2.0
 
 changelog:
   use: github
