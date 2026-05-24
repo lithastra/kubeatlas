@@ -17,6 +17,16 @@ Before deleting a Role, you want to know which ServiceAccounts
 have permissions through it. Each of those questions is a
 single API call.
 
+![Topology canvas in blast-radius mode — the selected root glows, every node and edge outside the reachable subgraph dims to ~20%, the top banner reports direction and depth, the right panel lists affected resources by hop.](/img/topology-blast-radius.png)
+
+The Web UI surfaces this in the topology canvas: click any node,
+hit **↯ Show blast radius** in the right panel (or right-click for
+the radial picker), and the canvas dims everything outside the
+reachable subgraph. The bottom toolbar lets you change depth
+(1 / 2 / 3 / 5 / ∞) and direction (↓ downstream, ↑ upstream,
+↕ both) without leaving the mode; Esc returns to the normal
+canvas with your selection intact.
+
 ## API
 
 ```bash

@@ -91,6 +91,25 @@ under-report changes. Asking for more history than you keep is a
 
 ## Reading the diff
 
+The Web UI surfaces snapshot diffs in two places:
+
+- The **time-axis rail** at the top of the topology canvas — pick
+  an anchor (preset chip or drag the rail itself) and the canvas
+  enters diff mode: added resources gain a green halo, removed
+  ones drop to a dashed muted outline, modified ones get an amber
+  overlay. Esc clears.
+
+  ![Topology canvas in diff mode — added / removed / modified nodes decorated against the live graph; right panel lists per-row changes with relative timestamps.](/img/topology-diffmode.png)
+
+- The dedicated **Snapshots page** — a window-picker driven view
+  with three tables (Added / Removed / Modified) plus a timeline
+  of recent full-sync markers; the same data the API surfaces, in
+  a denser tabular form.
+
+  ![Snapshots page — window-picker presets, Added / Removed / Modified diff tables, snapshot-marker timeline.](/img/snapshots.png)
+
+Under both, the wire format is the same:
+
 `GET /api/v1/snapshots/diff?from=1h&to=now` replays the event
 stream across the window and classifies every resource that
 appears in it:

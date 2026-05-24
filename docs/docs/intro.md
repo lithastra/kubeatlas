@@ -15,6 +15,8 @@ answers the questions a flat `kubectl get` view cannot:
 - *"Which Deployments mount this ConfigMap?"*
 - *"What's the routing path from this Ingress to a Pod?"*
 
+![KubeAtlas topology canvas — full-bleed cartography view with the cluster strip on the left and the time axis above.](/img/topology-main.png)
+
 ## What it is not
 
 - **A general-purpose Kubernetes UI.** Use [Headlamp](https://headlamp.dev/)
