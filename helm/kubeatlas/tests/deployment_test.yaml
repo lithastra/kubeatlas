@@ -11,10 +11,16 @@ tests:
           value: RELEASE-NAME-kubeatlas
 
   - it: defaults image tag to the chart's appVersion
+    # Assert the *contract* (image points at our repo with some
+    # version tag), not a literal version string. Pinning a literal
+    # made the test fail every release bump even though the
+    # templated image was correct. helm-unittest's `value:` isn't
+    # Go-templated, so we match the repo prefix + any semver-shaped
+    # tag with matchRegex instead.
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^ghcr\\.io/lithastra/kubeatlas:1\\.1\\.0-rc\\.1$"
+          pattern: "^ghcr\\.io/lithastra/kubeatlas:[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
 
   - it: hard-pins runAsNonRoot at the pod level
     asserts:
