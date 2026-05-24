@@ -17,7 +17,7 @@ import {
 import { NodeDetailPanel } from '../components/NodeDetailPanel';
 import { TopologyView, type TopologyControls } from '../components/TopologyView';
 import { Panel } from '../design';
-import { useBlastRadius, useDiffMode, useRightPanel, ZoomScaleWidget } from '../shell';
+import { CompassWidget, useBlastRadius, useDiffMode, useRightPanel, ZoomScaleWidget } from '../shell';
 import { useAppSelector } from '../store';
 
 // TopologyPage is the cartography graph view. The canvas fills the
@@ -141,6 +141,7 @@ export function TopologyPage() {
             nodeCount={data?.nodes.length}
             onPickLevel={(targetZoom) => controlsRef.current?.zoomTo(targetZoom)}
           />
+          <CompassWidget />
         </>
       )}
     </Box>
