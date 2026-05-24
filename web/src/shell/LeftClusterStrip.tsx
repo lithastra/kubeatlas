@@ -17,6 +17,7 @@ import { Box, Stack, Tooltip, Typography } from '@mui/material';
 
 import { useFederationClusters } from '../api/federation';
 import { Icon } from '../design';
+import { clusterColour } from '../lib/clusterColour';
 import { useClusterSelection } from './ClusterSelectionContext';
 
 function clusterInitials(id: string): string {
@@ -25,13 +26,6 @@ function clusterInitials(id: string): string {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
   return id.slice(0, 2).toUpperCase();
-}
-
-const CHIP_COLORS = ['#2F5E8C', '#5C7F6B', '#B8893A', '#7E6BA8', '#9B5B4E'];
-function chipColor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return CHIP_COLORS[Math.abs(h) % CHIP_COLORS.length];
 }
 
 export function LeftClusterStrip() {
@@ -135,7 +129,7 @@ interface ClusterChipProps {
 }
 
 function ClusterChip({ id, active, onClick }: ClusterChipProps) {
-  const color = chipColor(id);
+  const color = clusterColour(id);
   return (
     <Tooltip title={id} placement="right">
       <Box
