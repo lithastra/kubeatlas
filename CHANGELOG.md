@@ -5,6 +5,24 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
+## [Unreleased]
+
+_Buffer for changes accumulating after v1.3.0. Move entries into a
+real `## [vX.Y.Z]` section when cutting the next release; see
+[RELEASING.md](./RELEASING.md)._
+
+### Added
+
+- _(none yet)_
+
+### Changed
+
+- _(none yet)_
+
+### Fixed
+
+- _(none yet)_
+
 ## [v1.3.0] — multi-cluster federation, platform identity, cartography UI
 
 v1.3.0 is the third and final Phase 3 release. It stretches the
