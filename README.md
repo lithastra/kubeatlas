@@ -82,7 +82,14 @@ server running in the cluster:
   namespaces, and label values; indexed on Tier 2.
 - **Label filtering** — narrow views by `label.<key>=<value>`.
 - **NetworkPolicy edges** — `NetworkPolicy` is first-class.
-- **`kubectl` and Headlamp plugins** — first releases.
+- **`kubectl` and Headlamp plugins** — first releases. The
+  [Headlamp plugin](https://github.com/lithastra/kubeatlas-headlamp-plugin)
+  embeds the cartography topology + per-resource Dependencies
+  view inside Headlamp's cluster console:
+
+  | Sidebar entry | Cluster view | Per-resource detail |
+  |---|---|---|
+  | ![](./docs/static/img/headlamp-main.png) | ![](./docs/static/img/headlamp-clusterview.png) | ![](./docs/static/img/headlamp-deploymentview.png) |
 
 The v1.0 foundation is unchanged: Tier 2 PostgreSQL persistence,
 Rego rule packs, the RBAC graph, blast radius, orphan / cycle

@@ -19,7 +19,13 @@ KubeAtlas is **only the dependency graph**. It doesn't render Pods
 as a list to manage them; it tells you what depends on what. The two
 tools coexist — install Headlamp for "show me the cluster" and
 KubeAtlas for "show me the wiring". A Headlamp plugin shipped in
-v1.1 (`lithastra/kubeatlas-headlamp-plugin`).
+v1.1 (`lithastra/kubeatlas-headlamp-plugin`) that embeds the
+cartography topology view, per-resource Dependencies tabs, and
+blast-radius mode directly inside Headlamp's cluster console:
+
+| Sidebar entry | Cluster view | Per-resource detail |
+|---|---|---|
+| ![Headlamp sidebar showing the KubeAtlas Dependency Graph entry.](/img/headlamp-main.png) | ![Cluster-level dependency graph rendered inside Headlamp using the cartography stylesheet.](/img/headlamp-clusterview.png) | ![Deployment detail drawer with incoming + outgoing edges and the Show blast radius action.](/img/headlamp-deploymentview.png) |
 
 ## Can I run this in production today?
 
