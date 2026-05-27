@@ -43,9 +43,11 @@ federation, platform identity, cartography Web UI redesign).
   Identity, GKE Workload Identity).
 - **HorizontalPodAutoscaler support** — new `SCALES` edge type
   from an HPA to whatever its `spec.scaleTargetRef` names.
-- **`kubeatlas-action`** — a GitHub Action in
-  `lithastra/kubeatlas-action` renders the dependency graph as a
-  CI artifact.
+- **`kubeatlas-action`** — a GitHub Action
+  ([Marketplace](https://github.com/marketplace/actions/kubeatlas-dependency-graph),
+  [source](https://github.com/lithastra/kubeatlas-action)) renders
+  the dependency graph as a CI artifact. Pin `lithastra/kubeatlas-action@v1`
+  for floating minor/patch updates or `@v1.0.0` for byte-identical behaviour.
 - **Cartography Web UI redesign** — full-bleed Cytoscape canvas,
   5 runtime-switchable themes (Parchment / Survey / Terrain / Ink
   / Slate), ⌘K command palette, blast-radius mode with depth +
