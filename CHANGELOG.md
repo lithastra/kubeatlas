@@ -7,9 +7,14 @@ fixes bump the patch.
 
 ## [Unreleased]
 
-_Polish + tooling that landed after v1.3.0. Move into a real
-`## [vX.Y.Z]` section when cutting the next release; see
-[RELEASING.md](./RELEASING.md)._
+_(none yet)_
+
+## [v1.3.1] — federation UI wiring, accessibility, tooling polish
+
+v1.3.1 is the first patch after the Phase 3 wrap-up. It ships the
+federation cluster picker → graph wiring that was deferred from
+v1.3.0, a full accessibility pass (keyboard traversal, screen-reader
+announcements, contrast fix), and several tooling improvements.
 
 ### Added
 
@@ -193,6 +198,7 @@ federation paths; everything below is additive.
   `multicluster.enabled=true`; without it a federated install would
   have produced dangling edges across the cluster boundary.
 
+[v1.3.1]: https://github.com/lithastra/kubeatlas/releases/tag/v1.3.1
 [v1.3.0]: https://github.com/lithastra/kubeatlas/releases/tag/v1.3.0
 
 ## [v1.2.0] — offline rendering and a self-contained kubectl plugin
