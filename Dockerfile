@@ -2,7 +2,7 @@
 # -tags embed_web after copying web/dist into cmd/kubeatlas/web/dist
 # via the before-hook in .goreleaser.yml) and then invokes `docker
 # buildx` against this Dockerfile in a temp context that contains
-# exactly two files: this Dockerfile and the `kubeatlas` binary.
+# the Dockerfile and per-arch binaries under `linux/{amd64,arm64}/`.
 #
 # The base is debian:bookworm-slim rather than distroless because
 # the /api/v1/export endpoint shells out to the graphviz `dot` CLI
@@ -37,7 +37,8 @@ RUN apt-get update \
 RUN useradd --system --uid 65532 --user-group --no-create-home \
       --shell /usr/sbin/nologin nonroot
 
-COPY kubeatlas /kubeatlas
+ARG TARGETARCH
+COPY linux/${TARGETARCH}/kubeatlas /kubeatlas
 
 EXPOSE 8080
 USER nonroot:nonroot
