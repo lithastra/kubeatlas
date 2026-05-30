@@ -288,6 +288,18 @@ func (s *Server) Routes() []RouteInfo {
 			Response: ResponseSpec{Description: "Rendered SVG or PNG image", ContentType: "image/svg+xml"},
 			handler:  s.handleExport,
 		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/diagnose",
+			Summary:     "Self-contained diagnostic report",
+			Description: "Bundles the scoped dependency graph plus orphan, cycle, and top blast-radius analysis into one report. format=json returns the structured data; format=html returns a self-contained HTML document (inline CSS, no external resources) for air-gapped audits. Optional `namespace` narrows the scope; empty = whole cluster. v1-only (Phase 4). P4-T1 (F-301).",
+			QueryParams: []ParamSpec{
+				{Name: "namespace", Description: "Restrict the report to one namespace; empty = whole cluster", Type: "string"},
+				{Name: "format", Description: "Output format; defaults to json", Type: "string", Enum: []string{"json", "html"}},
+			},
+			Response: ResponseSpec{Description: "Diagnostic report", SchemaRef: "DiagnoseReport"},
+			handler:  s.handleDiagnose,
+		},
 
 		// Multi-cluster federation (P3-T22). v1-only — v1alpha1 is
 		// frozen, and federation is the v1.3 net-new surface. Routes
