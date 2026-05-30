@@ -68,6 +68,55 @@ kubeatlas export --format=dot | dot -Tdot:cairo | base64 | gh gist create -
   any cluster); a future release may add this for "render what the
   running KubeAtlas already saw" workflows.
 
+### `kubeatlas diagnose`
+
+Scans the cluster the current `KUBECONFIG` points at and writes a
+self-contained [diagnostic report](./concepts/diagnose-report) — the
+dependency graph plus the orphan, cycle, and top blast-radius
+analyses — as a single HTML document or as JSON. Like `export`, it
+runs offline: no KubeAtlas server in the cluster is required.
+
+```bash
+# Whole-cluster HTML report
+kubeatlas diagnose --all-namespaces --output cluster-report.html
+
+# One namespace, as JSON for a pipeline
+kubeatlas diagnose --namespace petclinic --format json > petclinic.json
+```
+
+#### Flags
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--namespace`, `-n` | `""` (whole cluster) | Restrict the report to one namespace. Mutually exclusive with `--all-namespaces`. |
+| `--all-namespaces` | `false` | Report every namespace (whole-cluster scope). |
+| `--format` | `html` | `html` (self-contained document) or `json` (structured, `jq`-friendly). |
+| `--output`, `-o` | `""` (stdout) | Write to a file instead of stdout. |
+| `--context`, `--kubeconfig` | current context, `$KUBECONFIG` | Select the cluster for the scan. |
+
+The HTML report is fully self-contained — inline CSS and SVG, no CDN,
+no web fonts — so it opens with no network access, which is the point
+for air-gapped review. The graph image is rendered with the graphviz
+`dot` binary; when `dot` is absent the report still renders in full,
+with a notice in place of the image.
+
+#### Examples
+
+Produce a report for a CI run and attach it as an artifact:
+
+```bash
+kubeatlas diagnose --all-namespaces --format html --output report.html
+```
+
+Assert in a pipeline that a namespace has no orphaned resources:
+
+```bash
+kubeatlas diagnose -n petclinic --format json | jq -e '.orphans | length == 0'
+```
+
+The same report is available from a running server at
+`GET /api/v1/diagnose?namespace=<ns>&format=html|json`.
+
 ### `kubeatlas rules-test`
 
 Offline rule-pack evaluator for rule-pack contributors. See
