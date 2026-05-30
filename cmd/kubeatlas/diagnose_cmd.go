@@ -42,6 +42,10 @@ func runDiagnose(args []string) int {
 		"Path to write the report to. Defaults to stdout.")
 	format := fs.String("format", "html",
 		"Output format: html (default) | json.")
+	// Short aliases bound to the same targets — the documented
+	// acceptance commands use `-n` / `-o`.
+	fs.StringVar(namespace, "n", "", "Shorthand for --namespace.")
+	fs.StringVar(output, "o", "", "Shorthand for --output.")
 	kubeconfig := fs.String("kubeconfig", "",
 		"Path to the kubeconfig file (overrides $KUBECONFIG).")
 	kubeContext := fs.String("context", "",
