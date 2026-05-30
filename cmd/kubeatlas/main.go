@@ -341,6 +341,8 @@ func main() {
 			os.Exit(runExport(os.Args[2:]))
 		case "snapshot":
 			os.Exit(runSnapshot(os.Args[2:]))
+		case "diagnose":
+			os.Exit(runDiagnose(os.Args[2:]))
 		}
 	}
 

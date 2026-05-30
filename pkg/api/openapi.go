@@ -261,6 +261,47 @@ func openAPIComponentsFor(version string) map[string]any {
 			},
 			"required": []any{"resource", "incoming", "outgoing", "blastRadiusCount", "isOrphan", "inCycle"},
 		}
+		// P4-T1 F-301 diagnose report — v1-only (Phase 4 surface).
+		schemas["DiagnoseReport"] = map[string]any{
+			"type":        "object",
+			"description": "Body of GET /api/v1/diagnose?format=json: the scoped dependency graph plus orphan, cycle, and top blast-radius analysis. The same data renders to a self-contained HTML report.",
+			"properties": map[string]any{
+				"generatedAt":      map[string]any{"type": "string", "format": "date-time"},
+				"kubeAtlasVersion": map[string]any{"type": "string"},
+				"scope": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"namespace":     map[string]any{"type": "string"},
+						"allNamespaces": map[string]any{"type": "boolean"},
+					},
+					"required": []any{"allNamespaces"},
+				},
+				"graph": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"resources": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Resource"}},
+						"edges":     map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/Edge"}},
+					},
+				},
+				"orphans": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/OrphanReport"}},
+				"cycles":  map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/CycleReport"}},
+				"topBlastRadius": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"resource": map[string]any{"$ref": "#/components/schemas/Resource"},
+							"affected": map[string]any{"type": "integer"},
+						},
+						"required": []any{"resource", "affected"},
+					},
+				},
+				"resourceCount": map[string]any{"type": "integer"},
+				"edgeCount":     map[string]any{"type": "integer"},
+			},
+			"required": []any{"generatedAt", "kubeAtlasVersion", "scope", "graph", "orphans", "cycles", "topBlastRadius", "resourceCount", "edgeCount"},
+		}
+
 		// P3-T22 federation surface — v1-only, since v1alpha1 is frozen.
 		schemas["FederationClustersResponse"] = map[string]any{
 			"type":        "object",
