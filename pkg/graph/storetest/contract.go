@@ -149,6 +149,51 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
+	t.Run("edge attributes round-trip and update on re-upsert", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "K8sRequiredLabels", Namespace: "", Name: "all"})
+		_ = s.UpsertResource(ctx, graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "web"})
+		from := "/K8sRequiredLabels/all"
+		to := "demo/Deployment/web"
+
+		// First write: violating.
+		_ = s.UpsertEdge(ctx, graph.Edge{
+			From: from, To: to, Type: graph.EdgeTypeEnforces,
+			Attributes: map[string]string{"violated": "true", "violation_message": "missing label app"},
+		})
+		out, _ := s.ListOutgoing(ctx, from)
+		if len(out) != 1 {
+			t.Fatalf("expected 1 ENFORCES edge, got %d", len(out))
+		}
+		if out[0].Attributes["violated"] != "true" || out[0].Attributes["violation_message"] != "missing label app" {
+			t.Errorf("attributes not round-tripped: got %v", out[0].Attributes)
+		}
+
+		// Re-upsert with cleared violation: the bag must be replaced.
+		_ = s.UpsertEdge(ctx, graph.Edge{
+			From: from, To: to, Type: graph.EdgeTypeEnforces,
+			Attributes: map[string]string{"violated": "false"},
+		})
+		out, _ = s.ListOutgoing(ctx, from)
+		if len(out) != 1 {
+			t.Fatalf("re-upsert changed edge count: got %d, want 1", len(out))
+		}
+		if out[0].Attributes["violated"] != "false" {
+			t.Errorf("attributes not updated on re-upsert: got %v", out[0].Attributes)
+		}
+		if _, stale := out[0].Attributes["violation_message"]; stale {
+			t.Errorf("stale attribute survived re-upsert: %v", out[0].Attributes)
+		}
+
+		// An edge written without attributes reads back without them.
+		_ = s.UpsertEdge(ctx, graph.Edge{From: to, To: from, Type: graph.EdgeTypeOwns})
+		back, _ := s.ListOutgoing(ctx, to)
+		if len(back) != 1 || len(back[0].Attributes) != 0 {
+			t.Errorf("plain edge should have no attributes, got %v", back)
+		}
+	})
+
 	t.Run("different edge types between same pair coexist", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()

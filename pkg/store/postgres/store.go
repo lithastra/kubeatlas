@@ -154,12 +154,20 @@ func (s *Store) DeleteResource(ctx context.Context, id string) error {
 // silently no-ops while PG still records the row, and the cross-
 // store consistency check in cypher_test.go will catch it.
 func (s *Store) UpsertEdge(ctx context.Context, e graph.Edge) error {
+	// DO UPDATE (not DO NOTHING) so a re-upsert refreshes the
+	// attributes bag — a Constraint's violation status changes over
+	// its lifetime, and the memory store already replaces on upsert,
+	// so this keeps the two backends consistent.
 	const sql = `
-		INSERT INTO edges (from_id, to_id, type) VALUES ($1, $2, $3)
-		ON CONFLICT (from_id, to_id, type) DO NOTHING
+		INSERT INTO edges (from_id, to_id, type, attributes) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (from_id, to_id, type) DO UPDATE SET attributes = EXCLUDED.attributes
 	`
+	attrs, err := edgeAttributesJSON(e.Attributes)
+	if err != nil {
+		return fmt.Errorf("postgres.UpsertEdge: marshal attributes: %w", err)
+	}
 	return s.withAGETx(ctx, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, sql, e.From, e.To, string(e.Type)); err != nil {
+		if _, err := tx.Exec(ctx, sql, e.From, e.To, string(e.Type), attrs); err != nil {
 			return fmt.Errorf("postgres.UpsertEdge: %s -[%s]-> %s: %w", e.From, e.Type, e.To, err)
 		}
 		return upsertEdge(ctx, tx, e)
@@ -241,7 +249,7 @@ func (s *Store) ListResources(ctx context.Context, filter graph.Filter) ([]graph
 // ListResourcesInCluster is the cluster-tagged variant of
 // ListResources (P3-T20). It filters on the generated cluster_id
 // column added by migration 007 — every pre-P3-T20 row reads back as
-// cluster_id='' so passing the empty clusterID reproduces the
+// cluster_id=” so passing the empty clusterID reproduces the
 // pre-multicluster behaviour exactly.
 func (s *Store) ListResourcesInCluster(ctx context.Context, clusterID string, filter graph.Filter) ([]graph.Resource, error) {
 	var labelsJSON []byte
@@ -284,7 +292,7 @@ func (s *Store) GetEdgesAcrossClusters(ctx context.Context, clusterIDs []string)
 		return nil, nil
 	}
 	const sql = `
-		SELECT e.from_id, e.to_id, e.type
+		SELECT e.from_id, e.to_id, e.type, e.attributes
 		FROM edges e
 		JOIN resources rf ON rf.id = e.from_id
 		JOIN resources rt ON rt.id = e.to_id
@@ -317,7 +325,7 @@ func (s *Store) GetEdgesAcrossClusters(ctx context.Context, clusterIDs []string)
 // future workload (e.g. very high-fanout vertices) flips the
 // equation, callers can opt in.
 func (s *Store) ListIncoming(ctx context.Context, id string) ([]graph.Edge, error) {
-	const sql = `SELECT from_id, to_id, type FROM edges WHERE to_id = $1`
+	const sql = `SELECT from_id, to_id, type, attributes FROM edges WHERE to_id = $1`
 	rows, err := s.pool.Query(ctx, sql, id)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.ListIncoming: %s: %w", id, err)
@@ -329,7 +337,7 @@ func (s *Store) ListIncoming(ctx context.Context, id string) ([]graph.Edge, erro
 // ListOutgoing is the mirror of ListIncoming. See the godoc on
 // ListIncoming for why this stays on SQL despite the P2-T4 sketch.
 func (s *Store) ListOutgoing(ctx context.Context, id string) ([]graph.Edge, error) {
-	const sql = `SELECT from_id, to_id, type FROM edges WHERE from_id = $1`
+	const sql = `SELECT from_id, to_id, type, attributes FROM edges WHERE from_id = $1`
 	rows, err := s.pool.Query(ctx, sql, id)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.ListOutgoing: %s: %w", id, err)
@@ -354,7 +362,7 @@ func (s *Store) Snapshot(ctx context.Context) (*graph.Graph, error) {
 		return nil, err
 	}
 
-	eRows, err := s.pool.Query(ctx, `SELECT from_id, to_id, type FROM edges`)
+	eRows, err := s.pool.Query(ctx, `SELECT from_id, to_id, type, attributes FROM edges`)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.Snapshot: edges: %w", err)
 	}
@@ -516,7 +524,7 @@ func (s *Store) NamespaceSubgraph(ctx context.Context, ns string, labels map[str
 		return nil, fmt.Errorf("postgres.NamespaceSubgraph: resources scan: %w", err)
 	}
 	const edgesSQL = `
-		SELECT e.from_id, e.to_id, e.type
+		SELECT e.from_id, e.to_id, e.type, e.attributes
 		FROM edges e
 		JOIN resources r1 ON r1.id = e.from_id AND r1.data->>'namespace' = $1
 		JOIN resources r2 ON r2.id = e.to_id   AND r2.data->>'namespace' = $1
@@ -588,14 +596,37 @@ func scanEdges(rows pgx.Rows) ([]graph.Edge, error) {
 	for rows.Next() {
 		var e graph.Edge
 		var typ string
-		if err := rows.Scan(&e.From, &e.To, &typ); err != nil {
+		var attrsRaw []byte
+		if err := rows.Scan(&e.From, &e.To, &typ, &attrsRaw); err != nil {
 			return nil, fmt.Errorf("scan edge: %w", err)
 		}
 		e.Type = graph.EdgeType(typ)
+		// Leave Attributes nil for the common empty case so the result
+		// matches an edge written without attributes (and the JSON
+		// omitempty shape stays identical across both stores).
+		if len(attrsRaw) > 0 {
+			var m map[string]string
+			if err := json.Unmarshal(attrsRaw, &m); err != nil {
+				return nil, fmt.Errorf("scan edge attributes: %w", err)
+			}
+			if len(m) > 0 {
+				e.Attributes = m
+			}
+		}
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows.Err: %w", err)
 	}
 	return out, nil
+}
+
+// edgeAttributesJSON marshals an edge's attribute bag for storage. A
+// nil or empty map becomes the empty JSON object so the column stays
+// non-null and consistent with the migration default.
+func edgeAttributesJSON(attrs map[string]string) ([]byte, error) {
+	if len(attrs) == 0 {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(attrs)
 }
