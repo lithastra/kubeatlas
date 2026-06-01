@@ -302,6 +302,44 @@ func openAPIComponentsFor(version string) map[string]any {
 			"required": []any{"generatedAt", "kubeAtlasVersion", "scope", "graph", "orphans", "cycles", "topBlastRadius", "resourceCount", "edgeCount"},
 		}
 
+		// Policy integration — v1-only (Phase 4 surface).
+		schemas["PolicyConstraint"] = map[string]any{
+			"type":        "object",
+			"description": "One admission-policy constraint and its live violation count.",
+			"properties": map[string]any{
+				"name":       map[string]any{"type": "string"},
+				"kind":       map[string]any{"type": "string"},
+				"engine":     map[string]any{"type": "string", "enum": []any{"gatekeeper"}},
+				"violations": map[string]any{"type": "integer"},
+			},
+			"required": []any{"name", "kind", "engine", "violations"},
+		}
+		schemas["PolicyConstraintList"] = map[string]any{
+			"type":        "array",
+			"description": "Body of GET /api/v1/policy/constraints: every constraint, sorted by name.",
+			"items":       map[string]any{"$ref": "#/components/schemas/PolicyConstraint"},
+		}
+		schemas["AffectedResource"] = map[string]any{
+			"type":        "object",
+			"description": "A resource a constraint enforces, with its current violation status.",
+			"properties": map[string]any{
+				"resource": map[string]any{"$ref": "#/components/schemas/Resource"},
+				"violated": map[string]any{"type": "boolean"},
+				"message":  map[string]any{"type": "string"},
+			},
+			"required": []any{"resource", "violated"},
+		}
+		schemas["ConstraintAffectedResponse"] = map[string]any{
+			"type":        "object",
+			"description": "Body of GET /api/v1/policy/constraints/{name}/affected.",
+			"properties": map[string]any{
+				"constraint": map[string]any{"type": "string"},
+				"resources":  map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/AffectedResource"}},
+				"count":      map[string]any{"type": "integer"},
+			},
+			"required": []any{"constraint", "resources", "count"},
+		}
+
 		// P3-T22 federation surface — v1-only, since v1alpha1 is frozen.
 		schemas["FederationClustersResponse"] = map[string]any{
 			"type":        "object",

@@ -83,6 +83,11 @@ func Default() *Registry {
 	// ReplicaSet / any /scale-bearing kind). Cheap — kind-gated on
 	// the first line so non-HPA events return immediately.
 	r.Register(&ScalesExtractor{})
+	// Gatekeeper Constraint -> matched resource (ENFORCES). Kind-gated
+	// on the constraints.gatekeeper.sh API group; non-Constraint events
+	// return immediately. Constraints reach the pipeline through the
+	// dynamic-informer path.
+	r.Register(&GatekeeperExtractor{})
 	return r
 }
 
