@@ -125,6 +125,19 @@ const (
 	// relationship, not data flow, so the encoding sits in the
 	// workload domain alongside OWNS.
 	EdgeTypeScales EdgeType = "SCALES"
+
+	// EdgeTypeEnforces connects an admission policy to a resource it
+	// restricts: a Gatekeeper Constraint or a Kyverno (Cluster)Policy
+	// on the From end, the matched/restricted resource on the To end.
+	// Direction is policy -> restricted resource.
+	//
+	// It is deliberately NOT folded into SELECTS: a NetworkPolicy
+	// SELECTS a Pod ("this policy picks that Pod"), whereas a
+	// Constraint ENFORCES a Deployment ("this policy constrains that
+	// Deployment") — different semantics, different colour in the UI.
+	// Violation status rides on the edge's Attributes
+	// (violated / violation_message).
+	EdgeTypeEnforces EdgeType = "ENFORCES"
 )
 
 // AllEdgeTypes is the canonical edge-type list. Adding a new type
@@ -148,6 +161,7 @@ var AllEdgeTypes = []EdgeType{
 	EdgeTypeAllowsTo,
 	EdgeTypeBindsPlatformIdentity,
 	EdgeTypeScales,
+	EdgeTypeEnforces,
 }
 
 // Edge represents a directed dependency between two resources.
@@ -155,6 +169,13 @@ type Edge struct {
 	From string   `json:"from"` // Resource ID
 	To   string   `json:"to"`   // Resource ID
 	Type EdgeType `json:"type"` // strongly typed; one of AllEdgeTypes
+
+	// Attributes carries optional, edge-type-specific metadata.
+	// ENFORCES edges use it for Gatekeeper/Kyverno violation status
+	// ("violated", "violation_message"); most edge types leave it
+	// empty. Append-only on the JSON wire (omitted when empty) so it
+	// does not change the shape existing consumers parse.
+	Attributes map[string]string `json:"attributes,omitempty"`
 }
 
 // Graph is a snapshot of the dependency graph.

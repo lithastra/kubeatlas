@@ -404,7 +404,13 @@ func openAPIComponentsBase() map[string]any {
 						"enum": []any{
 							"OWNS", "USES_CONFIGMAP", "USES_SECRET", "MOUNTS_VOLUME",
 							"SELECTS", "USES_SERVICEACCOUNT", "ROUTES_TO", "ATTACHED_TO",
+							"ENFORCES",
 						},
+					},
+					"attributes": map[string]any{
+						"type":                 "object",
+						"additionalProperties": map[string]any{"type": "string"},
+						"description":          "Optional edge metadata. ENFORCES edges carry policy violation status (violated, violation_message); omitted when empty.",
 					},
 				},
 				"required": []any{"from", "to", "type"},

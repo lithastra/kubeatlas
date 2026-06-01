@@ -94,7 +94,7 @@ func TestEvaluateForResource_HappyPath(t *testing.T) {
 		To:   "demo/Bar/foo-001-target",
 		Type: "DERIVED_TO",
 	}
-	if edges[0] != want {
+	if edges[0].From != want.From || edges[0].To != want.To || edges[0].Type != want.Type {
 		t.Errorf("edge = %+v, want %+v", edges[0], want)
 	}
 }
