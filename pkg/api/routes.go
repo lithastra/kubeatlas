@@ -300,6 +300,28 @@ func (s *Server) Routes() []RouteInfo {
 			Response: ResponseSpec{Description: "Diagnostic report", SchemaRef: "DiagnoseReport"},
 			handler:  s.handleDiagnose,
 		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/policy/constraints",
+			Summary:     "List admission-policy constraints",
+			Description: "Returns every Gatekeeper Constraint with its live violation count, read from the Constraint's status — KubeAtlas observes the policy engine's result and never re-evaluates the policy. Optional `engine` restricts the engine. v1-only.",
+			QueryParams: []ParamSpec{
+				{Name: "engine", Description: "Filter by policy engine; default returns all supported engines", Type: "string", Enum: []string{"gatekeeper"}},
+			},
+			Response: ResponseSpec{Description: "Constraint summaries", SchemaRef: "PolicyConstraintList"},
+			handler:  s.handlePolicyConstraints,
+		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/policy/constraints/{name}/affected",
+			Summary:     "Resources a constraint enforces",
+			Description: "Returns the resources the named constraint enforces (from its ENFORCES edges), each flagged with the violation status the policy engine reported. v1-only.",
+			PathParams: []ParamSpec{
+				{Name: "name", Required: true, Description: "Constraint name", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Affected resources", SchemaRef: "ConstraintAffectedResponse"},
+			handler:  s.handlePolicyConstraintAffected,
+		},
 
 		// Multi-cluster federation (P3-T22). v1-only — v1alpha1 is
 		// frozen, and federation is the v1.3 net-new surface. Routes
