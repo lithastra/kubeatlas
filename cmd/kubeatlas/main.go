@@ -26,6 +26,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
+	"github.com/lithastra/kubeatlas/pkg/gatekeeper"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/multicluster"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
@@ -566,11 +567,17 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		log.Fatalf("build rego engine: %v", err)
 	}
 
+	// Shared dynamic-informer metrics — the gatekeeper component's
+	// DynamicInformerManager updates them; /metrics surfaces them. Built
+	// here so the API server and the manager reference the same sink.
+	dynMetrics := discovery.NewDynamicMetrics()
+
 	// API server options. snapWriter is nil unless Tier 2 + snapshots
 	// enabled; when set, /metrics surfaces its counters + queue depth.
 	apiOpts := []api.ServerOption{
 		api.WithWebFS(webFS),
 		api.WithRegoMetrics(regoEngine.Metrics(), regoEngine.ModuleCount),
+		api.WithDynamicInformerMetrics(dynMetrics),
 	}
 	if snapWriter != nil {
 		apiOpts = append(apiOpts,
@@ -610,6 +617,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	var (
 		informerStarter componentStarter
 		crdStarter      componentStarter
+		gkStarter       componentStarter
 		mcMgr           *multicluster.Manager
 		mcKubeconfigs   map[string][]byte
 	)
@@ -629,10 +637,12 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		mcMgr = multicluster.New(graphStore,
 			multicluster.WithFactory(multicluster.DefaultInformerFactory(baseInformerOpts...)),
 		)
-		// CRD discovery is per-cluster work that doesn't fit the
-		// single-shared-CRD-informer model. P3-T21 ships the core-GVR
-		// federation; per-cluster CRD discovery is a follow-up.
+		// CRD discovery and Gatekeeper discovery are per-cluster work
+		// that doesn't fit the single-shared-informer model. P3-T21
+		// ships the core-GVR federation; per-cluster CRD/policy
+		// discovery is a follow-up.
 		crdStarter = noopStarter{}
+		gkStarter = noopStarter{}
 		slog.Info("multicluster enabled", "members", len(kubeconfigs))
 	} else {
 		informerStarter = discovery.NewInformerManager(
@@ -642,6 +652,13 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		crdStarter = crd.New(client.Dynamic(), graphStore,
 			crd.WithRegoEvaluator(regoEngine),
 		)
+		// Gatekeeper: watch ConstraintTemplates and register a dynamic
+		// informer per generated Constraint kind. The manager's metrics
+		// are the dynMetrics surfaced on /metrics above.
+		dynMgr := discovery.NewDynamicInformerManager(
+			client.Dynamic(), discovery.WithDynamicMetrics(dynMetrics),
+		)
+		gkStarter = gatekeeper.New(client.Dynamic(), graphStore, extractor.Default(), dynMgr)
 	}
 	if mcMgr != nil {
 		// Re-bind srv with the cluster lister now that mcMgr exists.
@@ -657,32 +674,36 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		}
 	}
 
-	// Run all three components under the same cancellable context.
-	// If any returns a non-Canceled error (or the user hits Ctrl-C),
-	// the cancel cascades and the others wind down.
+	// Run all components under the same cancellable context. If any
+	// returns a non-Canceled error (or the user hits Ctrl-C), the
+	// cancel cascades and the others wind down.
 	type result struct {
 		who string
 		err error
 	}
-	results := make(chan result, 3)
+	const componentCount = 4
+	results := make(chan result, componentCount)
 	go func() { results <- result{"informer", informerStarter.Start(ctx)} }()
 	go func() { results <- result{"api", srv.Start(ctx)} }()
 	go func() { results <- result{"crd-discovery", crdStarter.Start(ctx)} }()
+	go func() { results <- result{"gatekeeper", gkStarter.Start(ctx)} }()
 
-	first := <-results
+	collected := make([]result, 0, componentCount)
+	collected = append(collected, <-results)
 	cancel()
-	second := <-results
-	third := <-results
+	for len(collected) < componentCount {
+		collected = append(collected, <-results)
+	}
 
-	// All three components have stopped, so the informer can no
-	// longer Enqueue. Drain the snapshot writer's buffered events
-	// into the store before exit (best-effort — Stop honours the
-	// per-event retry budget, it does not block forever).
+	// All components have stopped, so the informer can no longer
+	// Enqueue. Drain the snapshot writer's buffered events into the
+	// store before exit (best-effort — Stop honours the per-event
+	// retry budget, it does not block forever).
 	if snapWriter != nil {
 		snapWriter.Stop()
 	}
 
-	for _, r := range []result{first, second, third} {
+	for _, r := range collected {
 		if r.err != nil && !errors.Is(r.err, context.Canceled) {
 			log.Fatalf("%s: %v", r.who, r.err)
 		}

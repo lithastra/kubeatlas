@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
+	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
@@ -53,6 +54,13 @@ type Server struct {
 	// snapshot-block-free on a Tier 1 install.
 	snapshotMetrics    *snapshot.Metrics
 	snapshotQueueDepth func() int
+
+	// dynamicMetrics is the Phase 4 hook for the dynamic informer
+	// manager's active-gauge + error counter (Gatekeeper policy
+	// integration). main.go wires it via WithDynamicInformerMetrics;
+	// left nil when no dynamic informers run (e.g. multi-cluster mode),
+	// in which case /metrics omits the block.
+	dynamicMetrics *discovery.DynamicMetrics
 
 	// snapshotsEnabled + snapshotRetention drive the F-111
 	// /api/v1/snapshots endpoints. The API server cannot tell its
@@ -126,6 +134,16 @@ func WithRegoMetrics(m *rego.Metrics, moduleCount func() int) ServerOption {
 	return func(s *Server) {
 		s.regoMetrics = m
 		s.regoModuleCount = moduleCount
+	}
+}
+
+// WithDynamicInformerMetrics wires the dynamic informer manager's
+// active-gauge + error counter into /metrics. main.go passes the same
+// sink the Gatekeeper manager updates; left unset in multi-cluster mode
+// where no dynamic informers run.
+func WithDynamicInformerMetrics(m *discovery.DynamicMetrics) ServerOption {
+	return func(s *Server) {
+		s.dynamicMetrics = m
 	}
 }
 

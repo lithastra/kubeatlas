@@ -1,0 +1,50 @@
+# Policy-integration fixture: a Gatekeeper ConstraintTemplate plus a
+# Constraint that requires every petclinic Deployment to carry an "app"
+# label. Apply on a cluster with Gatekeeper installed; KubeAtlas then
+# surfaces the Constraint and its ENFORCES edges (with violation status)
+# through /api/v1/policy/* and the graph.
+#
+#   kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/release-3.18/deploy/gatekeeper.yaml
+#   kubectl apply -f test/petclinic/phase4-policy.yaml
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredlabels
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredLabels
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            labels:
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredlabels
+
+        violation[{"msg": msg}] {
+          provided := {label | input.review.object.metadata.labels[label]}
+          required := {label | label := input.parameters.labels[_]}
+          missing := required - provided
+          count(missing) > 0
+          msg := sprintf("you must provide labels: %v", [missing])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: k8srequiredlabels-all
+spec:
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
+    namespaces: ["petclinic"]
+  parameters:
+    labels: ["app"]
