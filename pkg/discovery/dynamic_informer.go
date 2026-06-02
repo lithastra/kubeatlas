@@ -159,6 +159,15 @@ func (m *DynamicInformerManager) Remove(gvr schema.GroupVersionResource) {
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource))
 }
 
+// Started reports whether Start has bound the base context, i.e.
+// whether Add will be accepted. Callers that register informers from a
+// separate goroutine use it to wait out the brief startup window.
+func (m *DynamicInformerManager) Started() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.started
+}
+
 // Has reports whether an informer is currently registered for gvr.
 func (m *DynamicInformerManager) Has(gvr schema.GroupVersionResource) bool {
 	m.mu.RLock()

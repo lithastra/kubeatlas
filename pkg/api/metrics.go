@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 )
@@ -56,7 +57,7 @@ func (m *metricsCounter) snapshot() map[counterKey]uint64 {
 //
 // Write errors are ignored: a hung-up scraper isn't something /metrics
 // can do anything useful about.
-func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int) {
+func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int, dynMetrics *discovery.DynamicMetrics) {
 	p := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) }
 
 	p("# HELP kubeatlas_goroutines Number of currently running goroutines.\n")
@@ -138,5 +139,18 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, 
 		p("# HELP kubeatlas_snapshot_queue_depth Events currently buffered in the snapshot writer queue.\n")
 		p("# TYPE kubeatlas_snapshot_queue_depth gauge\n")
 		p("kubeatlas_snapshot_queue_depth %d\n", snapQueueDepth())
+	}
+
+	// Phase 4 dynamic informer block — emitted only when main.go wired
+	// WithDynamicInformerMetrics (single-cluster mode with the
+	// Gatekeeper component running).
+	if dynMetrics != nil {
+		s := dynMetrics.Snapshot()
+		p("# HELP kubeatlas_dynamic_informer_active_total Dynamic informers currently running (e.g. one per Gatekeeper Constraint kind).\n")
+		p("# TYPE kubeatlas_dynamic_informer_active_total gauge\n")
+		p("kubeatlas_dynamic_informer_active_total %d\n", s.Active)
+		p("# HELP kubeatlas_dynamic_informer_errors_total Errors registering dynamic informers.\n")
+		p("# TYPE kubeatlas_dynamic_informer_errors_total counter\n")
+		p("kubeatlas_dynamic_informer_errors_total %d\n", s.Errors)
 	}
 }
