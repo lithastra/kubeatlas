@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,6 +33,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 	"github.com/lithastra/kubeatlas/pkg/store"
 	"github.com/lithastra/kubeatlas/pkg/store/postgres"
+	"github.com/lithastra/kubeatlas/pkg/telemetry"
 	"github.com/lithastra/kubeatlas/pkg/version"
 )
 
@@ -504,6 +506,31 @@ func runOnce(level, namespace, kind, name, format, kubeconfig, kubeContext strin
 	}
 }
 
+// loadedPackNames returns the distinct rule-pack names currently loaded
+// in the engine, derived from each module's "pack/module" name. Used by
+// telemetry to report which packs are enabled (names only, no versions
+// or contents).
+func loadedPackNames(engine *rego.Engine) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, m := range engine.Loaded() {
+		name := m.Name
+		if i := strings.IndexByte(name, '/'); i >= 0 {
+			name = name[:i]
+		}
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // runWatch starts the informer and the API server in parallel and
 // blocks until either errors or the process receives SIGINT/SIGTERM.
 // Both shut down when the parent context is cancelled.
@@ -572,12 +599,50 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	// here so the API server and the manager reference the same sink.
 	dynMetrics := discovery.NewDynamicMetrics()
 
+	// Opt-in telemetry (default off). The collector reads coarse,
+	// non-identifying values through closures so this package stays free
+	// of store/rego deps. clusterCount is a reassignable var so the
+	// multicluster branch below can update it; the closures capture the
+	// variable, not its value.
+	k8sVersionStr := ""
+	if info, verr := disc.ServerVersion(); verr == nil {
+		k8sVersionStr = info.GitVersion
+	}
+	telemetryClusterCount := func() int { return 1 }
+	telemetryCollector := telemetry.NewCollector(version.Version, telemetry.Providers{
+		K8sVersion: func() string { return k8sVersionStr },
+		Tier: func() string {
+			if storeCfg.Backend == store.BackendPostgres {
+				return "postgres"
+			}
+			return "memory"
+		},
+		ResourceCount: func(ctx context.Context) (int, error) {
+			counts, err := graphStore.KindCountsByNamespace(ctx, nil)
+			if err != nil {
+				return 0, err
+			}
+			total := 0
+			for _, byKind := range counts {
+				for _, n := range byKind {
+					total += n
+				}
+			}
+			return total, nil
+		},
+		EnabledPacks: func() []string { return loadedPackNames(regoEngine) },
+		ClusterCount: func() int { return telemetryClusterCount() },
+		Platforms:    func() map[string]int { return map[string]int{"vanilla": telemetryClusterCount()} },
+	})
+	telemetrySender := telemetry.NewSender(telemetry.LoadConfig(), telemetryCollector, slog.Default())
+
 	// API server options. snapWriter is nil unless Tier 2 + snapshots
 	// enabled; when set, /metrics surfaces its counters + queue depth.
 	apiOpts := []api.ServerOption{
 		api.WithWebFS(webFS),
 		api.WithRegoMetrics(regoEngine.Metrics(), regoEngine.ModuleCount),
 		api.WithDynamicInformerMetrics(dynMetrics),
+		api.WithTelemetry(telemetrySender),
 	}
 	if snapWriter != nil {
 		apiOpts = append(apiOpts,
@@ -643,6 +708,8 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		// discovery is a follow-up.
 		crdStarter = noopStarter{}
 		gkStarter = noopStarter{}
+		// Report the live attached-cluster count in telemetry.
+		telemetryClusterCount = func() int { return len(mcMgr.ListClusters()) }
 		slog.Info("multicluster enabled", "members", len(kubeconfigs))
 	} else {
 		informerStarter = discovery.NewInformerManager(
@@ -673,6 +740,12 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 			onReady:     srv.Readiness().MarkReady,
 		}
 	}
+
+	// Opt-in telemetry runs as a detached background goroutine, NOT one
+	// of the blocking components below: disabled telemetry returns
+	// immediately, and a component that returns would cascade-cancel the
+	// whole server. It stops when ctx is cancelled.
+	go func() { _ = telemetrySender.Run(ctx) }()
 
 	// Run all components under the same cancellable context. If any
 	// returns a non-Canceled error (or the user hits Ctrl-C), the

@@ -66,6 +66,11 @@ type Server struct {
 	// in which case /metrics omits the block.
 	dynamicMetrics *discovery.DynamicMetrics
 
+	// telemetry backs the /api/v1/telemetry/* endpoints and the
+	// telemetry block on /metrics. Wired via WithTelemetry; nil leaves
+	// the endpoints reporting disabled.
+	telemetry TelemetryProvider
+
 	// snapshotsEnabled + snapshotRetention drive the F-111
 	// /api/v1/snapshots endpoints. The API server cannot tell its
 	// store's tier on its own, so main.go calls WithSnapshots only
