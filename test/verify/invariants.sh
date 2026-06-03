@@ -29,7 +29,7 @@ green()  { printf '\033[32m%s\033[0m\n' "$*"; }
 
 usage() {
   cat >&2 <<EOF
-usage: invariants.sh [phase1|phase2]
+usage: invariants.sh [phase1|phase2|phase4]
 
 Run the named invariant gate against the kubeatlas reachable at
 \$KUBEATLAS_URL (default ${KUBEATLAS_URL}). Defaults to phase2.
@@ -161,9 +161,29 @@ phase2() {
   done
 }
 
+# --- phase4 invariants (v1.4 additions) -----------------------------
+phase4() {
+  phase2
+
+  # The API-version usage counters exist and are counter-typed, so the
+  # data-driven v1alpha1 retirement decision has a source. The series
+  # are emitted even at zero traffic, so this holds on a fresh install.
+  metrics=$(curl -fsS --max-time 10 "${KUBEATLAS_URL}/metrics" 2>/dev/null) \
+    || { fail_inv "phase4: /metrics fetch failed"; return; }
+  for counter in kubeatlas_api_v1alpha1_requests_total \
+                 kubeatlas_api_v1_requests_total; do
+    if grep -q "^# TYPE ${counter} counter$" <<<"${metrics}"; then
+      pass_inv "phase4: /metrics exposes ${counter} (counter)"
+    else
+      fail_inv "phase4: /metrics missing ${counter} as counter"
+    fi
+  done
+}
+
 case "${PHASE}" in
   phase1) phase1 ;;
   phase2) phase2 ;;
+  phase4) phase4 ;;
 esac
 
 echo
