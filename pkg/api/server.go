@@ -39,6 +39,10 @@ type Server struct {
 	readiness *ReadinessGate
 	metrics   *metricsCounter
 
+	// versionMetrics splits request counts by API version (v1alpha1 vs
+	// v1) for the data-driven v1alpha1 retirement decision. Always set.
+	versionMetrics *versionCounter
+
 	// regoMetrics + regoModuleCount are the Phase 2 hooks for the
 	// rego engine's atomic counters and live module count. main.go
 	// wires them through WithRegoMetrics so /metrics surfaces
@@ -180,13 +184,14 @@ func New(addr string, store graph.GraphStore, aggs *aggregator.Registry, opts ..
 		addr = DefaultAddr
 	}
 	s := &Server{
-		addr:      addr,
-		store:     store,
-		aggs:      aggs,
-		hub:       NewWatchHub(),
-		readiness: NewReadinessGate(),
-		metrics:   newMetricsCounter(),
-		exportSem: make(chan struct{}, exportConcurrency),
+		addr:           addr,
+		store:          store,
+		aggs:           aggs,
+		hub:            NewWatchHub(),
+		readiness:      NewReadinessGate(),
+		metrics:        newMetricsCounter(),
+		versionMetrics: newVersionCounter(),
+		exportSem:      make(chan struct{}, exportConcurrency),
 	}
 	for _, o := range opts {
 		o(s)
@@ -214,6 +219,7 @@ func (s *Server) Start(ctx context.Context) error {
 	handler := chain(mux,
 		recoveryMiddleware,
 		metricsMiddleware(s.metrics),
+		versionMetricsMiddleware(s.versionMetrics),
 		accessLogMiddleware,
 		corsMiddleware,
 	)

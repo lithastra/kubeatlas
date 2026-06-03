@@ -89,6 +89,31 @@ Practical consequences:
   enrichment fields are useful and the schema is a strict
   superset.
 
+## Tracking v1alpha1 usage
+
+From v1.4 the server counts every request by API version and endpoint
+and exposes the split on `/metrics`:
+
+```
+kubeatlas_api_v1alpha1_requests_total{endpoint="graph"}
+kubeatlas_api_v1_requests_total{endpoint="graph"}
+```
+
+The only label is the endpoint — the matched route, never request
+values or caller identity — so cardinality is bounded by the route
+table. The ratio
+
+```
+v1alpha1 / (v1alpha1 + v1)
+```
+
+is the data behind the v1alpha1 retirement decision: when it stays below
+5% over a 30-day window (or the six-month announcement period from v1.4
+elapses), v1alpha1 becomes safe to remove in v2.0. The series are
+emitted even at zero traffic, so a dashboard can chart them from the day
+v1.4 ships. The counts stay inside the cluster — they are never sent
+through the opt-in telemetry pipeline.
+
 ## Why two prefixes instead of one with a content-type negotiation
 
 Path-based versioning beats `Accept` headers in practice for
