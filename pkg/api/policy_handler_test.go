@@ -62,7 +62,7 @@ func TestHandlePolicyConstraints(t *testing.T) {
 func TestHandlePolicyConstraints_UnknownEngine(t *testing.T) {
 	base, _, cleanup := seedAndServe(t, policySeed)
 	defer cleanup()
-	resp, _ := getJSON(t, base+"/api/v1/policy/constraints?engine=kyverno", nil)
+	resp, _ := getJSON(t, base+"/api/v1/policy/constraints?engine=bogus", nil)
 	if resp.StatusCode != 400 {
 		t.Errorf("status = %d, want 400 for unknown engine", resp.StatusCode)
 	}

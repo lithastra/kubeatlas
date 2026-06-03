@@ -71,6 +71,16 @@ var CoreGVRs = []schema.GroupVersionResource{
 	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"},
 	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"},
 	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"},
+
+	// Kyverno policy integration (F-205). The kyverno.io and
+	// wgpolicyk8s.io groups are install-time CRDs — filtered at startup
+	// when Kyverno is not installed. The KyvernoExtractor reads
+	// (Cluster)Policy match rules to emit ENFORCES edges and overlays
+	// (Cluster)PolicyReport results as the edge's pass/fail status.
+	{Group: "kyverno.io", Version: "v1", Resource: "clusterpolicies"},
+	{Group: "kyverno.io", Version: "v1", Resource: "policies"},
+	{Group: "wgpolicyk8s.io", Version: "v1alpha2", Resource: "policyreports"},
+	{Group: "wgpolicyk8s.io", Version: "v1alpha2", Resource: "clusterpolicyreports"},
 }
 
 // optionalGroups is the set of API groups whose absence on the cluster
@@ -78,6 +88,8 @@ var CoreGVRs = []schema.GroupVersionResource{
 // drops missing GVRs rather than failing startup.
 var optionalGroups = map[string]bool{
 	"gateway.networking.k8s.io": true,
+	"kyverno.io":                true,
+	"wgpolicyk8s.io":            true,
 }
 
 // FilterAvailableGVRs returns the subset of want that the cluster
