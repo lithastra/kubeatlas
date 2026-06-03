@@ -58,12 +58,15 @@ func TestFilterAvailableGVRs_KeepsAvailableSkipsOptional(t *testing.T) {
 		t.Fatalf("FilterAvailableGVRs: %v", err)
 	}
 	for _, gvr := range got {
-		if gvr.Group == "gateway.networking.k8s.io" {
-			t.Errorf("expected Gateway API to be filtered out, got %v", gvr)
+		switch gvr.Group {
+		case "gateway.networking.k8s.io", "kyverno.io", "wgpolicyk8s.io":
+			t.Errorf("expected optional group %q to be filtered out, got %v", gvr.Group, gvr)
 		}
 	}
 	// All required GVRs (those not in the optionalGroups map) survive.
-	wantCount := len(kdiscovery.CoreGVRs) - 2 // 2 gateway GVRs
+	// The fake discovery omits the optional groups: 2 gateway + 2
+	// kyverno.io + 2 wgpolicyk8s.io GVRs are dropped.
+	wantCount := len(kdiscovery.CoreGVRs) - 6
 	if len(got) != wantCount {
 		t.Errorf("kept %d GVRs, want %d", len(got), wantCount)
 	}
@@ -92,11 +95,12 @@ func TestFilterAvailableGVRs_PropagatesTransientError(t *testing.T) {
 func TestCoreGVRs_HasExpectedShape(t *testing.T) {
 	// Sanity: the registry includes 16 Phase 0 GVRs (15 core +
 	// ServiceAccount), 4 RBAC GVRs (P2-T14), the NetworkPolicy GVR
-	// (P3-T1 / F-109), and HorizontalPodAutoscaler. The exact list
-	// shifts with cluster API availability at runtime, but the
-	// registry itself is stable.
-	if len(kdiscovery.CoreGVRs) != 22 {
-		t.Errorf("CoreGVRs length = %d, want 22", len(kdiscovery.CoreGVRs))
+	// (P3-T1 / F-109), HorizontalPodAutoscaler, and the 4 Kyverno
+	// policy GVRs (optional, filtered when Kyverno is absent). The
+	// exact list shifts with cluster API availability at runtime, but
+	// the registry itself is stable.
+	if len(kdiscovery.CoreGVRs) != 26 {
+		t.Errorf("CoreGVRs length = %d, want 26", len(kdiscovery.CoreGVRs))
 	}
 	required := map[string]bool{
 		"namespaces": true, "pods": true, "services": true,

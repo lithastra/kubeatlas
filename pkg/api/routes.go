@@ -304,9 +304,9 @@ func (s *Server) Routes() []RouteInfo {
 			Method:      "GET",
 			Pattern:     "/api/v1/policy/constraints",
 			Summary:     "List admission-policy constraints",
-			Description: "Returns every Gatekeeper Constraint with its live violation count, read from the Constraint's status — KubeAtlas observes the policy engine's result and never re-evaluates the policy. Optional `engine` restricts the engine. v1-only.",
+			Description: "Returns every Gatekeeper Constraint and Kyverno (Cluster)Policy with its live violation count, read from the engine's status/reports — KubeAtlas observes the result and never re-evaluates the policy. Optional `engine` restricts the engine. v1-only.",
 			QueryParams: []ParamSpec{
-				{Name: "engine", Description: "Filter by policy engine; default returns all supported engines", Type: "string", Enum: []string{"gatekeeper"}},
+				{Name: "engine", Description: "Filter by policy engine; default returns all supported engines", Type: "string", Enum: []string{"gatekeeper", "kyverno"}},
 			},
 			Response: ResponseSpec{Description: "Constraint summaries", SchemaRef: "PolicyConstraintList"},
 			handler:  s.handlePolicyConstraints,

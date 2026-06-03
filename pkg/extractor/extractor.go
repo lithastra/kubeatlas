@@ -88,6 +88,9 @@ func Default() *Registry {
 	// return immediately. Constraints reach the pipeline through the
 	// dynamic-informer path.
 	r.Register(&GatekeeperExtractor{})
+	// Kyverno (Cluster)Policy -> matched resource (ENFORCES), with
+	// PolicyReport pass/fail overlaid. Kind-gated on kyverno.io.
+	r.Register(&KyvernoExtractor{})
 	return r
 }
 

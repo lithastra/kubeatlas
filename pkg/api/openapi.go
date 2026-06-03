@@ -309,7 +309,7 @@ func openAPIComponentsFor(version string) map[string]any {
 			"properties": map[string]any{
 				"name":       map[string]any{"type": "string"},
 				"kind":       map[string]any{"type": "string"},
-				"engine":     map[string]any{"type": "string", "enum": []any{"gatekeeper"}},
+				"engine":     map[string]any{"type": "string", "enum": []any{"gatekeeper", "kyverno"}},
 				"violations": map[string]any{"type": "integer"},
 			},
 			"required": []any{"name", "kind", "engine", "violations"},

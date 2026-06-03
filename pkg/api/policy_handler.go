@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strings"
@@ -48,8 +49,9 @@ type ConstraintAffectedResponse struct {
 // is implemented today (Kyverno joins the same route later). The body
 // is a JSON array, sorted by name for stable diffs.
 func (s *Server) handlePolicyConstraints(w http.ResponseWriter, r *http.Request) {
-	if engine := r.URL.Query().Get("engine"); engine != "" && engine != "gatekeeper" {
-		writeError(w, http.StatusBadRequest, CodeInvalidArgument, "unknown engine; supported: gatekeeper")
+	engine := r.URL.Query().Get("engine")
+	if engine != "" && engine != "gatekeeper" && engine != "kyverno" {
+		writeError(w, http.StatusBadRequest, CodeInvalidArgument, "unknown engine; supported: gatekeeper, kyverno")
 		return
 	}
 
@@ -61,17 +63,23 @@ func (s *Server) handlePolicyConstraints(w http.ResponseWriter, r *http.Request)
 
 	out := make([]PolicyConstraint, 0)
 	for _, res := range snap.Resources {
-		if !isGatekeeperConstraint(res) {
+		eng, ok := policyEngine(res)
+		if !ok || (engine != "" && engine != eng) {
 			continue
 		}
 		out = append(out, PolicyConstraint{
 			Name:       res.Name,
 			Kind:       res.Kind,
-			Engine:     "gatekeeper",
-			Violations: violationCount(res.Raw),
+			Engine:     eng,
+			Violations: s.policyViolations(r.Context(), res, eng),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Engine < out[j].Engine
+	})
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -94,7 +102,7 @@ func (s *Server) handlePolicyConstraintAffected(w http.ResponseWriter, r *http.R
 
 	var constraintID string
 	for _, res := range snap.Resources {
-		if isGatekeeperConstraint(res) && res.Name == name {
+		if _, ok := policyEngine(res); ok && res.Name == name {
 			constraintID = res.ID()
 			break
 		}
@@ -121,9 +129,11 @@ func (s *Server) handlePolicyConstraintAffected(w http.ResponseWriter, r *http.R
 			// edge hasn't been swept yet. Skip rather than 500.
 			continue
 		}
+		// Gatekeeper tags violations as violated=true + a message;
+		// Kyverno tags the PolicyReport result (fail = violating).
 		resources = append(resources, AffectedResource{
 			Resource: res,
-			Violated: e.Attributes["violated"] == "true",
+			Violated: e.Attributes["violated"] == "true" || e.Attributes["result"] == "fail",
 			Message:  e.Attributes["violation_message"],
 		})
 	}
@@ -138,8 +148,44 @@ func (s *Server) handlePolicyConstraintAffected(w http.ResponseWriter, r *http.R
 	})
 }
 
+// kyvernoGroupPrefix gates a resource as a Kyverno policy.
+const kyvernoGroupPrefix = "kyverno.io/"
+
 func isGatekeeperConstraint(r graph.Resource) bool {
 	return strings.HasPrefix(r.GroupVersion, gatekeeperConstraintGroupPrefix)
+}
+
+// policyEngine classifies a resource as a policy object and names its
+// engine, or returns ok=false for everything else.
+func policyEngine(r graph.Resource) (string, bool) {
+	switch {
+	case isGatekeeperConstraint(r):
+		return "gatekeeper", true
+	case strings.HasPrefix(r.GroupVersion, kyvernoGroupPrefix) && (r.Kind == "ClusterPolicy" || r.Kind == "Policy"):
+		return "kyverno", true
+	default:
+		return "", false
+	}
+}
+
+// policyViolations counts a policy's current violations. Gatekeeper
+// reads the Constraint's status; Kyverno counts failing ENFORCES edges
+// (the PolicyReport result the extractor stamped on each edge).
+func (s *Server) policyViolations(ctx context.Context, r graph.Resource, engine string) int {
+	if engine == "gatekeeper" {
+		return violationCount(r.Raw)
+	}
+	edges, err := s.store.ListOutgoing(ctx, r.ID())
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range edges {
+		if e.Type == graph.EdgeTypeEnforces && e.Attributes["result"] == "fail" {
+			n++
+		}
+	}
+	return n
 }
 
 // violationCount reads len(status.violations) off a Constraint's raw
