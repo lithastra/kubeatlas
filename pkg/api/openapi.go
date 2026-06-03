@@ -340,6 +340,37 @@ func openAPIComponentsFor(version string) map[string]any {
 			"required": []any{"constraint", "resources", "count"},
 		}
 
+		// Opt-in telemetry — v1-only (Phase 4 surface).
+		schemas["TelemetryStatusResponse"] = map[string]any{
+			"type":        "object",
+			"description": "Body of GET /api/v1/telemetry/status.",
+			"properties": map[string]any{
+				"enabled":   map[string]any{"type": "boolean"},
+				"endpoint":  map[string]any{"type": "string"},
+				"last_sent": map[string]any{"type": "string", "format": "date-time"},
+				"next_send": map[string]any{"type": "string", "format": "date-time"},
+			},
+			"required": []any{"enabled"},
+		}
+		schemas["TelemetryPayload"] = map[string]any{
+			"type":        "object",
+			"description": "The anonymous payload a telemetry report sends. No resource names, namespaces, label values, IPs, or cross-session identifiers.",
+			"properties": map[string]any{
+				"schema_version":        map[string]any{"type": "string"},
+				"kubeatlas_version":     map[string]any{"type": "string"},
+				"k8s_version":           map[string]any{"type": "string"},
+				"os":                    map[string]any{"type": "string"},
+				"arch":                  map[string]any{"type": "string"},
+				"tier":                  map[string]any{"type": "string", "enum": []any{"memory", "postgres"}},
+				"resource_bucket":       map[string]any{"type": "string", "enum": []any{"<1K", "1K-5K", "5K-10K", ">10K"}},
+				"enabled_packs":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"cluster_count":         map[string]any{"type": "integer"},
+				"platform_distribution": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+				"session_nonce":         map[string]any{"type": "string", "description": "Random per process start; never persisted, cannot correlate sessions."},
+			},
+			"required": []any{"schema_version", "kubeatlas_version", "os", "arch", "tier", "resource_bucket", "session_nonce"},
+		}
+
 		// P3-T22 federation surface — v1-only, since v1alpha1 is frozen.
 		schemas["FederationClustersResponse"] = map[string]any{
 			"type":        "object",

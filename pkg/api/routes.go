@@ -322,6 +322,22 @@ func (s *Server) Routes() []RouteInfo {
 			Response: ResponseSpec{Description: "Affected resources", SchemaRef: "ConstraintAffectedResponse"},
 			handler:  s.handlePolicyConstraintAffected,
 		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/telemetry/status",
+			Summary:     "Opt-in telemetry status",
+			Description: "Reports whether anonymous usage telemetry is enabled, where it sends, and the last/next send times. v1-only.",
+			Response:    ResponseSpec{Description: "Telemetry status", SchemaRef: "TelemetryStatusResponse"},
+			handler:     s.handleTelemetryStatus,
+		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/telemetry/preview",
+			Summary:     "Preview the next telemetry payload",
+			Description: "Returns the exact, anonymous payload the next report would send — the transparency contract. Works whether or not telemetry is enabled, so a user can audit it before opting in. v1-only.",
+			Response:    ResponseSpec{Description: "Telemetry payload", SchemaRef: "TelemetryPayload"},
+			handler:     s.handleTelemetryPreview,
+		},
 
 		// Multi-cluster federation (P3-T22). v1-only — v1alpha1 is
 		// frozen, and federation is the v1.3 net-new surface. Routes

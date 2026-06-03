@@ -9,6 +9,7 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/telemetry"
 )
 
 // ResourceDetailResponse is the v1alpha1 body of
@@ -309,8 +310,12 @@ func parseSearchQuery(raw string) graph.SearchQuery {
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+	var telMetrics *telemetry.Metrics
+	if s.telemetry != nil {
+		telMetrics = s.telemetry.Metrics()
+	}
 	writePrometheus(w, s.readiness, s.metrics, s.regoMetrics, s.regoModuleCount,
-		s.snapshotMetrics, s.snapshotQueueDepth, s.dynamicMetrics, s.versionMetrics)
+		s.snapshotMetrics, s.snapshotQueueDepth, s.dynamicMetrics, s.versionMetrics, telMetrics)
 }
 
 // pathParts pulls (namespace, kind, name) out of r.PathValue calls. The

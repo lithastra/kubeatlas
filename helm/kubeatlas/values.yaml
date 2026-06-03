@@ -322,3 +322,15 @@ multicluster:
 
 # Extra labels applied to every resource the chart renders.
 extraLabels: {}
+
+# Opt-in anonymous usage telemetry. OFF by default — you must
+# explicitly enable it. When on, KubeAtlas sends coarse,
+# non-identifying data once a day (version, K8s version, OS/arch,
+# tier, a resource-count bucket, enabled rule-pack names, cluster
+# counts) to https://telemetry.kubeatlas.dev. It never sends resource
+# names, namespaces, label values, IPs, or any cross-session
+# identifier. The endpoint is hard-coded in the binary and not
+# configurable. Preview exactly what would be sent at
+# /api/v1/telemetry/preview. See docs/concepts/telemetry-schema.md.
+telemetry:
+  enabled: false

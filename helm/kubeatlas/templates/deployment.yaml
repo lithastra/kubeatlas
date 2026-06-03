@@ -124,6 +124,14 @@ spec:
             - name: KUBEATLAS_MULTICLUSTER_KUBECONFIG_DIR
               value: /etc/kubeatlas/multicluster
           {{- end }}
+          {{- if .Values.telemetry.enabled }}
+            # Opt-in anonymous usage telemetry (default off). The receiver
+            # endpoint is hard-coded in the binary and not configurable —
+            # operators choose only enabled/disabled. See
+            # docs/concepts/telemetry-schema.md for exactly what is sent.
+            - name: KUBEATLAS_TELEMETRY_ENABLED
+              value: "true"
+          {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

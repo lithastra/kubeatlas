@@ -11,6 +11,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
+	"github.com/lithastra/kubeatlas/pkg/telemetry"
 )
 
 // metricsCounter tracks HTTP request counts by (method, status). It's
@@ -102,7 +103,7 @@ func (vc *versionCounter) snapshot() (v1alpha1, v1 map[string]uint64) {
 //
 // Write errors are ignored: a hung-up scraper isn't something /metrics
 // can do anything useful about.
-func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int, dynMetrics *discovery.DynamicMetrics, versionMetrics *versionCounter) {
+func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int, dynMetrics *discovery.DynamicMetrics, versionMetrics *versionCounter, telMetrics *telemetry.Metrics) {
 	p := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) }
 
 	p("# HELP kubeatlas_goroutines Number of currently running goroutines.\n")
@@ -202,6 +203,19 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, 
 		for _, ep := range sortedKeys(v1) {
 			p("kubeatlas_api_v1_requests_total{endpoint=%q} %d\n", ep, v1[ep])
 		}
+	}
+
+	// Opt-in telemetry block — send + error counters. Emitted whenever
+	// telemetry is wired (even disabled), so the error counter is
+	// observable when an enabled sender can't reach the endpoint.
+	if telMetrics != nil {
+		ts := telMetrics.Snapshot()
+		p("# HELP kubeatlas_telemetry_sends_total Telemetry reports sent successfully.\n")
+		p("# TYPE kubeatlas_telemetry_sends_total counter\n")
+		p("kubeatlas_telemetry_sends_total %d\n", ts.Sent)
+		p("# HELP kubeatlas_telemetry_send_errors_total Telemetry reports that failed to send.\n")
+		p("# TYPE kubeatlas_telemetry_send_errors_total counter\n")
+		p("kubeatlas_telemetry_send_errors_total %d\n", ts.Errors)
 	}
 
 	// Phase 4 dynamic informer block — emitted only when main.go wired

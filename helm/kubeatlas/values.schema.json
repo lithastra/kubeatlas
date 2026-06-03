@@ -362,6 +362,13 @@
         }
       }
     },
+    "telemetry": {
+      "type": "object",
+      "description": "Opt-in anonymous usage telemetry (default off). When enabled, KubeAtlas sends coarse, non-identifying data once a day to a hard-coded project endpoint (no resource names, namespaces, label values, IPs, or cross-session identifiers). Preview at /api/v1/telemetry/preview.",
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
     "multicluster": {
       "type": "object",
       "description": "Multi-cluster federation (F-201, v1.3). When enabled, KubeAtlas attaches an informer to every kubeconfig in the named Secret and tags every Resource with its ClusterID.",
