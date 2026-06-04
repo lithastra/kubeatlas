@@ -20,7 +20,10 @@ export type EdgeType =
   | 'ALLOWS_FROM'
   | 'ALLOWS_TO'
   // HorizontalPodAutoscaler → workload (control-loop relationship).
-  | 'SCALES';
+  | 'SCALES'
+  // Admission policy (Gatekeeper Constraint / Kyverno Policy) → the
+  // resource it restricts.
+  | 'ENFORCES';
 
 export interface ViewNode {
   id: string;
@@ -175,4 +178,31 @@ export interface DiffResult {
   added: DiffEntry[];
   removed: DiffEntry[];
   modified: DiffEntry[];
+}
+
+// --- Policy integration (F-205) -------------------------------------
+
+// PolicyConstraint summarises one admission-policy constraint. Body of
+// GET /api/v1/policy/constraints is a bare array of these.
+export interface PolicyConstraint {
+  name: string;
+  kind: string;
+  engine: string;
+  violations: number;
+}
+
+// AffectedResource is one resource a constraint enforces, with its
+// current violation status.
+export interface AffectedResource {
+  resource: Resource;
+  violated: boolean;
+  message?: string;
+}
+
+// ConstraintAffectedResponse is the body of
+// GET /api/v1/policy/constraints/{name}/affected.
+export interface ConstraintAffectedResponse {
+  constraint: string;
+  resources: AffectedResource[];
+  count: number;
 }
