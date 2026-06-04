@@ -84,6 +84,54 @@ func TestGenerateReport_ClusterScope(t *testing.T) {
 	}
 }
 
+func TestGenerateReport_PolicyViolations(t *testing.T) {
+	ctx := context.Background()
+	s := memory.New()
+
+	add := func(r graph.Resource) {
+		if err := s.UpsertResource(ctx, r); err != nil {
+			t.Fatalf("seed resource: %v", err)
+		}
+	}
+	enforces := func(from, to string, attrs map[string]string) {
+		if err := s.UpsertEdge(ctx, graph.Edge{
+			From: from, To: to, Type: graph.EdgeTypeEnforces, Attributes: attrs,
+		}); err != nil {
+			t.Fatalf("seed edge: %v", err)
+		}
+	}
+
+	gk := graph.Resource{Kind: "K8sRequiredLabels", Namespace: "", Name: "must-have-owner"}
+	kv := graph.Resource{Kind: "ClusterPolicy", Namespace: "", Name: "disallow-latest"}
+	bad := graph.Resource{Kind: "Deployment", Namespace: "petclinic", Name: "api"}
+	good := graph.Resource{Kind: "Deployment", Namespace: "petclinic", Name: "web"}
+	for _, r := range []graph.Resource{gk, kv, bad, good} {
+		add(r)
+	}
+	// Gatekeeper violation, Kyverno failure, and a compliant Kyverno edge.
+	enforces(gk.ID(), bad.ID(), map[string]string{"violated": "true", "violation_message": "missing owner label"})
+	enforces(kv.ID(), bad.ID(), map[string]string{"result": "fail"})
+	enforces(kv.ID(), good.ID(), map[string]string{"result": "pass"})
+
+	rep, err := analysis.GenerateReport(ctx, s, analysis.DiagnoseScope{AllNamespaces: true}, "v")
+	if err != nil {
+		t.Fatalf("GenerateReport: %v", err)
+	}
+
+	if len(rep.PolicyViolations) != 2 {
+		t.Fatalf("PolicyViolations len = %d, want 2 (got %+v)", len(rep.PolicyViolations), rep.PolicyViolations)
+	}
+	// Sorted by policy id then resource: the Kyverno ClusterPolicy id
+	// ("/ClusterPolicy/...") sorts before the Gatekeeper Constraint id
+	// ("/K8sRequiredLabels/..."), so [0] is the Kyverno failure.
+	if got := rep.PolicyViolations[0]; got.Policy != kv.ID() || got.Resource != bad.ID() || got.Message != "" {
+		t.Errorf("PolicyViolations[0] = %+v, want kyverno failure of %s", got, bad.ID())
+	}
+	if got := rep.PolicyViolations[1]; got.Policy != gk.ID() || got.Resource != bad.ID() || got.Message != "missing owner label" {
+		t.Errorf("PolicyViolations[1] = %+v, want gatekeeper violation of %s", got, bad.ID())
+	}
+}
+
 func TestGenerateReport_NamespaceScope(t *testing.T) {
 	ctx := context.Background()
 	s := diagnoseSeed(t)
