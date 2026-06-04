@@ -2,11 +2,34 @@
   "nav": {
     "resources": "Resources",
     "topology": "Topology",
+    "policy": "Policy",
     "snapshots": "Snapshots",
     "search": "Search",
     "docs": "Docs"
   },
   "page": {
+    "policy": {
+      "title": "Policies",
+      "subtitle": "Gatekeeper Constraints and Kyverno policies, and the resources they enforce. Read-only — KubeAtlas observes the policy engines, it does not edit policies.",
+      "empty": "No policy constraints found. Install Gatekeeper or Kyverno and apply a policy to see it here.",
+      "violated": "Violating",
+      "compliant": "Compliant",
+      "affectedHeader": "Resources enforced by {{name}} ({{count}})",
+      "engine": {
+        "all": "All",
+        "gatekeeper": "Gatekeeper",
+        "kyverno": "Kyverno"
+      },
+      "col": {
+        "name": "Name",
+        "kind": "Kind",
+        "engine": "Engine",
+        "violations": "Violations",
+        "resource": "Resource",
+        "status": "Status",
+        "message": "Message"
+      }
+    },
     "resources": {
       "title": "Resources",
       "placeholder": "Resource list with namespace filter."

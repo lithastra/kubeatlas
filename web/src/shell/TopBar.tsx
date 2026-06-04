@@ -31,6 +31,7 @@ const DOCS_URL = 'https://docs.kubeatlas.lithastra.com/';
 const ROUTES: NavEntry[] = [
   { kind: 'route', to: '/topology', labelKey: 'nav.topology' },
   { kind: 'route', to: '/resources', labelKey: 'nav.resources' },
+  { kind: 'route', to: '/policy', labelKey: 'nav.policy' },
   { kind: 'route', to: '/snapshots', labelKey: 'nav.snapshots' },
   { kind: 'external', href: DOCS_URL, labelKey: 'nav.docs' },
 ];

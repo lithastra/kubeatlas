@@ -28,7 +28,8 @@
     "ATTACHED_TO": "Attached to",
     "SELECTS_NP": "Selects (NetworkPolicy)",
     "ALLOWS_FROM": "Allows from",
-    "ALLOWS_TO": "Allows to"
+    "ALLOWS_TO": "Allows to",
+    "ENFORCES": "Enforces"
   },
   "level": {
     "cluster": "Cluster",

@@ -18,6 +18,7 @@ export interface AtlasEdgePalette {
   identity: string;
   traffic: string;
   policy: string;
+  enforcement: string;
   storage: string;
   federation: string;
 }
@@ -63,6 +64,7 @@ export const themePalettes = {
       identity: '#8A78B3',
       traffic: '#C49441',
       policy: '#4B6E94',
+      enforcement: '#C0392B',
       storage: '#7A6B5A',
       federation: '#A14638',
     },
@@ -89,6 +91,7 @@ export const themePalettes = {
       identity: '#6E63A8',
       traffic: '#A8742B',
       policy: '#1F6FA8',
+      enforcement: '#CB3A2C',
       storage: '#5E6B78',
       federation: '#A8443B',
     },
@@ -115,6 +118,7 @@ export const themePalettes = {
       identity: '#7B6BA0',
       traffic: '#C08A2E',
       policy: '#386B5E',
+      enforcement: '#BE3B2D',
       storage: '#6E6446',
       federation: '#9E4030',
     },
@@ -141,6 +145,7 @@ export const themePalettes = {
       identity: '#6A5E8C',
       traffic: '#8A6A2A',
       policy: '#1C5A86',
+      enforcement: '#D14637',
       storage: '#56564E',
       federation: '#8E3826',
     },
@@ -171,6 +176,7 @@ export const themePalettes = {
       identity: '#A593CE',
       traffic: '#D3A55C',
       policy: '#6699C9',
+      enforcement: '#E2574A',
       storage: '#9A8B78',
       federation: '#C46857',
     },

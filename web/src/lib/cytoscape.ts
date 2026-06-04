@@ -135,6 +135,10 @@ const EDGE_STYLES: Record<string, EdgeStyleSpec> = {
   // hard "this resource owns that resource" graph, SCALES is the
   // softer "this autoscaler drives the replica count".
   SCALES: { weight: 'medium', dash: 'longShort', domain: 'structural', arrow: 'filled-tri' },
+  // Admission policy -> restricted resource. Red dashed so a Gatekeeper
+  // Constraint / Kyverno Policy enforcing a resource stands out from the
+  // blue NetworkPolicy edges that also live in the "policy" area.
+  ENFORCES: { weight: 'medium', dash: 'shortDash', domain: 'enforcement', arrow: 'filled-tri' },
   PROTECTS: { weight: 'light', dash: 'dotted', domain: 'policy', arrow: 'diamond' },
   BINDS_PLATFORM_IDENTITY: { weight: 'medium', dash: 'longShort', domain: 'federation', arrow: 'double-tri' },
   CRD_REF: { weight: 'light', dash: 'longDash', domain: 'structural', arrow: 'open' },
