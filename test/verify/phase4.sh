@@ -43,6 +43,9 @@ done
 PHASE4_LEVEL="${PHASE4_LEVEL:-v1.4}"
 
 PETCLINIC_NS="${KUBEATLAS_PETCLINIC_NS:-petclinic}"
+# Server-side checks hit a running kubeatlas. Skipped when unreachable so
+# the diagnose (offline CLI) part still works without a live server.
+KUBEATLAS_URL="${KUBEATLAS_URL:-http://localhost:8080}"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "${WORKDIR}"' EXIT
 
@@ -103,9 +106,54 @@ part1_diagnose() {
   pass "diagnose HTML ok ($(wc -c < "${html}") bytes, no CDN refs)"
 }
 
+# part1_server hits a running kubeatlas for the policy, telemetry, and
+# API-version-counter surfaces. Skipped (not failed) when the server is
+# unreachable or curl is absent, so the offline diagnose checks above
+# still gate in CLI-only environments.
+part1_server() {
+  if ! command -v curl >/dev/null 2>&1; then
+    skip "[part-1] server checks: curl not on PATH; skipping policy/telemetry/counter checks"
+    return
+  fi
+  if ! curl -fsS --max-time 5 "${KUBEATLAS_URL}/healthz" >/dev/null 2>&1; then
+    skip "[part-1] server checks: ${KUBEATLAS_URL} not reachable; skipping policy/telemetry/counter checks"
+    return
+  fi
+
+  step "[part-1] policy: /api/v1/policy/constraints is a list"
+  local pol="${WORKDIR}/policy.json"
+  curl -fsS --max-time 10 "${KUBEATLAS_URL}/api/v1/policy/constraints" > "${pol}" \
+    || fail "policy constraints fetch failed"
+  jq -e 'type == "array"' "${pol}" >/dev/null || fail "policy constraints is not an array"
+  # Count is fixture-dependent (needs phase4-policy.yaml applied + a
+  # policy engine); reported, not asserted.
+  pass "policy constraints ok ($(jq 'length' "${pol}") constraints)"
+
+  step "[part-1] telemetry: /api/v1/telemetry/preview is transparent"
+  local prev="${WORKDIR}/preview.json"
+  curl -fsS --max-time 10 "${KUBEATLAS_URL}/api/v1/telemetry/preview" > "${prev}" \
+    || fail "telemetry preview fetch failed"
+  jq -e '.kubeatlas_version | (type == "string") and (. != "")' "${prev}" >/dev/null \
+    || fail "telemetry preview has no kubeatlas_version"
+  jq -e 'has("session_nonce") and (has("install_uuid") | not) and (has("namespace") | not) and (has("ip") | not)' "${prev}" >/dev/null \
+    || fail "telemetry preview leaks a sensitive field (or lacks session_nonce)"
+  pass "telemetry preview ok (session_nonce present; no install_uuid/namespace/ip)"
+
+  step "[part-1] metrics: v1alpha1/v1 usage counters present"
+  local metrics
+  metrics="$(curl -fsS --max-time 10 "${KUBEATLAS_URL}/metrics")" \
+    || fail "metrics fetch failed"
+  grep -q "^# TYPE kubeatlas_api_v1alpha1_requests_total counter$" <<<"${metrics}" \
+    || fail "metrics missing kubeatlas_api_v1alpha1_requests_total (counter)"
+  grep -q "^# TYPE kubeatlas_api_v1_requests_total counter$" <<<"${metrics}" \
+    || fail "metrics missing kubeatlas_api_v1_requests_total (counter)"
+  pass "v1alpha1 + v1 request counters present"
+}
+
 part1_diagnose
+part1_server
 
 # Later parts gate on PHASE4_LEVEL (v1.5 -> part-2, v2.0 -> part-3) and
-# land with their milestones (P4-T19 / P4-T31). Nothing to run yet.
+# land with their milestones. Nothing to run yet.
 
 green "Phase 4 verify (level ${PHASE4_LEVEL}) — all implemented checks passed"
