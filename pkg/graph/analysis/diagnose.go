@@ -60,6 +60,19 @@ type BlastRadiusEntry struct {
 	Affected int            `json:"affected"`
 }
 
+// PolicyViolation is one resource a policy engine is currently failing:
+// a single ENFORCES edge whose target is in violation. It normalises
+// the per-engine attribute schemas (Gatekeeper tags edges with
+// violated=true + violation_message; Kyverno tags them with
+// result=fail) into one engine-agnostic shape so automation — the
+// GitHub Action's PR comment, dashboards — has a stable contract
+// instead of reaching into raw edge attributes.
+type PolicyViolation struct {
+	Policy   string `json:"policy"`            // enforcing resource id (the Constraint / ClusterPolicy)
+	Resource string `json:"resource"`          // the resource in violation
+	Message  string `json:"message,omitempty"` // engine-supplied reason, when available
+}
+
 // DiagnoseReport is the self-contained F-301 diagnostic snapshot: the
 // scoped dependency graph plus orphan, cycle, and blast-radius
 // analysis. It serialises to JSON for automation and renders to a
@@ -73,6 +86,7 @@ type DiagnoseReport struct {
 	Orphans          []OrphanReport     `json:"orphans"`
 	Cycles           []CycleReport      `json:"cycles"`
 	TopBlastRadius   []BlastRadiusEntry `json:"topBlastRadius"`
+	PolicyViolations []PolicyViolation  `json:"policyViolations"`
 	ResourceCount    int                `json:"resourceCount"`
 	EdgeCount        int                `json:"edgeCount"`
 }
@@ -127,9 +141,45 @@ func GenerateReport(ctx context.Context, store graph.GraphStore, scope DiagnoseS
 		Orphans:          orphans,
 		Cycles:           cycles,
 		TopBlastRadius:   top,
+		PolicyViolations: detectPolicyViolations(g.Edges),
 		ResourceCount:    len(g.Resources),
 		EdgeCount:        len(g.Edges),
 	}, nil
+}
+
+// detectPolicyViolations distils the report's ENFORCES edges down to the
+// ones currently in violation, normalising the two engines' attribute
+// schemas:
+//
+//   - Gatekeeper edges carry violated="true" and violation_message=<reason>.
+//   - Kyverno edges carry result="fail" (a pass leaves no violation).
+//
+// Edges without violation markers (compliant resources, or edges from an
+// engine that does not report status) are skipped. The result is sorted
+// by policy then resource so successive runs are byte-identical.
+func detectPolicyViolations(edges []graph.Edge) []PolicyViolation {
+	out := make([]PolicyViolation, 0)
+	for _, e := range edges {
+		if e.Type != graph.EdgeTypeEnforces || e.Attributes == nil {
+			continue
+		}
+		violated := e.Attributes["violated"] == "true" || e.Attributes["result"] == "fail"
+		if !violated {
+			continue
+		}
+		out = append(out, PolicyViolation{
+			Policy:   e.From,
+			Resource: e.To,
+			Message:  e.Attributes["violation_message"],
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Policy != out[j].Policy {
+			return out[i].Policy < out[j].Policy
+		}
+		return out[i].Resource < out[j].Resource
+	})
+	return out
 }
 
 // filterCyclesToNamespace keeps only cycles with at least one member in
