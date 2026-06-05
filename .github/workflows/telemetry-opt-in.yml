@@ -1,0 +1,71 @@
+name: Telemetry opt-in
+
+# P4-T5 step 9: prove the opt-in telemetry contract at the network
+# level. With telemetry disabled (the default) KubeAtlas must make ZERO
+# outbound connections to the telemetry receiver; a positive control
+# with telemetry enabled confirms the probe can actually observe egress.
+#
+# The receiver host is pinned to a TEST-NET-3 blackhole address and an
+# iptables OUTPUT counter watches it, so the test depends on neither the
+# real (separately, human-deployed) endpoint nor live DNS. No untrusted
+# GitHub event inputs are used in any run: block — the only values are
+# constants we control.
+on:
+  pull_request:
+    paths:
+      - 'pkg/telemetry/**'
+      - 'pkg/api/telemetry_handler.go'
+      - 'cmd/kubeatlas/main.go'
+      - 'helm/kubeatlas/values.yaml'
+      - 'helm/kubeatlas/values.schema.json'
+      - 'test/verify/telemetry-egress.sh'
+      - '.github/workflows/telemetry-opt-in.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  egress:
+    name: zero egress when telemetry disabled
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.24.0
+          node_image: kindest/node:v1.31.0
+          cluster_name: kubeatlas-telemetry
+          wait: 120s
+
+      - name: Build kubeatlas binary
+        run: go build -o bin/kubeatlas ./cmd/kubeatlas
+
+      - name: Pin the telemetry receiver to a blackhole and watch egress
+        run: |
+          echo '203.0.113.7 telemetry.kubeatlas.dev' | sudo tee -a /etc/hosts
+          sudo iptables -A OUTPUT -d 203.0.113.7 -j DROP
+
+      - name: Disabled — zero egress to the telemetry endpoint
+        run: bash test/verify/telemetry-egress.sh disabled
+
+      - name: Enabled — egress is observed (positive control)
+        run: bash test/verify/telemetry-egress.sh enabled
+
+      - name: Upload server logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeatlas-telemetry-logs
+          path: /tmp/kubeatlas-*.log
+          if-no-files-found: ignore
+          retention-days: 7
