@@ -85,6 +85,11 @@ part1_diagnose() {
     || fail "diagnose JSON has no orphans array"
   jq -e '.resourceCount | type == "number"' "${json}" >/dev/null \
     || fail "diagnose JSON has no resourceCount"
+  # policyViolations is the normalised contract the GitHub Action's
+  # --policy-report consumes; it must always be present (an empty array
+  # when nothing is in violation), never null or absent.
+  jq -e '.policyViolations | type == "array"' "${json}" >/dev/null \
+    || fail "diagnose JSON has no policyViolations array"
   local orphans resources
   orphans="$(jq '.orphans | length' "${json}")"
   resources="$(jq '.resourceCount' "${json}")"
