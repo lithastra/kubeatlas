@@ -1,0 +1,55 @@
+{
+  "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
+  "phase": "4-v1.4.0",
+  "fixture": {
+    "namespace": "stress-test-10k",
+    "approximate_resource_count": 14400,
+    "approximate_edge_count": 14000,
+    "samples_per_endpoint": 100
+  },
+  "description": "v1.4.0 perf baseline (P4-T9). Captured against the stress-test-10k fixture (10000 ConfigMaps + 2000 Deployments + 400 Services) across Tier 1 (in-memory) and Tier 2 (PostgreSQL + Apache AGE), on a kind cluster under Docker Desktop / WSL2. Tier 1 is the memory-backed binary run locally against the cluster; Tier 2 is the chart-installed server (CloudNativePG-managed Postgres+AGE) reached over kubectl port-forward, which adds WSL2 networking overhead (~10ms/round-trip vs native Linux). v1.4 adds the F-205 Gatekeeper/Kyverno ENFORCES extractors and the edge-attributes column (Postgres 008 JSONB); these numbers confirm no regression versus the v1.2 10K baseline — cluster_view and namespace_view both land under their 1s targets, and blast_radius stays well under 500ms (the small Tier 2 rise to ~22ms p95 reflects the JSONB attribute scan on the recursive-CTE traversal). spec_targets carry forward the v1.2 reclaimed SLOs unchanged.",
+  "spec_targets": {
+    "_comment": "Carried forward unchanged from perf-baseline-v1.2.json — the v1.2 reclaimed targets (cluster_view / namespace_view p95 <= 1000ms, blast_radius p95 <= 500ms) remain the live SLOs and v1.4 meets them on both tiers.",
+    "cluster_view_p50_ms": 500,
+    "cluster_view_p95_ms": 1000,
+    "namespace_view_p50_ms": 500,
+    "namespace_view_p95_ms": 1000,
+    "blast_radius_p95_ms": 500
+  },
+  "tier1": {
+    "cluster_view_p50_ms": 12.609,
+    "cluster_view_p95_ms": 15.584,
+    "cluster_view_p99_ms": 17.762,
+    "namespace_view_p50_ms": 68.503,
+    "namespace_view_p95_ms": 97.819,
+    "namespace_view_p99_ms": 108.124,
+    "blast_radius_p50_ms": 1.111,
+    "blast_radius_p95_ms": 1.450,
+    "blast_radius_p99_ms": 1.587,
+    "namespace_count": 10,
+    "captured_at": "2026-06-07T10:49:52+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2"
+    }
+  },
+  "tier2": {
+    "cluster_view_p50_ms": 216.631,
+    "cluster_view_p95_ms": 239.290,
+    "cluster_view_p99_ms": 319.597,
+    "namespace_view_p50_ms": 687.352,
+    "namespace_view_p95_ms": 882.729,
+    "namespace_view_p99_ms": 1064.837,
+    "blast_radius_p50_ms": 7.225,
+    "blast_radius_p95_ms": 22.165,
+    "blast_radius_p99_ms": 25.893,
+    "namespace_count": 11,
+    "captured_at": "2026-06-07T17:17:09+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.6.87.2-microsoft-standard-WSL2"
+    }
+  }
+}
