@@ -9,6 +9,74 @@ fixes bump the patch.
 
 _(none yet)_
 
+## [v1.4.0] — offline diagnostics, policy visibility, opt-in telemetry
+
+v1.4.0 opens Phase 4. It adds a self-contained offline diagnostic
+report (F-301) for air-gapped audits and CI, makes admission-policy
+enforcement a first-class part of the graph (F-205 — Gatekeeper
+Constraints and Kyverno policies surface as `ENFORCES` edges via
+runtime CRD discovery), ships the project's first opt-in anonymous
+usage telemetry (off by default, with a documented trust contract),
+and begins tracking `v1alpha1` vs `v1` API usage to inform the v2.0
+removal. The `v1alpha1` and `/api/v1/*` surfaces are unchanged;
+everything below is additive.
+
+### Added
+
+- **Offline diagnostic report (F-301)** — `kubeatlas diagnose` and
+  `GET /api/v1/diagnose` produce a self-contained snapshot (the full
+  dependency graph, orphans, cycles, and the top blast-radius
+  resources) as HTML (air-gapped — no external CDN references) or
+  JSON. The report runs an offline scan against the current
+  KUBECONFIG and needs no running server. Its JSON carries a
+  normalized `policyViolations` array distilled from the graph's
+  ENFORCES edges, so automation has one engine-agnostic contract.
+- **Policy visibility (F-205)** — Gatekeeper Constraints and Kyverno
+  ClusterPolicies/Policies are watched and rendered as `ENFORCES`
+  edges from each policy to the resources it governs, tagged with
+  current violation status. Discovery is dynamic: an
+  informer-of-informers watches `ConstraintTemplate`s and registers
+  an informer for each generated Constraint CRD at runtime, so
+  policies that appear after startup are picked up without a
+  restart. New engine-aware endpoints:
+  - `GET /api/v1/policy/constraints` (optional `?engine=gatekeeper`
+    or `?engine=kyverno`) — the constraints/policies in force.
+  - `GET /api/v1/policy/constraints/{name}/affected` — the resources
+    a constraint governs, with per-resource violation state.
+  A **Policy view** in the Web UI lists them and styles `ENFORCES`
+  edges distinctly on the canvas.
+- **`ENFORCES` edge type + edge attributes** — the graph model gains
+  a 16th edge type and an optional per-edge `Attributes` map
+  (carrying violation status); the Postgres store adds an
+  `attributes` JSONB column (schema migration 008).
+- **Opt-in anonymous telemetry** — off by default
+  (`telemetry.enabled=false`). When enabled, KubeAtlas sends coarse,
+  non-identifying data once a day (version, K8s version, OS/arch,
+  tier, a resource-count bucket, enabled rule-pack names, cluster
+  count). It never sends resource names, namespaces, label values,
+  IPs, or any cross-session identifier, and the receiver endpoint is
+  hard-coded (not configurable). `GET /api/v1/telemetry/status` and
+  `GET /api/v1/telemetry/preview` make the exact payload inspectable.
+  The schema is documented field-by-field in
+  `docs/concepts/telemetry-schema.md`; a chaos test covers an
+  unreachable endpoint and a CI job asserts zero egress while
+  disabled.
+- **Per-version API usage counters** —
+  `kubeatlas_api_v1alpha1_requests_total` and
+  `kubeatlas_api_v1_requests_total` track the deprecated vs current
+  surface, the data behind the eventual v2.0 removal decision.
+- **Ecosystem** — a Backstage frontend plugin (v0.1), a Headlamp
+  Policy view, and a `policy-report` option for the GitHub Action
+  (appends a policy-violation summary to PR comments) ship alongside
+  this release from their own repositories.
+
+### Changed
+
+- **`graph.Edge` carries an optional `Attributes` map** across the
+  model, the memory store, and the Postgres store, so edge types can
+  attach typed metadata — first used by `ENFORCES` for violation
+  status.
+
 ## [v1.3.1] — federation UI wiring, accessibility, tooling polish
 
 v1.3.1 is the first patch after the Phase 3 wrap-up. It ships the
@@ -198,6 +266,7 @@ federation paths; everything below is additive.
   `multicluster.enabled=true`; without it a federated install would
   have produced dangling edges across the cluster boundary.
 
+[v1.4.0]: https://github.com/lithastra/kubeatlas/releases/tag/v1.4.0
 [v1.3.1]: https://github.com/lithastra/kubeatlas/releases/tag/v1.3.1
 [v1.3.0]: https://github.com/lithastra/kubeatlas/releases/tag/v1.3.0
 
