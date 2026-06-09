@@ -27,9 +27,37 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**Phase 3 complete.** Three releases shipped — v1.1 (rule packs
-and plugins), v1.2 (offline rendering), and **v1.3** (multi-cluster
-federation, platform identity, cartography Web UI redesign).
+**Phase 4 has begun — v1.4.0 is out.** Phase 3 shipped v1.1 (rule
+packs and plugins), v1.2 (offline rendering), and v1.3 (multi-cluster
+federation, platform identity, cartography Web UI). v1.4 opens
+Phase 4 with offline diagnostics, admission-policy visibility, and
+opt-in telemetry.
+
+**v1.4.0 — offline diagnostics, policy visibility, telemetry**
+(opens Phase 4):
+
+- **Offline diagnostic report** — `kubeatlas diagnose` (and
+  `GET /api/v1/diagnose`) produce a self-contained HTML / JSON
+  snapshot — full dependency graph, orphans, cycles, and the top
+  blast-radius resources — from an offline scan against the current
+  kubeconfig. No running server, so it drops straight into
+  air-gapped audits and CI.
+- **Policy visibility** — Gatekeeper Constraints and Kyverno
+  policies surface as `ENFORCES` edges with live violation status,
+  discovered at runtime as their CRDs appear (an
+  informer-of-informers watches `ConstraintTemplate`s).
+  `GET /api/v1/policy/constraints` and `/{name}/affected` back a
+  new Web UI **Policy view**; the Headlamp plugin gains a matching
+  Policy page.
+- **Opt-in anonymous telemetry** — off by default. When enabled it
+  sends coarse, non-identifying usage once a day, with a
+  transparent `GET /api/v1/telemetry/preview` and a documented
+  trust contract — never resource names, namespaces, label values,
+  or IPs.
+- **`v1alpha1` usage counters** —
+  `kubeatlas_api_v1alpha1_requests_total` vs
+  `kubeatlas_api_v1_requests_total`, the data behind the eventual
+  v2.0 retirement of the frozen `v1alpha1` surface.
 
 **v1.3.0 — federation + cartography UI** (third Phase 3 release):
 
@@ -188,7 +216,11 @@ curl -L https://github.com/lithastra/kubeatlas/releases/latest/download/kubectl-
   | tar -xz kubectl-atlas && sudo install kubectl-atlas /usr/local/bin/
 ```
 
-A `kubectl krew install atlas` path is in preparation.
+Or install via [Krew](https://krew.sigs.k8s.io):
+
+```bash
+kubectl krew update && kubectl krew install atlas
+```
 
 ## Contributing
 
@@ -196,10 +228,11 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the
 [Code of Conduct](./CODE_OF_CONDUCT.md). Look for issues tagged
 [`good first issue`](https://github.com/lithastra/kubeatlas/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-All three Phase 3 releases shipped — v1.1, v1.2, and v1.3.
-Direction beyond Phase 3 — cloud-resource integration, third-party
-platform deep-dives, federation cross-cluster edge inference, and
-the Web UI polish items queued in v1.3.x — is tracked at
+Phase 4 is underway — v1.4 shipped offline diagnostics, policy
+visibility, and opt-in telemetry; v1.5 (a runtime observability
+overlay) and v2.0 (the `v1alpha1` retirement) are planned. Direction
+— along with cloud-resource integration and third-party platform
+deep-dives — is tracked at
 [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 ## Support the project
