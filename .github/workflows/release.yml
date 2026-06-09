@@ -73,7 +73,16 @@ jobs:
       # card look identical; this pulls the real per-version content
       # from CHANGELOG.md instead.
       - name: Extract release notes from CHANGELOG
-        run: make changelog-extract VERSION=${{ github.ref_name }} OUT=/tmp/release-notes.md
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # Prerelease tags (e.g. v1.4.0-rc.1) reuse the base version's
+          # CHANGELOG section — sections are keyed by the final vX.Y.Z,
+          # and changelog-extract needs an exact match. Strip any
+          # `-suffix` so an RC build resolves to its target release's
+          # notes; a final tag is unchanged.
+          BASE="${REF_NAME%%-*}"
+          make changelog-extract VERSION="${BASE}" OUT=/tmp/release-notes.md
 
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@v6
