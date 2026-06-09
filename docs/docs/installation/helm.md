@@ -124,7 +124,7 @@ effect:
 5. The chart never installs a database; persistence is disabled.
 
 Operators who need to weaken any of these have to touch multiple
-values. That friction is intentional — see Phase 1 §2.3 in the spec
+values. That friction is intentional — see §2.3 in the spec
 for the rationale.
 
 ## Uninstall

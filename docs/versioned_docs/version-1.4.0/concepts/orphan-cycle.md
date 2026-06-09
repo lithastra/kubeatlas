@@ -11,7 +11,7 @@ shouldn't be roots) and **cycles** (dependency loops that
 shouldn't exist at all). KubeAtlas surfaces both as first-class
 endpoints so they're discoverable from a dashboard or a CI gate.
 
-## Orphans (F-112 part 1)
+## Orphans
 
 An orphan is a resource that:
 
@@ -78,7 +78,7 @@ catches:
   Removing the resource is a `kubectl delete` you make
   consciously after seeing the report.
 
-## Cycles (F-112 part 2)
+## Cycles
 
 A cycle is a strongly connected component (SCC) of two or more
 resources. Trivial single-vertex SCCs (resources that point at

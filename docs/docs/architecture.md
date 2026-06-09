@@ -200,7 +200,7 @@ Three composed queries that share the `Direction` enum on the
 
 For where KubeAtlas is going next — federation graph wiring in
 the Web UI, FLIP zoom transitions, and cloud-resource integration
-beyond Phase 3 — see the [Roadmap](./roadmap.md).
+in upcoming releases — see the [Roadmap](./roadmap.md).
 
 The v0.1.0 API surface and the `graph.Resource`/`graph.Edge`
 shapes stay frozen across v1.x: only additive changes. CI's

@@ -21,7 +21,7 @@ the hot read paths. The v1.2 service-level targets, p95:
 | namespace-view (`/graph?level=namespace`) | ≤ 1000 ms |
 | blast-radius | ≤ 500 ms |
 
-These were briefly relaxed to 5–8 s in Phase 2, while every
+These were briefly relaxed to 5–8 s during the v1.0 work, while every
 cluster/namespace view materialised the whole graph in the API
 process per request. The store-side **pushdown aggregation** moved
 that work into the store (a `GROUP BY` on Tier 2, a single pass on

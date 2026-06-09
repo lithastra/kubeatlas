@@ -11,11 +11,11 @@ _(none yet)_
 
 ## [v1.4.0] — offline diagnostics, policy visibility, opt-in telemetry
 
-v1.4.0 opens Phase 4. It adds a self-contained offline diagnostic
-report (F-301) for air-gapped audits and CI, makes admission-policy
-enforcement a first-class part of the graph (F-205 — Gatekeeper
-Constraints and Kyverno policies surface as `ENFORCES` edges via
-runtime CRD discovery), ships the project's first opt-in anonymous
+v1.4.0 adds a self-contained offline diagnostic report for
+air-gapped audits and CI, makes admission-policy enforcement a
+first-class part of the graph (Gatekeeper Constraints and Kyverno
+policies surface as `ENFORCES` edges via runtime CRD discovery),
+ships the project's first opt-in anonymous
 usage telemetry (off by default, with a documented trust contract),
 and begins tracking `v1alpha1` vs `v1` API usage to inform the v2.0
 removal. The `v1alpha1` and `/api/v1/*` surfaces are unchanged;
@@ -23,7 +23,7 @@ everything below is additive.
 
 ### Added
 
-- **Offline diagnostic report (F-301)** — `kubeatlas diagnose` and
+- **Offline diagnostic report** — `kubeatlas diagnose` and
   `GET /api/v1/diagnose` produce a self-contained snapshot (the full
   dependency graph, orphans, cycles, and the top blast-radius
   resources) as HTML (air-gapped — no external CDN references) or
@@ -31,7 +31,7 @@ everything below is additive.
   KUBECONFIG and needs no running server. Its JSON carries a
   normalized `policyViolations` array distilled from the graph's
   ENFORCES edges, so automation has one engine-agnostic contract.
-- **Policy visibility (F-205)** — Gatekeeper Constraints and Kyverno
+- **Policy visibility** — Gatekeeper Constraints and Kyverno
   ClusterPolicies/Policies are watched and rendered as `ENFORCES`
   edges from each policy to the resources it governs, tagged with
   current violation status. Discovery is dynamic: an
@@ -79,7 +79,7 @@ everything below is additive.
 
 ## [v1.3.1] — federation UI wiring, accessibility, tooling polish
 
-v1.3.1 is the first patch after the Phase 3 wrap-up. It ships the
+v1.3.1 is the first patch after the v1.3 release. It ships the
 federation cluster picker → graph wiring that was deferred from
 v1.3.0, a full accessibility pass (keyboard traversal, screen-reader
 announcements, contrast fix), and several tooling improvements.
@@ -148,7 +148,7 @@ announcements, contrast fix), and several tooling improvements.
 
 ## [v1.3.0] — multi-cluster federation, platform identity, cartography UI
 
-v1.3.0 is the third and final Phase 3 release. It stretches the
+v1.3.0 is the third release in the v1.1/v1.2/v1.3 line. It stretches the
 dependency graph across cluster boundaries (one KubeAtlas instance
 attaching to N kubeconfigs, every resource tagged with its origin,
 a federated read surface), promotes the cloud-identity bindings
@@ -272,7 +272,7 @@ federation paths; everything below is additive.
 
 ## [v1.2.0] — offline rendering and a self-contained kubectl plugin
 
-v1.2.0 is the second of Phase 3's three release points. It makes
+v1.2.0 is the second of the v1.1/v1.2/v1.3 release points. It makes
 KubeAtlas useful without a server running in the cluster: the
 `kubectl` plugin now builds and renders the dependency graph itself
 — straight from the Kubernetes API on the operator's machine — and
@@ -323,7 +323,7 @@ the CLI and API gained graph-image export. The `v1alpha1` and
 
 ## [v1.1.0] — cloud rule packs, snapshots, search, plugins
 
-v1.1.0 is the first of Phase 3's three release points. It widens
+v1.1.0 is the first of the v1.1/v1.2/v1.3 release points. It widens
 KubeAtlas beyond a single cluster's core resources: managed-Kubernetes
 add-on rule packs, a queryable change history, full-text search, and
 two new ways to reach the graph — a `kubectl` plugin and a Headlamp
@@ -395,9 +395,9 @@ unchanged; everything below is additive.
 
 [v1.1.0]: https://github.com/lithastra/kubeatlas/releases/tag/v1.1.0
 
-## [v1.0.0] — Phase 2 GA
+## [v1.0.0] — general availability
 
-The first GA release. v1.0.0 closes Phase 2 of the project:
+The first GA release:
 persistent state, programmable rule packs, RBAC graph, blast
 radius, orphan / cycle analysis, and a frozen v1alpha1 surface
 plus a GA `/api/v1/*` superset.
@@ -443,7 +443,7 @@ plus a GA `/api/v1/*` superset.
 - **`/api/v1/*` GA endpoints** — every `/api/v1alpha1/*` route
   is also served at `/api/v1/*` from the same handler. The
   `ResourceDetailResponseV1` shape adds `blastRadiusCount`,
-  `isOrphan`, and `inCycle` enrichment fields the Phase 1
+  `isOrphan`, and `inCycle` enrichment fields the v0.1.0
   shape didn't carry. See
   [concepts/api-versioning](https://docs.kubeatlas.lithastra.com/concepts/api-versioning).
 - **cert-manager Helm integration** — opt-in
@@ -451,7 +451,7 @@ plus a GA `/api/v1/*` superset.
   (`selfsigned`, `letsencrypt-staging|prod`, `custom`). The
   chart auto-injects the cert-manager-managed Secret into
   `ingress.spec.tls`. Schema-mutually-exclusive with the
-  Phase 1 `ingress.tls` array. See
+  v0.1.0 `ingress.tls` array. See
   [installation/cert-manager](https://docs.kubeatlas.lithastra.com/installation/cert-manager).
 - **OpenShift install path** — detector + auto-load + docs
   + weekly `e2e-openshift-local` workflow against CRC. See
@@ -494,7 +494,7 @@ plus a GA `/api/v1/*` superset.
 - **No URL changes required.** Scripts and dashboards pinned
   to `/api/v1alpha1/...` continue to work unchanged.
 - **Tier 2 is opt-in.** A fresh `helm install` with no extra
-  flags lands you on the same in-memory backend Phase 1
+  flags lands you on the same in-memory backend v0.1.0
   shipped. Add `persistence.enabled=true
   --set persistence.embedded.enabled=true` when you're ready
   for persistence.
@@ -539,7 +539,7 @@ the total graph size.
 ### Known issues
 
 - The web UI's "Cytoscape neighbour view" replacement of the
-  Phase 1 Mermaid path is deferred to v1.1 — Phase 2's
+  v0.1.0 Mermaid path is deferred to v1.1 — the v1.0
   back-end work prioritised over front-end polish. The
   Mermaid endpoint stays available, the Cytoscape page
   unchanged. See [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
@@ -552,7 +552,7 @@ the total graph size.
 
 [v1.0.0]: https://github.com/lithastra/kubeatlas/releases/tag/v1.0.0
 
-## [v0.1.0] — Phase 1 release
+## [v0.1.0] — first public release
 
 First publicly installable build. In-memory only, single-replica,
 no built-in authentication. See the original

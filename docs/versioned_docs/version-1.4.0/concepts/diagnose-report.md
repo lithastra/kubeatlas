@@ -5,7 +5,7 @@ title: Diagnostic report
 
 # Diagnostic report
 
-The **diagnostic report** (F-301) bundles everything KubeAtlas knows
+The **diagnostic report** bundles everything KubeAtlas knows
 about a cluster — or a single namespace — into one portable artifact:
 the dependency graph plus the orphan, cycle, and blast-radius analyses,
 captured at a point in time.

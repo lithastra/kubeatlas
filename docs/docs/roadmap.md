@@ -13,23 +13,23 @@ For the current state, see [What is KubeAtlas](./).
 
 ## Where we are
 
-**Phase 4 has begun.** Phase 3 shipped three releases — v1.1 (rule
-packs and plugins), v1.2 (offline rendering), and v1.3 (multi-cluster
-federation, platform-identity edges, cartography UI). **v1.4** opens
-Phase 4 with offline diagnostics (F-301), Gatekeeper/Kyverno policy
-visibility (F-205), opt-in anonymous telemetry, and v1alpha1 usage
-tracking ahead of the eventual v2.0 removal. Install with
+**v1.4.0 is out.** Earlier releases shipped v1.1 (rule packs and
+plugins), v1.2 (offline rendering), and v1.3 (multi-cluster
+federation, platform-identity edges, cartography UI). **v1.4** adds
+offline diagnostics, Gatekeeper/Kyverno policy visibility, opt-in
+anonymous telemetry, and v1alpha1 usage tracking ahead of the
+eventual v2.0 removal. Install with
 `helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.4.0`
 — see the [Quick Start](./quick-start.md).
 
-| Phase | Status | What it delivered |
+| Milestone | Status | What it delivered |
 |---|---|---|
-| **Phase 0** (Foundation) | ✅ Done | CLI binary, in-memory graph, 8 edge types, 16 watched resources, contract-tested store interface, contributor docs, CI gates. No API, no UI, no Helm Chart. |
-| **Phase 1** (MVP → v0.1.0) | ✅ Released | REST + WebSocket API, React/MUI Web UI with Cytoscape topology and Mermaid neighbour view, Helm Chart with secure defaults, Playwright E2E, multi-platform release. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:0.1.0`. |
-| **Phase 2** (→ v1.0) | ✅ Released | Tier 2 persistence (PostgreSQL + Apache AGE), Rego rule packs, RBAC graph, blast radius, orphan + cycle detection, `/api/v1/*` GA, cert-manager TLS, OpenShift detector + embedded pack, chaos test suite. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.0.0`. |
-| **Phase 3** (→ v1.1 / v1.2 / v1.3) | ✅ Released | Cloud rule packs, snapshots, search, plugins (v1.1). Offline `kubectl atlas`, graph-image export (v1.2). Multi-cluster federation, platform-identity edges, HPA support, GitHub Action, cartography Web UI redesign (v1.3). |
-| **Phase 4** (→ v1.4 / v1.5 / v2.0) | 🚧 In progress | Offline diagnostic report (F-301), Gatekeeper/Kyverno policy visibility (F-205), opt-in anonymous telemetry, v1alpha1 usage counters, Backstage plugin (v1.4 — released). OTel runtime overlay (F-204) and credential rotation (v1.5), GraphStore v2 and the v1alpha1 removal (v2.0) planned. |
-| **Beyond Phase 4** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference. |
+| **Foundation** | ✅ Done | CLI binary, in-memory graph, 8 edge types, 16 watched resources, contract-tested store interface, contributor docs, CI gates. No API, no UI, no Helm Chart. |
+| **v0.1.0** (MVP) | ✅ Released | REST + WebSocket API, React/MUI Web UI with Cytoscape topology and Mermaid neighbour view, Helm Chart with secure defaults, Playwright E2E, multi-platform release. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:0.1.0`. |
+| **v1.0** | ✅ Released | Tier 2 persistence (PostgreSQL + Apache AGE), Rego rule packs, RBAC graph, blast radius, orphan + cycle detection, `/api/v1/*` GA, cert-manager TLS, OpenShift detector + embedded pack, chaos test suite. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.0.0`. |
+| **v1.1 / v1.2 / v1.3** | ✅ Released | Cloud rule packs, snapshots, search, plugins (v1.1). Offline `kubectl atlas`, graph-image export (v1.2). Multi-cluster federation, platform-identity edges, HPA support, GitHub Action, cartography Web UI redesign (v1.3). |
+| **v1.4 / v1.5 / v2.0** | 🚧 In progress | Offline diagnostic report, Gatekeeper/Kyverno policy visibility, opt-in anonymous telemetry, v1alpha1 usage counters (v1.4 — released). OTel runtime overlay and credential rotation (v1.5), GraphStore v2 and the v1alpha1 removal (v2.0) planned. |
+| **Beyond v2.0** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference. |
 
 ## Related tools
 
@@ -96,7 +96,7 @@ A short list, with the question each is best at:
 
 If you have a tool that should be on this list, [open a doc PR](https://github.com/lithastra/kubeatlas/blob/main/CONTRIBUTING.md).
 
-## Phase 1 → v0.1.0 (released)
+## v0.1.0 (released)
 
 The first publicly-releasable build. **Shipped on 2026-05-06.**
 Install reference: see [Quick Start](./quick-start.md). Release
@@ -108,7 +108,7 @@ Delivered scope:
 - **REST API** — `GET /api/v1alpha1/graph` at four levels
   (cluster / namespace / workload / resource), `GET /resources/{ns}/{kind}/{name}` for detail, `GET /search`, `/healthz`, `/readyz`, `/metrics`
 - **WebSocket** — `/api/v1alpha1/watch` for live graph updates
-- **Web UI** — React 19 + TypeScript + MUI v5, technology-stack-aligned with [Headlamp](https://headlamp.dev/) so a future Headlamp plugin (Phase 2) is a port rather than a rewrite
+- **Web UI** — React 19 + TypeScript + MUI v5, technology-stack-aligned with [Headlamp](https://headlamp.dev/) so a future Headlamp plugin is a port rather than a rewrite
   - Cytoscape topology view (cluster / namespace / workload levels)
   - Mermaid neighbor view (single resource + one hop)
   - DataGrid resource list with namespace filter
@@ -138,7 +138,7 @@ everything:
 The first seven shipped in v1.0; the Headlamp plugin shipped in
 v1.1.
 
-## Phase 2 → v1.0 (released)
+## v1.0 (released)
 
 The "make it suitable for production observability" cycle.
 Shipped scope:
@@ -158,15 +158,15 @@ Shipped scope:
 
 ### Shipped in v1.1
 
-These were in the original Phase 2 plan but moved out for the
+These were in the original v1.0 plan but moved out for the
 v1.0 cut and landed in v1.1:
 
 - Headlamp plugin (`lithastra/kubeatlas-headlamp-plugin`)
 - Historical snapshots / diff
 
-## Phase 3 → v1.1 / v1.2 / v1.3 (in progress)
+## v1.1 / v1.2 / v1.3 (released)
 
-Phase 3 widens KubeAtlas beyond a single cluster's core resources
+These releases widen KubeAtlas beyond a single cluster's core resources
 and reaches it from places besides the in-cluster UI. It ships in
 three releases.
 
@@ -204,11 +204,11 @@ KubeAtlas usable without a server in the cluster. Shipped scope:
 
 ### v1.3 (released) — multi-cluster, platform identity, cartography UI
 
-The final Phase 3 release. Stretching the graph across cluster
+The final release in this line. Stretching the graph across cluster
 boundaries and replacing the Headlamp-styled web shell with a
 purpose-built cartography UI:
 
-- **Multi-cluster federation (F-201)** — one KubeAtlas instance, N
+- **Multi-cluster federation** — one KubeAtlas instance, N
   clusters. A new `pkg/multicluster/` package, a `ClusterID` on the
   graph model, federation aggregator and `/federation` route group,
   and cluster-scoped WebSocket subscriptions.
@@ -216,7 +216,7 @@ purpose-built cartography UI:
   per-cluster kubeconfigs (one file per cluster, filename = cluster
   ID). `GET /api/v1/federation/{clusters,graph}` is the read surface;
   the Web UI **LeftClusterStrip** is wired to it for cluster picking.
-- **Platform-identity edges (F-209)** — `BINDS_PLATFORM_IDENTITY`
+- **Platform-identity edges** — `BINDS_PLATFORM_IDENTITY`
   from a ServiceAccount to a synthetic `ExternalIdentity` representing
   the cloud account it is bound to:
   - **EKS** — `eks.amazonaws.com/role-arn` annotation.
@@ -279,16 +279,16 @@ Polish items deferred from v1.3.0, now shipped in v1.3.1:
   cytoscape zoom level today; the aggregated → expanded node
   split/merge with the design's 400ms FLIP choreography is queued.
 
-## Phase 4 → v1.4 / v1.5 / v2.0 (in progress)
+## v1.4 / v1.5 / v2.0 (in progress)
 
 ### v1.4 (shipped) — offline diagnostics, policy visibility, telemetry
 
-- **Offline diagnostic report (F-301)** — `kubeatlas diagnose` and
+- **Offline diagnostic report** — `kubeatlas diagnose` and
   `GET /api/v1/diagnose` produce a self-contained HTML/JSON snapshot
   (graph, orphans, cycles, top blast radius) from an offline scan,
   for air-gapped audits and CI. The JSON carries a normalized
   `policyViolations` array.
-- **Policy visibility (F-205)** — Gatekeeper Constraints and Kyverno
+- **Policy visibility** — Gatekeeper Constraints and Kyverno
   policies surface as `ENFORCES` edges (with violation status) via a
   dynamic informer-of-informers that discovers Constraint CRDs at
   runtime. New `/api/v1/policy/constraints` + `/affected` endpoints
@@ -303,9 +303,9 @@ Polish items deferred from v1.3.0, now shipped in v1.3.1:
 - **Ecosystem** — Backstage plugin (v0.1), Headlamp Policy view, and
   a GitHub Action `policy-report` option.
 
-### Phase 4 remaining (planned)
+### Remaining (planned)
 
-- **v1.5** — OpenTelemetry runtime overlay (F-204: observed
+- **v1.5** — OpenTelemetry runtime overlay (observed
   `CALLS_AT_RUNTIME` edges layered over the declarative graph),
   multi-cluster credential rotation, and a `v1alpha1` sunset notice
   in responses.
@@ -313,7 +313,7 @@ Polish items deferred from v1.3.0, now shipped in v1.3.1:
   `v1alpha1` API once the usage counters justify it (a tracked,
   announced deprecation — not a surprise break).
 
-## Beyond Phase 4 (sketch)
+## Beyond v2.0 (sketch)
 
 Direction, not commitment:
 
@@ -337,4 +337,4 @@ Direction, not commitment:
 - **Open an issue** on [GitHub](https://github.com/lithastra/kubeatlas/issues) describing the use case (not the proposed solution).
 - **Reactions on existing issues** are read as priority signal.
 - **PRs welcome** for items already on the roadmap; for items not on it, open an issue first so we can talk shape before you spend time.
-- v1.3 scope is set (multi-cluster + platform identity + Action), but the order **within** v1.3 — and what lands first beyond Phase 3 — will partly reflect what current users ask for first. If your team would adopt a future release conditional on a particular feature, say so in an issue.
+- v1.3 scope is set (multi-cluster + platform identity + Action), but the order **within** v1.3 — and what lands first in upcoming releases — will partly reflect what current users ask for first. If your team would adopt a future release conditional on a particular feature, say so in an issue.
