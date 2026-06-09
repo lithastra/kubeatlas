@@ -11,7 +11,7 @@ start with the [Quick Start](./quick-start.md) instead.
 ## Prerequisites
 
 - **Go 1.26 or later** — KubeAtlas uses `log/slog`, generics, and the
-  Go 1.22+ `net/http` `ServeMux` features (the latter from Phase 1).
+  Go 1.22+ `net/http` `ServeMux` features.
 - **A Kubernetes cluster you control** — any cluster works for the
   end-to-end flow. If you don't already have one, install
   [Docker](https://docs.docker.com/get-docker/) +
@@ -43,11 +43,11 @@ kubeatlas/
 │   │   ├── memory/       # Tier 1 in-memory backend (default)
 │   │   └── postgres/     # Tier 2 placeholder, enabled in v1.0
 │   ├── discovery/        # K8s client + informer + GVR registry
-│   ├── extractor/        # Edge extractors (Phase 0 W4)
-│   ├── aggregator/       # Pre-aggregated views (Phase 0 W4)
-│   └── api/              # REST + WebSocket (Phase 1 W5+)
-├── web/                  # Frontend (Phase 1 W6+)
-├── helm/                 # Helm Chart (Phase 1 W10+)
+│   ├── extractor/        # Edge extractors
+│   ├── aggregator/       # Pre-aggregated views
+│   └── api/              # REST + WebSocket
+├── web/                  # Frontend
+├── helm/                 # Helm Chart
 ├── docs/                 # Docusaurus site
 └── test/
     ├── petclinic/        # Reference fixture

@@ -33,7 +33,7 @@ Yes — for read-only introspection. From v1.0 the chart ships an
 opt-in Tier 2 backend (PostgreSQL + Apache AGE via the embedded
 CloudNativePG sub-chart) so restart preserves the graph. Single-
 replica is still the deploy shape. Multi-cluster federation ships
-in v1.3.0 (the final Phase 3 release): one KubeAtlas instance can
+in v1.3.0: one KubeAtlas instance can
 attach to N kubeconfigs, the `/api/v1/federation/*` endpoints
 return a flat federated read surface, and the Web UI's left
 cluster strip picks members from `/federation/clusters`. See the
@@ -100,7 +100,7 @@ Two paths, depending on whether you want to ship a binary fork
 or load a rule at runtime:
 
 - **Runtime [Rego rule pack](./concepts/rego-rules.md)** — the
-  Phase 2 extension surface. Declare CRD edges in Rego, sign and
+  extension surface. Declare CRD edges in Rego, sign and
   publish to an OCI registry, point `rulePacks.extras` at the
   artifact. No rebuild required. See
   [`lithastra/kubeatlas-rules`](https://github.com/lithastra/kubeatlas-rules)

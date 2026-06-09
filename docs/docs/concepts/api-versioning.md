@@ -10,8 +10,8 @@ by the same handlers:
 
 | Prefix | Status | Notes |
 |---|---|---|
-| `/api/v1alpha1/*` | Frozen surface | Phase 1 shape; no field will be removed or renamed. |
-| `/api/v1/*` | GA | Phase 2 superset; adds graph-analysis enrichment fields on `ResourceDetailResponse`. |
+| `/api/v1alpha1/*` | Frozen surface | Original v0.1.0 shape; no field will be removed or renamed. |
+| `/api/v1/*` | GA | A superset of the frozen surface; adds graph-analysis enrichment fields on `ResourceDetailResponse`. |
 
 Both prefixes hit the same store query path. The only difference
 is serialisation — `/api/v1/...` returns a `ResourceDetailResponseV1`

@@ -27,14 +27,12 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**Phase 4 has begun — v1.4.0 is out.** Phase 3 shipped v1.1 (rule
-packs and plugins), v1.2 (offline rendering), and v1.3 (multi-cluster
-federation, platform identity, cartography Web UI). v1.4 opens
-Phase 4 with offline diagnostics, admission-policy visibility, and
-opt-in telemetry.
+**v1.4.0 is out.** Earlier releases shipped v1.1 (rule packs and
+plugins), v1.2 (offline rendering), and v1.3 (multi-cluster
+federation, platform identity, cartography Web UI). v1.4 adds offline
+diagnostics, admission-policy visibility, and opt-in telemetry.
 
-**v1.4.0 — offline diagnostics, policy visibility, telemetry**
-(opens Phase 4):
+**v1.4.0 — offline diagnostics, policy visibility, telemetry**:
 
 - **Offline diagnostic report** — `kubeatlas diagnose` (and
   `GET /api/v1/diagnose`) produce a self-contained HTML / JSON
@@ -59,7 +57,7 @@ opt-in telemetry.
   `kubeatlas_api_v1_requests_total`, the data behind the eventual
   v2.0 retirement of the frozen `v1alpha1` surface.
 
-**v1.3.0 — federation + cartography UI** (third Phase 3 release):
+**v1.3.0 — federation + cartography UI**:
 
 - **Multi-cluster federation** — one KubeAtlas instance attaches
   to N kubeconfigs, tags every resource with a `ClusterID`, and
@@ -228,12 +226,10 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the
 [Code of Conduct](./CODE_OF_CONDUCT.md). Look for issues tagged
 [`good first issue`](https://github.com/lithastra/kubeatlas/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-Phase 4 is underway — v1.4 shipped offline diagnostics, policy
-visibility, and opt-in telemetry; v1.5 (a runtime observability
-overlay) and v2.0 (the `v1alpha1` retirement) are planned. Direction
-— along with cloud-resource integration and third-party platform
-deep-dives — is tracked at
-[the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
+More is planned — v1.5 adds a runtime observability overlay and v2.0
+retires the `v1alpha1` surface; cloud-resource integration and
+third-party platform deep-dives are on the list. Direction is
+tracked at [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 ## Support the project
 

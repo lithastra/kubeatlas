@@ -29,7 +29,7 @@ the tools above instead of replacing them.
 
 ## Project status
 
-**v1.4.0 — Phase 4 opens.** A self-contained offline diagnostic
+**v1.4.0.** A self-contained offline diagnostic
 report (`kubeatlas diagnose`, HTML/JSON, for air-gapped audits and
 CI), policy visibility (Gatekeeper Constraints and Kyverno policies
 surface as `ENFORCES` edges via runtime CRD discovery, with a new
@@ -37,15 +37,15 @@ Policy view), opt-in anonymous usage telemetry (off by default,
 with a documented trust contract and a transparent
 `/api/v1/telemetry/preview`), and per-version API usage counters
 that begin tracking `v1alpha1` vs `v1` ahead of the v2.0 removal.
-A Backstage plugin (v0.1), a Headlamp Policy view, and a GitHub
-Action `policy-report` option ship alongside.
+A Headlamp Policy view and a GitHub Action `policy-report` option
+ship alongside.
 
 **v1.3.1** — federation cluster picker wired to the topology
 canvas, keyboard graph traversal, drag-anchor time-axis rail,
 radial menu for blast-radius depth, screen-reader announcements,
 Slate theme WCAG AA contrast fix, and `kubectl atlas --version`.
 
-**v1.3.0 — Phase 3 complete.** Multi-cluster federation (one
+**v1.3.0.** Multi-cluster federation (one
 KubeAtlas instance attaches to N kubeconfigs and serves
 `/api/v1/federation/*`), platform-identity edges
 (`BINDS_PLATFORM_IDENTITY` for EKS IRSA / AKS Workload

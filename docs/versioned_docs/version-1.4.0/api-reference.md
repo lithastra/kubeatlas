@@ -72,7 +72,7 @@ Returns an aggregated `View` at one of four levels.
 | `namespace` | for `namespace`/`workload`/`resource` | Target namespace |
 | `kind` | for `workload`/`resource` | Resource Kind (e.g. `Deployment`) |
 | `name` | for `workload`/`resource` | Resource name |
-| `label.<key>` | no | Label filter (F-114). Repeatable — every `label.<key>=<value>` must match. Honoured at `cluster` and `namespace` level; an edge counts only between two resources that both match. |
+| `label.<key>` | no | Label filter. Repeatable — every `label.<key>=<value>` must match. Honoured at `cluster` and `namespace` level; an edge counts only between two resources that both match. |
 
 Examples:
 

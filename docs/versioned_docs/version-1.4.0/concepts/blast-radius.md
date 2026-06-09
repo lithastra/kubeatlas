@@ -126,7 +126,7 @@ explicit endpoint returns. The UI uses this to render a badge on
 each resource row without a follow-up round-trip.
 
 The v1alpha1 surface (`/api/v1alpha1/...`) intentionally **does
-not** carry these fields; the Phase 1 byte shape is frozen — see
+not** carry these fields; the original v0.1.0 byte shape is frozen — see
 [API versioning](api-versioning).
 
 ## What blast radius does not tell you
