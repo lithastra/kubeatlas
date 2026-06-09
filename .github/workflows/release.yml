@@ -92,6 +92,11 @@ jobs:
           args: release --clean --release-notes=/tmp/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pin the version to the tag that triggered this run. goreleaser
+          # otherwise derives it from `git describe`, which is ambiguous
+          # when two tags (e.g. a vX.Y.Z-rc.N and the final vX.Y.Z) point
+          # at the same commit and would silently build the wrong one.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
 
       - name: Upload dist as workflow artifact
         if: always()
