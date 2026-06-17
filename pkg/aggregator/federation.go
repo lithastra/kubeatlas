@@ -83,7 +83,7 @@ type FederatedNode struct {
 // query-string side).
 //
 // MergeClusters uses the cluster-scoped store methods landed in
-// P3-T20 (ListResourcesInCluster + GetEdgesAcrossClusters) so it does
+// P3-T20 (ListResourcesInCluster + ListEdgesAcrossClusters) so it does
 // not materialise the whole store — each member contributes only its
 // own resources.
 func MergeClusters(ctx context.Context, store graph.GraphStore, clusterIDs []string) (*FederatedView, error) {
@@ -121,7 +121,7 @@ func MergeClusters(ctx context.Context, store graph.GraphStore, clusterIDs []str
 		}
 	}
 
-	edges, err := store.GetEdgesAcrossClusters(ctx, sorted)
+	edges, err := store.ListEdgesAcrossClusters(ctx, sorted)
 	if err != nil {
 		return nil, fmt.Errorf("federation: edges: %w", err)
 	}

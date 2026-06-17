@@ -24,6 +24,13 @@ type ResourceLister interface {
 // backend through Phase 1. Tier 2 (PostgreSQL + Apache AGE) lives in
 // pkg/store/postgres and is enabled in v1.0. Both implementations
 // must satisfy the contract test suite in pkg/graph/storetest.
+//
+// This is interface v2 (see StoreVersion). Method names draw on a
+// fixed verb vocabulary: Get* returns a single item or subgraph,
+// List* returns slices, Count* returns aggregate counts, Upsert* and
+// Delete* mutate, Append* writes insert-only history rows, and
+// Snapshot materialises the whole graph. Search keeps its domain
+// name — it returns a ranked SearchResult, not a plain list.
 type GraphStore interface {
 	// Mutations.
 	UpsertResource(ctx context.Context, r Resource) error
@@ -34,23 +41,28 @@ type GraphStore interface {
 	// Queries.
 	GetResource(ctx context.Context, id string) (Resource, error)
 	ListResources(ctx context.Context, filter Filter) ([]Resource, error)
-	ListIncoming(ctx context.Context, id string) ([]Edge, error)
-	ListOutgoing(ctx context.Context, id string) ([]Edge, error)
+
+	// ListEdges returns the edges incident on id in the given
+	// direction: DirectionIncoming yields edges whose To is id,
+	// DirectionOutgoing yields edges whose From is id. An empty or
+	// unknown direction is an error — each call site picks one
+	// explicitly, the same rule ListReachable enforces.
+	ListEdges(ctx context.Context, id string, dir Direction) ([]Edge, error)
 
 	// Snapshot returns a consistent point-in-time view of the entire
 	// graph. Used by the CLI -once mode and by the REST API.
 	Snapshot(ctx context.Context) (*Graph, error)
 
-	// Traverse walks the graph from startID in the given direction
-	// and returns every distinct resource reachable within
+	// ListReachable walks the graph from startID in the given
+	// direction and returns every distinct resource reachable within
 	// opts.MaxDepth hops. The starting node itself is not included.
 	// Direction is mandatory — callers express "blast radius"
 	// (DirectionIncoming) and "what does this depend on"
 	// (DirectionOutgoing) explicitly rather than relying on a
 	// per-method default.
-	Traverse(ctx context.Context, startID string, opts TraverseOptions) ([]Resource, error)
+	ListReachable(ctx context.Context, startID string, opts TraverseOptions) ([]Resource, error)
 
-	// KindCountsByNamespace returns counts of resources grouped by
+	// CountKindsByNamespace returns counts of resources grouped by
 	// (namespace, kind). Cluster-scoped resources are bucketed under
 	// the empty-string namespace key. Used by the cluster-level
 	// aggregator to avoid materialising every Resource just to count
@@ -65,9 +77,9 @@ type GraphStore interface {
 	// labels is the F-114 label filter: when non-empty, only
 	// resources carrying every key=value pair are counted. A nil or
 	// empty map counts every resource (the pre-F-114 behaviour).
-	KindCountsByNamespace(ctx context.Context, labels map[string]string) (map[string]map[string]int, error)
+	CountKindsByNamespace(ctx context.Context, labels map[string]string) (map[string]map[string]int, error)
 
-	// CrossNamespaceEdgeCounts returns counts of edges grouped by
+	// CountCrossNamespaceEdges returns counts of edges grouped by
 	// (from-namespace, to-namespace). Same-namespace pairs are
 	// included; callers that only want cross-namespace edges should
 	// filter where key.From != key.To. Edge type is intentionally not
@@ -82,9 +94,9 @@ type GraphStore interface {
 	// pair. A nil or empty map counts every edge.
 	//
 	// The returned map is owned by the caller and safe to mutate.
-	CrossNamespaceEdgeCounts(ctx context.Context, labels map[string]string) (map[NamespacePair]int, error)
+	CountCrossNamespaceEdges(ctx context.Context, labels map[string]string) (map[NamespacePair]int, error)
 
-	// NamespaceSubgraph returns every resource in namespace ns plus
+	// GetNamespaceSubgraph returns every resource in namespace ns plus
 	// every edge whose endpoints are both in that namespace. Cross-
 	// namespace edges and resources in other namespaces are not
 	// included, matching the namespace-level aggregator's existing
@@ -97,7 +109,7 @@ type GraphStore interface {
 	//
 	// Used by the namespace-level aggregator to avoid materialising
 	// the full Snapshot just to filter it down to one namespace.
-	NamespaceSubgraph(ctx context.Context, ns string, labels map[string]string) (*Graph, error)
+	GetNamespaceSubgraph(ctx context.Context, ns string, labels map[string]string) (*Graph, error)
 
 	// Snapshot history (F-111 / P3-T2). The Tier 2 (postgres)
 	// backend persists these durably; the Tier 1 (memory) backend
@@ -112,20 +124,21 @@ type GraphStore interface {
 	// is a compensating event.
 	AppendEvent(ctx context.Context, e ResourceEvent) error
 
-	// WriteSnapshotMeta records one periodic full-sync marker. The
+	// AppendSnapshotMeta records one periodic full-sync marker. The
 	// store assigns SnapshotMeta.ID and (when zero) Timestamp.
-	WriteSnapshotMeta(ctx context.Context, m SnapshotMeta) error
+	// Insert-only, like AppendEvent.
+	AppendSnapshotMeta(ctx context.Context, m SnapshotMeta) error
 
 	// ListSnapshotMeta returns the recorded full-sync markers,
 	// most-recent first. Powers GET /api/v1/snapshots.
 	ListSnapshotMeta(ctx context.Context) ([]SnapshotMeta, error)
 
-	// QueryEvents returns every ResourceEvent whose Timestamp falls
+	// ListEvents returns every ResourceEvent whose Timestamp falls
 	// in [from, to], ordered oldest-first. An empty namespace
 	// matches every namespace; a non-empty namespace filters to it.
-	QueryEvents(ctx context.Context, namespace string, from, to time.Time) ([]ResourceEvent, error)
+	ListEvents(ctx context.Context, namespace string, from, to time.Time) ([]ResourceEvent, error)
 
-	// PruneEventsBefore deletes every resource_events row older than
+	// DeleteEventsBefore deletes every resource_events row older than
 	// cutoff and returns the number deleted. The F-111 retention
 	// worker calls it on a fixed cadence so the event stream does
 	// not grow without bound.
@@ -134,9 +147,9 @@ type GraphStore interface {
 	// unbounded DELETE on a multi-million-row table locks it for
 	// the duration. The call returns only when every expired row
 	// is gone (or ctx is cancelled).
-	PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
+	DeleteEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
 
-	// LabelStats returns, for every label key present on any
+	// ListLabelStats returns, for every label key present on any
 	// resource, how many resources carry it and its most common
 	// values (F-114). It powers GET /api/v1/labels — the data the
 	// UI's "group by label" picker is built from.
@@ -145,7 +158,7 @@ type GraphStore interface {
 	// key such as pod-template-hash would otherwise return thousands
 	// of values); LabelStat.ValueCount reports the true distinct-value
 	// total so a caller knows the list is a truncated top-N.
-	LabelStats(ctx context.Context) ([]LabelStat, error)
+	ListLabelStats(ctx context.Context) ([]LabelStat, error)
 
 	// ListResourcesInCluster returns every resource whose ClusterID
 	// equals clusterID, intersected with filter. The empty clusterID
@@ -159,7 +172,7 @@ type GraphStore interface {
 	// identical; only the ClusterID gate is added on top.
 	ListResourcesInCluster(ctx context.Context, clusterID string, filter Filter) ([]Resource, error)
 
-	// GetEdgesAcrossClusters returns every edge whose endpoints are
+	// ListEdgesAcrossClusters returns every edge whose endpoints are
 	// resources in the given cluster set. Edges with at least one
 	// endpoint outside the set, or one endpoint that is dangling
 	// (no resource row), are dropped — matching the visible-set rule
@@ -172,7 +185,7 @@ type GraphStore interface {
 	//
 	// Federation aggregation (P3-T22) uses this to recover edges
 	// that span clusters once it has merged the per-cluster views.
-	GetEdgesAcrossClusters(ctx context.Context, clusterIDs []string) ([]Edge, error)
+	ListEdgesAcrossClusters(ctx context.Context, clusterIDs []string) ([]Edge, error)
 
 	// Search runs a full-text query across resources and returns a
 	// ranked page of matches (F-113).
@@ -188,7 +201,21 @@ type GraphStore interface {
 	// SearchResult.LinearScan so the API can warn the caller. Both
 	// honour SearchQuery.Limit and report SearchResult.Total.
 	Search(ctx context.Context, q SearchQuery) (SearchResult, error)
+
+	// StoreVersion reports the GraphStore interface version the
+	// implementation satisfies — StoreInterfaceVersion ("v2").
+	// Exposed to operators as graphstore_version on GET /api/v1/info.
+	// This is an internal interface version: it is unrelated to the
+	// public release version and to the HTTP API versions
+	// (v1alpha1 / v1), which it never affects.
+	StoreVersion() string
 }
+
+// StoreInterfaceVersion is the current GraphStore interface version,
+// returned by StoreVersion. It names the shape of this Go interface,
+// nothing else — bumping it carries no public API or release-version
+// meaning.
+const StoreInterfaceVersion = "v2"
 
 // SearchQuery is the parsed form of a /api/v1/search request — the
 // deliberately small query model F-113 ships in v1.1: free-text
@@ -227,13 +254,13 @@ type SearchResult struct {
 	LinearScan bool
 }
 
-// MaxLabelValuesPerKey caps the number of values LabelStats reports
+// MaxLabelValuesPerKey caps the number of values ListLabelStats reports
 // per key. A high-cardinality key (pod-template-hash, controller-uid)
 // has one distinct value per resource; returning them all would make
 // GET /api/v1/labels both huge and useless.
 const MaxLabelValuesPerKey = 100
 
-// LabelStat is the per-key summary in a LabelStats result: the label
+// LabelStat is the per-key summary in a ListLabelStats result: the label
 // key, how many resources carry it, and its most common values.
 type LabelStat struct {
 	Key string `json:"key"`
@@ -259,9 +286,9 @@ type LabelValue struct {
 	Count int    `json:"count"`
 }
 
-// NamespacePair keys the result of CrossNamespaceEdgeCounts. From and
+// NamespacePair keys the result of CountCrossNamespaceEdges. From and
 // To are namespace names; the empty string represents cluster-scoped
-// resources (matching the convention in KindCountsByNamespace).
+// resources (matching the convention in CountKindsByNamespace).
 type NamespacePair struct {
 	From string
 	To   string
@@ -281,7 +308,7 @@ const (
 	DirectionOutgoing Direction = "outgoing"
 )
 
-// TraverseOptions configures GraphStore.Traverse.
+// TraverseOptions configures GraphStore.ListReachable.
 //
 // MaxDepth caps path length; values <= 0 default to 5 (covers ~99%
 // of K8s dependency chains; deeper graphs are almost always cyclic

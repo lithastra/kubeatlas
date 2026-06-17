@@ -43,7 +43,7 @@ func (WorkloadAggregator) Aggregate(ctx context.Context, store graph.GraphStore,
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
-		incoming, err := store.ListIncoming(ctx, cur)
+		incoming, err := store.ListEdges(ctx, cur, graph.DirectionIncoming)
 		if err != nil {
 			return nil, err
 		}
@@ -68,7 +68,7 @@ func (WorkloadAggregator) Aggregate(ctx context.Context, store graph.GraphStore,
 	}
 	var refEdges []graph.Edge
 	for id := range owned {
-		out, err := store.ListOutgoing(ctx, id)
+		out, err := store.ListEdges(ctx, id, graph.DirectionOutgoing)
 		if err != nil {
 			return nil, err
 		}

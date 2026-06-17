@@ -26,8 +26,8 @@ type SnapshotTriggerResponse struct {
 //
 // It records one snapshot_meta row anchoring the diff endpoint to a
 // known full-sync point. Resource and edge totals come from the
-// P3-T0a pushdown queries (KindCountsByNamespace +
-// CrossNamespaceEdgeCounts) — NOT store.Snapshot, which would
+// P3-T0a pushdown queries (CountKindsByNamespace +
+// CountCrossNamespaceEdges) — NOT store.Snapshot, which would
 // materialise the whole graph just to count it (the OOM the
 // pushdown work fixed).
 //
@@ -52,7 +52,7 @@ func (s *Server) handleSnapshotTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kinds, err := s.store.KindCountsByNamespace(r.Context(), nil)
+	kinds, err := s.store.CountKindsByNamespace(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
@@ -64,7 +64,7 @@ func (s *Server) handleSnapshotTrigger(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	edges, err := s.store.CrossNamespaceEdgeCounts(r.Context(), nil)
+	edges, err := s.store.CountCrossNamespaceEdges(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
@@ -75,7 +75,7 @@ func (s *Server) handleSnapshotTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	durationMS := time.Since(start).Milliseconds()
-	if err := s.store.WriteSnapshotMeta(r.Context(), graph.SnapshotMeta{
+	if err := s.store.AppendSnapshotMeta(r.Context(), graph.SnapshotMeta{
 		ResourceCount: resourceCount,
 		EdgeCount:     edgeCount,
 		DurationMS:    durationMS,

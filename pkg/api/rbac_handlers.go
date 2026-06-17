@@ -98,7 +98,7 @@ func rbacPath(r *http.Request, _ bool) (namespace, name string, ok bool) {
 // binding follows BINDS_ROLE forward to the role and pulls its
 // rules block.
 func (s *Server) bindingsForSubject(ctx context.Context, subjectID string) ([]rbacBinding, error) {
-	incoming, err := s.store.ListIncoming(ctx, subjectID)
+	incoming, err := s.store.ListEdges(ctx, subjectID, graph.DirectionIncoming)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (s *Server) bindingsForSubject(ctx context.Context, subjectID string) ([]rb
 // bindingsForRole walks BINDS_ROLE incoming edges from the role
 // back to the bindings, then collects each binding's subjects.
 func (s *Server) bindingsForRole(ctx context.Context, roleID string) ([]rbacBinding, error) {
-	incoming, err := s.store.ListIncoming(ctx, roleID)
+	incoming, err := s.store.ListEdges(ctx, roleID, graph.DirectionIncoming)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (s *Server) bindingsForRole(ctx context.Context, roleID string) ([]rbacBind
 // role edge — that's a transient state during informer sync, not
 // an error.
 func (s *Server) roleForBinding(ctx context.Context, bindingID string) (rbacSubjectRef, []rbacRule, error) {
-	outgoing, err := s.store.ListOutgoing(ctx, bindingID)
+	outgoing, err := s.store.ListEdges(ctx, bindingID, graph.DirectionOutgoing)
 	if err != nil {
 		return rbacSubjectRef{}, nil, err
 	}
@@ -204,7 +204,7 @@ func (s *Server) roleForBinding(ctx context.Context, bindingID string) (rbacSubj
 // nodes that no informer materialises — we still emit them since
 // the consumer might want to display "alice" alongside SA bindings.
 func (s *Server) subjectsForBinding(ctx context.Context, bindingID string) ([]rbacSubjectRef, error) {
-	outgoing, err := s.store.ListOutgoing(ctx, bindingID)
+	outgoing, err := s.store.ListEdges(ctx, bindingID, graph.DirectionOutgoing)
 	if err != nil {
 		return nil, err
 	}

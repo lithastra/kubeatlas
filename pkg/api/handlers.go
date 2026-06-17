@@ -149,12 +149,12 @@ func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
 		writeNotFoundOr500(w, err, id)
 		return
 	}
-	in, err := s.store.ListIncoming(r.Context(), id)
+	in, err := s.store.ListEdges(r.Context(), id, graph.DirectionIncoming)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
 	}
-	out, err := s.store.ListOutgoing(r.Context(), id)
+	out, err := s.store.ListEdges(r.Context(), id, graph.DirectionOutgoing)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
@@ -182,7 +182,7 @@ func (s *Server) handleIncoming(w http.ResponseWriter, r *http.Request) {
 		writeNotFoundOr500(w, err, id)
 		return
 	}
-	edges, err := s.store.ListIncoming(r.Context(), id)
+	edges, err := s.store.ListEdges(r.Context(), id, graph.DirectionIncoming)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
@@ -205,7 +205,7 @@ func (s *Server) handleOutgoing(w http.ResponseWriter, r *http.Request) {
 		writeNotFoundOr500(w, err, id)
 		return
 	}
-	edges, err := s.store.ListOutgoing(r.Context(), id)
+	edges, err := s.store.ListEdges(r.Context(), id, graph.DirectionOutgoing)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return

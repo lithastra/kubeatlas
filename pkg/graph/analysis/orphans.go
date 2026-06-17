@@ -125,7 +125,7 @@ func DetectOrphans(ctx context.Context, store graph.GraphStore, opts OrphanOptio
 			continue
 		}
 
-		incoming, err := store.ListIncoming(ctx, r.ID())
+		incoming, err := store.ListEdges(ctx, r.ID(), graph.DirectionIncoming)
 		if err != nil {
 			return nil, err
 		}
