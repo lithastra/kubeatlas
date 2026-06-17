@@ -67,8 +67,8 @@ func (s *Store) AppendEvent(ctx context.Context, e graph.ResourceEvent) error {
 	return nil
 }
 
-// WriteSnapshotMeta inserts one row into snapshot_meta.
-func (s *Store) WriteSnapshotMeta(ctx context.Context, m graph.SnapshotMeta) error {
+// AppendSnapshotMeta inserts one row into snapshot_meta.
+func (s *Store) AppendSnapshotMeta(ctx context.Context, m graph.SnapshotMeta) error {
 	if m.Timestamp.IsZero() {
 		const sql = `
 			INSERT INTO snapshot_meta
@@ -78,7 +78,7 @@ func (s *Store) WriteSnapshotMeta(ctx context.Context, m graph.SnapshotMeta) err
 		if _, err := s.pool.Exec(ctx, sql,
 			m.ClusterID, m.ResourceCount, m.EdgeCount, m.DurationMS, string(m.Trigger),
 		); err != nil {
-			return fmt.Errorf("postgres.WriteSnapshotMeta: insert: %w", err)
+			return fmt.Errorf("postgres.AppendSnapshotMeta: insert: %w", err)
 		}
 		return nil
 	}
@@ -90,7 +90,7 @@ func (s *Store) WriteSnapshotMeta(ctx context.Context, m graph.SnapshotMeta) err
 	if _, err := s.pool.Exec(ctx, sql,
 		m.Timestamp, m.ClusterID, m.ResourceCount, m.EdgeCount, m.DurationMS, string(m.Trigger),
 	); err != nil {
-		return fmt.Errorf("postgres.WriteSnapshotMeta: insert: %w", err)
+		return fmt.Errorf("postgres.AppendSnapshotMeta: insert: %w", err)
 	}
 	return nil
 }
@@ -102,7 +102,7 @@ func (s *Store) WriteSnapshotMeta(ctx context.Context, m graph.SnapshotMeta) err
 // draining a large backlog in a handful of iterations.
 const pruneBatchSize = 10000
 
-// PruneEventsBefore deletes resource_events rows older than cutoff
+// DeleteEventsBefore deletes resource_events rows older than cutoff
 // in pruneBatchSize-row batches, looping until none remain. Returns
 // the total deleted.
 //
@@ -110,7 +110,7 @@ const pruneBatchSize = 10000
 // LIMIT clause): each statement removes at most pruneBatchSize of
 // the matching rows. idx_events_ts from migrate/005 makes the
 // `ts < cutoff` scan an index range scan.
-func (s *Store) PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+func (s *Store) DeleteEventsBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	const sql = `
 		DELETE FROM resource_events
 		WHERE ctid IN (
@@ -126,7 +126,7 @@ func (s *Store) PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64,
 		}
 		tag, err := s.pool.Exec(ctx, sql, cutoff, pruneBatchSize)
 		if err != nil {
-			return total, fmt.Errorf("postgres.PruneEventsBefore: delete batch: %w", err)
+			return total, fmt.Errorf("postgres.DeleteEventsBefore: delete batch: %w", err)
 		}
 		n := tag.RowsAffected()
 		total += n
@@ -172,11 +172,11 @@ func (s *Store) ListSnapshotMeta(ctx context.Context) ([]graph.SnapshotMeta, err
 	return out, nil
 }
 
-// QueryEvents returns resource_events rows in [from, to], oldest
+// ListEvents returns resource_events rows in [from, to], oldest
 // first. An empty namespace matches every namespace. The
 // idx_events_ns_ts / idx_events_ts indexes from migrate/005 cover
 // both the filtered and unfiltered shapes.
-func (s *Store) QueryEvents(ctx context.Context, namespace string, from, to time.Time) ([]graph.ResourceEvent, error) {
+func (s *Store) ListEvents(ctx context.Context, namespace string, from, to time.Time) ([]graph.ResourceEvent, error) {
 	const sql = `
 		SELECT id, ts, cluster_id, namespace, kind, uid, name,
 		       event_type, resource_version, data
@@ -187,7 +187,7 @@ func (s *Store) QueryEvents(ctx context.Context, namespace string, from, to time
 	`
 	rows, err := s.pool.Query(ctx, sql, from, to, namespace)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.QueryEvents: query: %w", err)
+		return nil, fmt.Errorf("postgres.ListEvents: query: %w", err)
 	}
 	defer rows.Close()
 
@@ -202,18 +202,18 @@ func (s *Store) QueryEvents(ctx context.Context, namespace string, from, to time
 			&e.ID, &e.Timestamp, &e.ClusterID, &e.Namespace, &e.Kind,
 			&e.UID, &e.Name, &evType, &e.ResourceVersion, &rawData,
 		); err != nil {
-			return nil, fmt.Errorf("postgres.QueryEvents: scan: %w", err)
+			return nil, fmt.Errorf("postgres.ListEvents: scan: %w", err)
 		}
 		e.EventType = graph.EventType(evType)
 		if len(rawData) > 0 {
 			if err := json.Unmarshal(rawData, &e.Data); err != nil {
-				return nil, fmt.Errorf("postgres.QueryEvents: unmarshal data for event %d: %w", e.ID, err)
+				return nil, fmt.Errorf("postgres.ListEvents: unmarshal data for event %d: %w", e.ID, err)
 			}
 		}
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("postgres.QueryEvents: rows: %w", err)
+		return nil, fmt.Errorf("postgres.ListEvents: rows: %w", err)
 	}
 	return out, nil
 }

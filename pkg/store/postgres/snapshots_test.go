@@ -45,9 +45,9 @@ func TestSnapshots_HundredEventsInWindow(t *testing.T) {
 	// minutes 30,31,32,33,34,35 → 6 events.
 	from := base.Add(30 * time.Minute)
 	to := base.Add(35 * time.Minute)
-	got, err := s.QueryEvents(ctx, "demo", from, to)
+	got, err := s.ListEvents(ctx, "demo", from, to)
 	if err != nil {
-		t.Fatalf("QueryEvents: %v", err)
+		t.Fatalf("ListEvents: %v", err)
 	}
 	if len(got) != 6 {
 		t.Fatalf("5-minute window: got %d events, want 6", len(got))
@@ -94,9 +94,9 @@ func TestSnapshots_DurableBeyondMemoryCap(t *testing.T) {
 			t.Fatalf("AppendEvent %d: %v", i, err)
 		}
 	}
-	got, err := s.QueryEvents(ctx, "stress", base.Add(-time.Hour), base.Add(time.Hour))
+	got, err := s.ListEvents(ctx, "stress", base.Add(-time.Hour), base.Add(time.Hour))
 	if err != nil {
-		t.Fatalf("QueryEvents: %v", err)
+		t.Fatalf("ListEvents: %v", err)
 	}
 	if len(got) != n {
 		t.Errorf("durable history: got %d events, want %d (postgres must not drop like the memory ring buffer)", len(got), n)
@@ -130,9 +130,9 @@ func TestSnapshots_DeleteEventHasNilData(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AppendEvent: %v", err)
 	}
-	got, err := s.QueryEvents(ctx, "demo", ts.Add(-time.Minute), ts.Add(time.Minute))
+	got, err := s.ListEvents(ctx, "demo", ts.Add(-time.Minute), ts.Add(time.Minute))
 	if err != nil {
-		t.Fatalf("QueryEvents: %v", err)
+		t.Fatalf("ListEvents: %v", err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("got %d events, want 1", len(got))
@@ -145,7 +145,7 @@ func TestSnapshots_DeleteEventHasNilData(t *testing.T) {
 	}
 }
 
-// TestSnapshots_PruneBatchesLargeBacklog drives PruneEventsBefore
+// TestSnapshots_PruneBatchesLargeBacklog drives DeleteEventsBefore
 // past its pruneBatchSize (10K) so the batching loop runs more than
 // one iteration. Seeding is done with a single generate_series
 // INSERT — appending 10K rows one-by-one would dominate the test.
@@ -186,9 +186,9 @@ func TestSnapshots_PruneBatchesLargeBacklog(t *testing.T) {
 		t.Fatalf("seed fresh rows: %v", err)
 	}
 
-	deleted, err := s.PruneEventsBefore(ctx, fresh.Add(-time.Hour))
+	deleted, err := s.DeleteEventsBefore(ctx, fresh.Add(-time.Hour))
 	if err != nil {
-		t.Fatalf("PruneEventsBefore: %v", err)
+		t.Fatalf("DeleteEventsBefore: %v", err)
 	}
 	if deleted != 10001 {
 		t.Errorf("deleted = %d, want 10001 (batch loop must drain the whole backlog)", deleted)
