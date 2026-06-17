@@ -24,7 +24,7 @@ type LabelsResponse struct {
 // cannot blow the response up. LabelStat.ValueCount still reports the
 // true distinct-value total.
 func (s *Server) handleLabels(w http.ResponseWriter, r *http.Request) {
-	stats, err := s.store.LabelStats(r.Context())
+	stats, err := s.store.ListLabelStats(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return

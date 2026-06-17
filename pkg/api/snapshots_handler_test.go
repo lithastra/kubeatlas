@@ -27,7 +27,7 @@ func snapEventFixture(s graph.GraphStore) {
 	ev(1*time.Minute, "added-pod", "uid-a", graph.EventTypeAdd)
 	ev(2*time.Minute, "gone-pod", "uid-g", graph.EventTypeDelete)
 	ev(3*time.Minute, "changed-pod", "uid-c", graph.EventTypeUpdate)
-	_ = s.WriteSnapshotMeta(ctx, graph.SnapshotMeta{
+	_ = s.AppendSnapshotMeta(ctx, graph.SnapshotMeta{
 		Timestamp: base, ResourceCount: 7, Trigger: graph.SnapshotTriggerPeriodic,
 	})
 }

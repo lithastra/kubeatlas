@@ -33,11 +33,11 @@ func (ResourceAggregator) Aggregate(ctx context.Context, store graph.GraphStore,
 		return nil, err
 	}
 
-	incoming, err := store.ListIncoming(ctx, rootID)
+	incoming, err := store.ListEdges(ctx, rootID, graph.DirectionIncoming)
 	if err != nil {
 		return nil, err
 	}
-	outgoing, err := store.ListOutgoing(ctx, rootID)
+	outgoing, err := store.ListEdges(ctx, rootID, graph.DirectionOutgoing)
 	if err != nil {
 		return nil, err
 	}

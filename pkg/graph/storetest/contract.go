@@ -23,6 +23,13 @@ type Factory func(t *testing.T) graph.GraphStore
 func Run(t *testing.T, factory Factory) {
 	t.Helper()
 
+	t.Run("StoreVersion reports the v2 interface", func(t *testing.T) {
+		s := factory(t)
+		if got := s.StoreVersion(); got != graph.StoreInterfaceVersion {
+			t.Errorf("StoreVersion() = %q, want %q", got, graph.StoreInterfaceVersion)
+		}
+	})
+
 	t.Run("empty store has no resources", func(t *testing.T) {
 		s := factory(t)
 		got, err := s.ListResources(context.Background(), graph.Filter{})
@@ -121,15 +128,15 @@ func Run(t *testing.T, factory Factory) {
 		if err := s.DeleteResource(ctx, dep.ID()); err != nil {
 			t.Fatal(err)
 		}
-		cfgIn, _ := s.ListIncoming(ctx, cfg.ID())
+		cfgIn, _ := s.ListEdges(ctx, cfg.ID(), graph.DirectionIncoming)
 		if len(cfgIn) != 0 {
 			t.Errorf("ConfigMap should have 0 incoming edges after dep delete, got %d", len(cfgIn))
 		}
-		podIn, _ := s.ListIncoming(ctx, pod.ID())
+		podIn, _ := s.ListEdges(ctx, pod.ID(), graph.DirectionIncoming)
 		if len(podIn) != 0 {
 			t.Errorf("Pod should have 0 incoming edges after dep delete, got %d", len(podIn))
 		}
-		depOut, _ := s.ListOutgoing(ctx, dep.ID())
+		depOut, _ := s.ListEdges(ctx, dep.ID(), graph.DirectionOutgoing)
 		if len(depOut) != 0 {
 			t.Errorf("deleted dep should have 0 outgoing edges, got %d", len(depOut))
 		}
@@ -143,7 +150,7 @@ func Run(t *testing.T, factory Factory) {
 		e := graph.Edge{From: "demo/Deployment/web", To: "demo/ConfigMap/cm", Type: graph.EdgeTypeUsesConfigMap}
 		_ = s.UpsertEdge(ctx, e)
 		_ = s.UpsertEdge(ctx, e)
-		out, _ := s.ListOutgoing(ctx, e.From)
+		out, _ := s.ListEdges(ctx, e.From, graph.DirectionOutgoing)
 		if len(out) != 1 {
 			t.Errorf("expected 1 outgoing edge after duplicate upsert, got %d", len(out))
 		}
@@ -162,7 +169,7 @@ func Run(t *testing.T, factory Factory) {
 			From: from, To: to, Type: graph.EdgeTypeEnforces,
 			Attributes: map[string]string{"violated": "true", "violation_message": "missing label app"},
 		})
-		out, _ := s.ListOutgoing(ctx, from)
+		out, _ := s.ListEdges(ctx, from, graph.DirectionOutgoing)
 		if len(out) != 1 {
 			t.Fatalf("expected 1 ENFORCES edge, got %d", len(out))
 		}
@@ -175,7 +182,7 @@ func Run(t *testing.T, factory Factory) {
 			From: from, To: to, Type: graph.EdgeTypeEnforces,
 			Attributes: map[string]string{"violated": "false"},
 		})
-		out, _ = s.ListOutgoing(ctx, from)
+		out, _ = s.ListEdges(ctx, from, graph.DirectionOutgoing)
 		if len(out) != 1 {
 			t.Fatalf("re-upsert changed edge count: got %d, want 1", len(out))
 		}
@@ -188,7 +195,7 @@ func Run(t *testing.T, factory Factory) {
 
 		// An edge written without attributes reads back without them.
 		_ = s.UpsertEdge(ctx, graph.Edge{From: to, To: from, Type: graph.EdgeTypeOwns})
-		back, _ := s.ListOutgoing(ctx, to)
+		back, _ := s.ListEdges(ctx, to, graph.DirectionOutgoing)
 		if len(back) != 1 || len(back[0].Attributes) != 0 {
 			t.Errorf("plain edge should have no attributes, got %v", back)
 		}
@@ -203,7 +210,7 @@ func Run(t *testing.T, factory Factory) {
 		e2 := graph.Edge{From: "demo/Service/web", To: "demo/Pod/web-abc", Type: graph.EdgeTypeRoutesTo}
 		_ = s.UpsertEdge(ctx, e1)
 		_ = s.UpsertEdge(ctx, e2)
-		out, _ := s.ListOutgoing(ctx, e1.From)
+		out, _ := s.ListEdges(ctx, e1.From, graph.DirectionOutgoing)
 		if len(out) != 2 {
 			t.Errorf("expected 2 outgoing edges of different types, got %d", len(out))
 		}
@@ -220,7 +227,7 @@ func Run(t *testing.T, factory Factory) {
 		if err := s.DeleteEdge(ctx, "demo/Service/web", "demo/Pod/web-abc", graph.EdgeTypeSelects); err != nil {
 			t.Fatal(err)
 		}
-		out, _ := s.ListOutgoing(ctx, "demo/Service/web")
+		out, _ := s.ListEdges(ctx, "demo/Service/web", graph.DirectionOutgoing)
 		if len(out) != 1 {
 			t.Fatalf("expected 1 remaining edge, got %d", len(out))
 		}
@@ -313,12 +320,12 @@ func Run(t *testing.T, factory Factory) {
 		_ = s.UpsertEdge(ctx, graph.Edge{From: c.ID(), To: d.ID(), Type: graph.EdgeTypeUsesConfigMap})
 		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: e.ID(), Type: graph.EdgeTypeSelects})
 
-		got, err := s.Traverse(ctx, a.ID(), graph.TraverseOptions{
+		got, err := s.ListReachable(ctx, a.ID(), graph.TraverseOptions{
 			Direction: graph.DirectionOutgoing,
 			MaxDepth:  5,
 		})
 		if err != nil {
-			t.Fatalf("Traverse: %v", err)
+			t.Fatalf("ListReachable: %v", err)
 		}
 		if len(got) != 4 {
 			t.Errorf("outgoing from a: got %d resources, want 4", len(got))
@@ -352,12 +359,12 @@ func Run(t *testing.T, factory Factory) {
 		_ = s.UpsertEdge(ctx, graph.Edge{From: b.ID(), To: c.ID(), Type: graph.EdgeTypeOwns})
 		_ = s.UpsertEdge(ctx, graph.Edge{From: c.ID(), To: d.ID(), Type: graph.EdgeTypeUsesConfigMap})
 
-		got, err := s.Traverse(ctx, d.ID(), graph.TraverseOptions{
+		got, err := s.ListReachable(ctx, d.ID(), graph.TraverseOptions{
 			Direction: graph.DirectionIncoming,
 			MaxDepth:  5,
 		})
 		if err != nil {
-			t.Fatalf("Traverse: %v", err)
+			t.Fatalf("ListReachable: %v", err)
 		}
 		if len(got) != 3 {
 			t.Errorf("incoming from d: got %d resources, want 3 (a,b,c)", len(got))
@@ -376,13 +383,13 @@ func Run(t *testing.T, factory Factory) {
 		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
 		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: c.ID(), Type: graph.EdgeTypeUsesConfigMap})
 
-		owns, err := s.Traverse(ctx, a.ID(), graph.TraverseOptions{
+		owns, err := s.ListReachable(ctx, a.ID(), graph.TraverseOptions{
 			Direction: graph.DirectionOutgoing,
 			MaxDepth:  3,
 			EdgeTypes: []graph.EdgeType{graph.EdgeTypeOwns},
 		})
 		if err != nil {
-			t.Fatalf("Traverse OWNS: %v", err)
+			t.Fatalf("ListReachable OWNS: %v", err)
 		}
 		if len(owns) != 1 || owns[0].Name != "b" {
 			t.Errorf("OWNS-only traverse: got %+v, want [b]", owns)
@@ -392,7 +399,7 @@ func Run(t *testing.T, factory Factory) {
 	t.Run("traverse rejects invalid direction", func(t *testing.T) {
 		s := factory(t)
 		_ = s.UpsertResource(context.Background(), graph.Resource{Kind: "Pod", Namespace: "demo", Name: "x"})
-		_, err := s.Traverse(context.Background(), "demo/Pod/x", graph.TraverseOptions{MaxDepth: 5})
+		_, err := s.ListReachable(context.Background(), "demo/Pod/x", graph.TraverseOptions{MaxDepth: 5})
 		if err == nil {
 			t.Error("expected error on empty direction, got nil")
 		}
@@ -403,8 +410,8 @@ func Run(t *testing.T, factory Factory) {
 		ctx := context.Background()
 		r := graph.Resource{Kind: "Pod", Namespace: "demo", Name: "lonely"}
 		_ = s.UpsertResource(ctx, r)
-		in, _ := s.ListIncoming(ctx, r.ID())
-		out, _ := s.ListOutgoing(ctx, r.ID())
+		in, _ := s.ListEdges(ctx, r.ID(), graph.DirectionIncoming)
+		out, _ := s.ListEdges(ctx, r.ID(), graph.DirectionOutgoing)
 		if len(in) != 0 || len(out) != 0 {
 			t.Errorf("isolated node: incoming=%d outgoing=%d, want 0,0", len(in), len(out))
 		}
@@ -417,11 +424,11 @@ func Run(t *testing.T, factory Factory) {
 	// pkg/graph/store.go for why.
 	// ---------------------------------------------------------------
 
-	t.Run("KindCountsByNamespace empty store returns empty non-nil map", func(t *testing.T) {
+	t.Run("CountKindsByNamespace empty store returns empty non-nil map", func(t *testing.T) {
 		s := factory(t)
-		got, err := s.KindCountsByNamespace(context.Background(), nil)
+		got, err := s.CountKindsByNamespace(context.Background(), nil)
 		if err != nil {
-			t.Fatalf("KindCountsByNamespace: %v", err)
+			t.Fatalf("CountKindsByNamespace: %v", err)
 		}
 		if got == nil {
 			t.Fatal("expected non-nil empty map, got nil")
@@ -431,7 +438,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("KindCountsByNamespace tallies by (namespace, kind)", func(t *testing.T) {
+	t.Run("CountKindsByNamespace tallies by (namespace, kind)", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		// 2 Deployments + 3 Pods in demo; 1 Deployment in other;
@@ -451,9 +458,9 @@ func Run(t *testing.T, factory Factory) {
 				t.Fatalf("UpsertResource %s: %v", r.ID(), err)
 			}
 		}
-		got, err := s.KindCountsByNamespace(ctx, nil)
+		got, err := s.CountKindsByNamespace(ctx, nil)
 		if err != nil {
-			t.Fatalf("KindCountsByNamespace: %v", err)
+			t.Fatalf("CountKindsByNamespace: %v", err)
 		}
 		want := map[string]map[string]int{
 			"demo":  {"Deployment": 2, "Pod": 3},
@@ -480,7 +487,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("CrossNamespaceEdgeCounts groups by (from-ns, to-ns)", func(t *testing.T) {
+	t.Run("CountCrossNamespaceEdges groups by (from-ns, to-ns)", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		// Resources spread across two namespaces.
@@ -512,9 +519,9 @@ func Run(t *testing.T, factory Factory) {
 		}); err != nil {
 			t.Fatalf("UpsertEdge dangling: %v", err)
 		}
-		got, err := s.CrossNamespaceEdgeCounts(ctx, nil)
+		got, err := s.CountCrossNamespaceEdges(ctx, nil)
 		if err != nil {
-			t.Fatalf("CrossNamespaceEdgeCounts: %v", err)
+			t.Fatalf("CountCrossNamespaceEdges: %v", err)
 		}
 		want := map[graph.NamespacePair]int{
 			{From: "demo", To: "demo"}:  2,
@@ -533,7 +540,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("NamespaceSubgraph returns only in-namespace resources and edges", func(t *testing.T) {
+	t.Run("GetNamespaceSubgraph returns only in-namespace resources and edges", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		demoDep := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "web"}
@@ -551,9 +558,9 @@ func Run(t *testing.T, factory Factory) {
 		if err := s.UpsertEdge(ctx, graph.Edge{From: otherSvc.ID(), To: demoDep.ID(), Type: "ROUTES_TO"}); err != nil {
 			t.Fatalf("UpsertEdge: %v", err)
 		}
-		g, err := s.NamespaceSubgraph(ctx, "demo", nil)
+		g, err := s.GetNamespaceSubgraph(ctx, "demo", nil)
 		if err != nil {
-			t.Fatalf("NamespaceSubgraph: %v", err)
+			t.Fatalf("GetNamespaceSubgraph: %v", err)
 		}
 		// Resources: only the two demo resources. (That the store
 		// returns a non-nil Graph is the next sub-test's assertion.)
@@ -582,15 +589,15 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("NamespaceSubgraph on empty namespace returns empty non-nil graph", func(t *testing.T) {
+	t.Run("GetNamespaceSubgraph on empty namespace returns empty non-nil graph", func(t *testing.T) {
 		s := factory(t)
 		// Seed something in a different ns to prove the filter works.
 		_ = s.UpsertResource(context.Background(), graph.Resource{
 			Kind: "Pod", Namespace: "other", Name: "p",
 		})
-		g, err := s.NamespaceSubgraph(context.Background(), "demo", nil)
+		g, err := s.GetNamespaceSubgraph(context.Background(), "demo", nil)
 		if err != nil {
-			t.Fatalf("NamespaceSubgraph: %v", err)
+			t.Fatalf("GetNamespaceSubgraph: %v", err)
 		}
 		// The store must return a non-nil, empty Graph — never a nil
 		// pointer the aggregator would have to special-case. The
@@ -604,18 +611,18 @@ func Run(t *testing.T, factory Factory) {
 	})
 
 	// ---------------------------------------------------------------
-	// P3-T2 snapshot history (F-111). AppendEvent / WriteSnapshotMeta
-	// / QueryEvents. Event counts stay well under the memory store's
+	// P3-T2 snapshot history (F-111). AppendEvent / AppendSnapshotMeta
+	// / ListEvents. Event counts stay well under the memory store's
 	// maxMemoryEvents (1000) ring-buffer cap so these cases hold for
 	// both the durable postgres backend and the bounded memory stub.
 	// ---------------------------------------------------------------
 
-	t.Run("QueryEvents empty store returns empty non-nil slice", func(t *testing.T) {
+	t.Run("ListEvents empty store returns empty non-nil slice", func(t *testing.T) {
 		s := factory(t)
-		got, err := s.QueryEvents(context.Background(),
+		got, err := s.ListEvents(context.Background(),
 			"", time.Unix(0, 0), time.Now().Add(time.Hour))
 		if err != nil {
-			t.Fatalf("QueryEvents: %v", err)
+			t.Fatalf("ListEvents: %v", err)
 		}
 		if got == nil {
 			t.Fatal("expected non-nil empty slice, got nil")
@@ -625,7 +632,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("AppendEvent then QueryEvents round-trips the event", func(t *testing.T) {
+	t.Run("AppendEvent then ListEvents round-trips the event", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		ts := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
@@ -642,9 +649,9 @@ func Run(t *testing.T, factory Factory) {
 		if err := s.AppendEvent(ctx, ev); err != nil {
 			t.Fatalf("AppendEvent: %v", err)
 		}
-		got, err := s.QueryEvents(ctx, "demo", ts.Add(-time.Minute), ts.Add(time.Minute))
+		got, err := s.ListEvents(ctx, "demo", ts.Add(-time.Minute), ts.Add(time.Minute))
 		if err != nil {
-			t.Fatalf("QueryEvents: %v", err)
+			t.Fatalf("ListEvents: %v", err)
 		}
 		if len(got) != 1 {
 			t.Fatalf("expected 1 event, got %d", len(got))
@@ -662,7 +669,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("QueryEvents filters by namespace", func(t *testing.T) {
+	t.Run("ListEvents filters by namespace", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		ts := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
@@ -674,23 +681,23 @@ func Run(t *testing.T, factory Factory) {
 				t.Fatalf("AppendEvent: %v", err)
 			}
 		}
-		demo, err := s.QueryEvents(ctx, "demo", ts.Add(-time.Minute), ts.Add(time.Minute))
+		demo, err := s.ListEvents(ctx, "demo", ts.Add(-time.Minute), ts.Add(time.Minute))
 		if err != nil {
-			t.Fatalf("QueryEvents demo: %v", err)
+			t.Fatalf("ListEvents demo: %v", err)
 		}
 		if len(demo) != 2 {
 			t.Errorf("namespace=demo: got %d events, want 2", len(demo))
 		}
-		all, err := s.QueryEvents(ctx, "", ts.Add(-time.Minute), ts.Add(time.Minute))
+		all, err := s.ListEvents(ctx, "", ts.Add(-time.Minute), ts.Add(time.Minute))
 		if err != nil {
-			t.Fatalf("QueryEvents all: %v", err)
+			t.Fatalf("ListEvents all: %v", err)
 		}
 		if len(all) != 3 {
 			t.Errorf("namespace='' (all): got %d events, want 3", len(all))
 		}
 	})
 
-	t.Run("QueryEvents filters by time window", func(t *testing.T) {
+	t.Run("ListEvents filters by time window", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		base := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
@@ -704,9 +711,9 @@ func Run(t *testing.T, factory Factory) {
 			}
 		}
 		// Window [T+5m, T+15m] should catch only the middle event.
-		got, err := s.QueryEvents(ctx, "demo", base.Add(5*time.Minute), base.Add(15*time.Minute))
+		got, err := s.ListEvents(ctx, "demo", base.Add(5*time.Minute), base.Add(15*time.Minute))
 		if err != nil {
-			t.Fatalf("QueryEvents: %v", err)
+			t.Fatalf("ListEvents: %v", err)
 		}
 		if len(got) != 1 {
 			t.Fatalf("window [T+5m,T+15m]: got %d events, want 1", len(got))
@@ -716,11 +723,11 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("QueryEvents returns events oldest-first", func(t *testing.T) {
+	t.Run("ListEvents returns events oldest-first", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		base := time.Date(2026, 5, 15, 12, 0, 0, 0, time.UTC)
-		// Insert out of chronological order; QueryEvents must sort.
+		// Insert out of chronological order; ListEvents must sort.
 		for _, off := range []time.Duration{20 * time.Minute, 0, 10 * time.Minute} {
 			if err := s.AppendEvent(ctx, graph.ResourceEvent{
 				Timestamp: base.Add(off), Namespace: "demo", Kind: "Pod",
@@ -729,9 +736,9 @@ func Run(t *testing.T, factory Factory) {
 				t.Fatalf("AppendEvent: %v", err)
 			}
 		}
-		got, err := s.QueryEvents(ctx, "demo", base.Add(-time.Hour), base.Add(time.Hour))
+		got, err := s.ListEvents(ctx, "demo", base.Add(-time.Hour), base.Add(time.Hour))
 		if err != nil {
-			t.Fatalf("QueryEvents: %v", err)
+			t.Fatalf("ListEvents: %v", err)
 		}
 		if len(got) != 3 {
 			t.Fatalf("got %d events, want 3", len(got))
@@ -744,7 +751,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("WriteSnapshotMeta accepts each trigger kind", func(t *testing.T) {
+	t.Run("AppendSnapshotMeta accepts each trigger kind", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		for _, trig := range []graph.SnapshotTrigger{
@@ -752,18 +759,18 @@ func Run(t *testing.T, factory Factory) {
 			graph.SnapshotTriggerManual,
 			graph.SnapshotTriggerStartup,
 		} {
-			if err := s.WriteSnapshotMeta(ctx, graph.SnapshotMeta{
+			if err := s.AppendSnapshotMeta(ctx, graph.SnapshotMeta{
 				ResourceCount: 42,
 				EdgeCount:     17,
 				DurationMS:    123,
 				Trigger:       trig,
 			}); err != nil {
-				t.Errorf("WriteSnapshotMeta(%s): %v", trig, err)
+				t.Errorf("AppendSnapshotMeta(%s): %v", trig, err)
 			}
 		}
 	})
 
-	t.Run("PruneEventsBefore deletes only events older than the cutoff", func(t *testing.T) {
+	t.Run("DeleteEventsBefore deletes only events older than the cutoff", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
 		base := time.Date(2026, 5, 16, 12, 0, 0, 0, time.UTC)
@@ -778,16 +785,16 @@ func Run(t *testing.T, factory Factory) {
 		}
 		// Cutoff at T+90m: the T+0 and T+1h events are older, the
 		// T+2h event survives.
-		deleted, err := s.PruneEventsBefore(ctx, base.Add(90*time.Minute))
+		deleted, err := s.DeleteEventsBefore(ctx, base.Add(90*time.Minute))
 		if err != nil {
-			t.Fatalf("PruneEventsBefore: %v", err)
+			t.Fatalf("DeleteEventsBefore: %v", err)
 		}
 		if deleted != 2 {
 			t.Errorf("deleted = %d, want 2", deleted)
 		}
-		remaining, err := s.QueryEvents(ctx, "demo", base.Add(-time.Hour), base.Add(time.Hour*24))
+		remaining, err := s.ListEvents(ctx, "demo", base.Add(-time.Hour), base.Add(time.Hour*24))
 		if err != nil {
-			t.Fatalf("QueryEvents: %v", err)
+			t.Fatalf("ListEvents: %v", err)
 		}
 		if len(remaining) != 1 || remaining[0].Name != "c" {
 			t.Errorf("after prune got %d events %v, want only the T+2h event 'c'",
@@ -795,11 +802,11 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("PruneEventsBefore on empty store deletes nothing", func(t *testing.T) {
+	t.Run("DeleteEventsBefore on empty store deletes nothing", func(t *testing.T) {
 		s := factory(t)
-		deleted, err := s.PruneEventsBefore(context.Background(), time.Now())
+		deleted, err := s.DeleteEventsBefore(context.Background(), time.Now())
 		if err != nil {
-			t.Fatalf("PruneEventsBefore: %v", err)
+			t.Fatalf("DeleteEventsBefore: %v", err)
 		}
 		if deleted != 0 {
 			t.Errorf("deleted = %d, want 0 on an empty store", deleted)
@@ -827,12 +834,12 @@ func Run(t *testing.T, factory Factory) {
 		// Write three markers out of chronological order; the list
 		// must come back newest-first regardless.
 		for _, off := range []time.Duration{time.Hour, 0, 2 * time.Hour} {
-			if err := s.WriteSnapshotMeta(ctx, graph.SnapshotMeta{
+			if err := s.AppendSnapshotMeta(ctx, graph.SnapshotMeta{
 				Timestamp:     base.Add(off),
 				ResourceCount: 10,
 				Trigger:       graph.SnapshotTriggerPeriodic,
 			}); err != nil {
-				t.Fatalf("WriteSnapshotMeta: %v", err)
+				t.Fatalf("AppendSnapshotMeta: %v", err)
 			}
 		}
 		got, err := s.ListSnapshotMeta(ctx)
@@ -971,7 +978,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	// --- Label filtering + LabelStats (F-114) --------------------------
+	// --- Label filtering + ListLabelStats (F-114) --------------------------
 
 	// labelSeed loads four resources across two namespaces with a
 	// `team` label, plus three edges, and is shared by the F-114 tests.
@@ -1010,12 +1017,12 @@ func Run(t *testing.T, factory Factory) {
 	}
 	payments := map[string]string{"team": "payments"}
 
-	t.Run("KindCountsByNamespace honours a label filter", func(t *testing.T) {
+	t.Run("CountKindsByNamespace honours a label filter", func(t *testing.T) {
 		s := factory(t)
 		labelSeed(t, s)
-		got, err := s.KindCountsByNamespace(context.Background(), payments)
+		got, err := s.CountKindsByNamespace(context.Background(), payments)
 		if err != nil {
-			t.Fatalf("KindCountsByNamespace: %v", err)
+			t.Fatalf("CountKindsByNamespace: %v", err)
 		}
 		if got["demo"]["Deployment"] != 2 {
 			t.Errorf("demo/Deployment = %d, want 2", got["demo"]["Deployment"])
@@ -1028,12 +1035,12 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("CrossNamespaceEdgeCounts honours a label filter on both endpoints", func(t *testing.T) {
+	t.Run("CountCrossNamespaceEdges honours a label filter on both endpoints", func(t *testing.T) {
 		s := factory(t)
 		labelSeed(t, s)
-		got, err := s.CrossNamespaceEdgeCounts(context.Background(), payments)
+		got, err := s.CountCrossNamespaceEdges(context.Background(), payments)
 		if err != nil {
-			t.Fatalf("CrossNamespaceEdgeCounts: %v", err)
+			t.Fatalf("CountCrossNamespaceEdges: %v", err)
 		}
 		// web->api (demo,demo) and web->edge (demo,other) survive;
 		// web->worker is dropped because worker is team=search.
@@ -1047,12 +1054,12 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("NamespaceSubgraph honours a label filter", func(t *testing.T) {
+	t.Run("GetNamespaceSubgraph honours a label filter", func(t *testing.T) {
 		s := factory(t)
 		labelSeed(t, s)
-		g, err := s.NamespaceSubgraph(context.Background(), "demo", payments)
+		g, err := s.GetNamespaceSubgraph(context.Background(), "demo", payments)
 		if err != nil {
-			t.Fatalf("NamespaceSubgraph: %v", err)
+			t.Fatalf("GetNamespaceSubgraph: %v", err)
 		}
 		if len(g.Resources) != 2 {
 			t.Errorf("got %d resources, want 2 (the team=search Pod excluded)", len(g.Resources))
@@ -1063,23 +1070,23 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("LabelStats on an empty store returns nothing", func(t *testing.T) {
+	t.Run("ListLabelStats on an empty store returns nothing", func(t *testing.T) {
 		s := factory(t)
-		got, err := s.LabelStats(context.Background())
+		got, err := s.ListLabelStats(context.Background())
 		if err != nil {
-			t.Fatalf("LabelStats: %v", err)
+			t.Fatalf("ListLabelStats: %v", err)
 		}
 		if len(got) != 0 {
 			t.Errorf("got %d stats, want 0", len(got))
 		}
 	})
 
-	t.Run("LabelStats tallies keys and values", func(t *testing.T) {
+	t.Run("ListLabelStats tallies keys and values", func(t *testing.T) {
 		s := factory(t)
 		labelSeed(t, s)
-		got, err := s.LabelStats(context.Background())
+		got, err := s.ListLabelStats(context.Background())
 		if err != nil {
-			t.Fatalf("LabelStats: %v", err)
+			t.Fatalf("ListLabelStats: %v", err)
 		}
 		if len(got) != 1 || got[0].Key != "team" {
 			t.Fatalf("got %+v, want a single 'team' stat", got)
@@ -1169,7 +1176,7 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
-	t.Run("GetEdgesAcrossClusters with an empty cluster list returns nil", func(t *testing.T) {
+	t.Run("ListEdgesAcrossClusters with an empty cluster list returns nil", func(t *testing.T) {
 		ctx := context.Background()
 		s := factory(t)
 		// Use Resource.ID() everywhere — multi-cluster IDs now carry
@@ -1180,16 +1187,16 @@ func Run(t *testing.T, factory Factory) {
 		_ = s.UpsertResource(ctx, b)
 		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
 
-		edges, err := s.GetEdgesAcrossClusters(ctx, nil)
+		edges, err := s.ListEdgesAcrossClusters(ctx, nil)
 		if err != nil {
-			t.Fatalf("GetEdgesAcrossClusters: %v", err)
+			t.Fatalf("ListEdgesAcrossClusters: %v", err)
 		}
 		if len(edges) != 0 {
 			t.Errorf("got %d edges, want 0", len(edges))
 		}
 	})
 
-	t.Run("GetEdgesAcrossClusters returns edges within the set and drops outside endpoints", func(t *testing.T) {
+	t.Run("ListEdgesAcrossClusters returns edges within the set and drops outside endpoints", func(t *testing.T) {
 		ctx := context.Background()
 		s := factory(t)
 		// prod: a, b. staging: x. Edges: a->b (in-set), b->x (out
@@ -1205,9 +1212,9 @@ func Run(t *testing.T, factory Factory) {
 		_ = s.UpsertEdge(ctx, graph.Edge{From: b.ID(), To: x.ID(), Type: graph.EdgeTypeRoutesTo})
 		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: "prod:ns1/Pod/missing", Type: graph.EdgeTypeRoutesTo})
 
-		edges, err := s.GetEdgesAcrossClusters(ctx, []string{"prod"})
+		edges, err := s.ListEdgesAcrossClusters(ctx, []string{"prod"})
 		if err != nil {
-			t.Fatalf("GetEdgesAcrossClusters prod: %v", err)
+			t.Fatalf("ListEdgesAcrossClusters prod: %v", err)
 		}
 		if len(edges) != 1 || edges[0].From != a.ID() || edges[0].To != b.ID() {
 			t.Errorf("got %+v, want only a->b", edges)
@@ -1215,16 +1222,16 @@ func Run(t *testing.T, factory Factory) {
 
 		// Widen the set to include staging — b->x now passes both
 		// endpoint checks. The dangling edge is still dropped.
-		edges, err = s.GetEdgesAcrossClusters(ctx, []string{"prod", "staging"})
+		edges, err = s.ListEdgesAcrossClusters(ctx, []string{"prod", "staging"})
 		if err != nil {
-			t.Fatalf("GetEdgesAcrossClusters prod+staging: %v", err)
+			t.Fatalf("ListEdgesAcrossClusters prod+staging: %v", err)
 		}
 		if len(edges) != 2 {
 			t.Errorf("got %d edges, want 2 (a->b and b->x)", len(edges))
 		}
 	})
 
-	t.Run("GetEdgesAcrossClusters with empty clusterID returns the single-cluster subgraph", func(t *testing.T) {
+	t.Run("ListEdgesAcrossClusters with empty clusterID returns the single-cluster subgraph", func(t *testing.T) {
 		ctx := context.Background()
 		s := factory(t)
 		// Single-cluster path: ClusterID unset on a + b; c is
@@ -1238,9 +1245,9 @@ func Run(t *testing.T, factory Factory) {
 		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: b.ID(), Type: graph.EdgeTypeOwns})
 		_ = s.UpsertEdge(ctx, graph.Edge{From: a.ID(), To: c.ID(), Type: graph.EdgeTypeRoutesTo})
 
-		edges, err := s.GetEdgesAcrossClusters(ctx, []string{""})
+		edges, err := s.ListEdgesAcrossClusters(ctx, []string{""})
 		if err != nil {
-			t.Fatalf("GetEdgesAcrossClusters: %v", err)
+			t.Fatalf("ListEdgesAcrossClusters: %v", err)
 		}
 		if len(edges) != 1 || edges[0].To != b.ID() {
 			t.Errorf("got %+v, want only the single-cluster a->b edge", edges)

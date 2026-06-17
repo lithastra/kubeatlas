@@ -109,7 +109,7 @@ func GenerateReport(ctx context.Context, store graph.GraphStore, scope DiagnoseS
 	if scope.clusterScoped() {
 		g, err = store.Snapshot(ctx)
 	} else {
-		g, err = store.NamespaceSubgraph(ctx, scope.Namespace, nil)
+		g, err = store.GetNamespaceSubgraph(ctx, scope.Namespace, nil)
 	}
 	if err != nil {
 		return nil, err
