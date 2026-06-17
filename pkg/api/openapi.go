@@ -340,6 +340,19 @@ func openAPIComponentsFor(version string) map[string]any {
 			"required": []any{"constraint", "resources", "count"},
 		}
 
+		// Build + internal store info — v1-only.
+		schemas["InfoResponse"] = map[string]any{
+			"type":        "object",
+			"description": "Body of GET /api/v1/info: server build metadata plus the internal GraphStore interface version. graphstore_version is an internal engineering version (e.g. \"v2\"), unrelated to the product release version or the v1alpha1/v1 HTTP API versions.",
+			"properties": map[string]any{
+				"version":            map[string]any{"type": "string"},
+				"commit":             map[string]any{"type": "string"},
+				"build_date":         map[string]any{"type": "string"},
+				"graphstore_version": map[string]any{"type": "string"},
+			},
+			"required": []any{"version", "commit", "build_date", "graphstore_version"},
+		}
+
 		// Opt-in telemetry — v1-only (Phase 4 surface).
 		schemas["TelemetryStatusResponse"] = map[string]any{
 			"type":        "object",

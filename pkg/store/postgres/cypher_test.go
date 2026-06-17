@@ -112,7 +112,7 @@ func TestCypher_DoubleWriteConsistency(t *testing.T) {
 	}
 
 	// ListIncoming on cm (read via AGE) sees the edge.
-	in, err := s.ListIncoming(ctx, cm.ID())
+	in, err := s.ListEdges(ctx, cm.ID(), graph.DirectionIncoming)
 	if err != nil {
 		t.Fatalf("ListIncoming: %v", err)
 	}

@@ -143,7 +143,7 @@ func BenchmarkListOutgoing_AGE_vs_SQL(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			out, err := store.ListOutgoing(ctx, rootID)
+			out, err := store.ListEdges(ctx, rootID, graph.DirectionOutgoing)
 			if err != nil {
 				b.Fatalf("SQL: %v", err)
 			}
