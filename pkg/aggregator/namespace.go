@@ -62,7 +62,7 @@ func (NamespaceAggregator) Aggregate(ctx context.Context, store graph.GraphStore
 	// Pushdown path (P3-T0a, May 2026): the old implementation called
 	// store.Snapshot which materialised every Resource in the entire
 	// store (typically 10× the size of the target namespace) just to
-	// throw away everything outside scope.Namespace. NamespaceSubgraph
+	// throw away everything outside scope.Namespace. GetNamespaceSubgraph
 	// returns only the in-namespace resources + in-namespace edges in
 	// one round-trip, cutting per-call heap allocation and the API
 	// pod's OOM risk on multi-namespace clusters.
@@ -74,7 +74,7 @@ func (NamespaceAggregator) Aggregate(ctx context.Context, store graph.GraphStore
 	// scope.Labels (F-114) is pushed into the subgraph query: only
 	// resources carrying every key=value pair, and edges between two
 	// such resources, come back.
-	sub, err := store.NamespaceSubgraph(ctx, scope.Namespace, scope.Labels)
+	sub, err := store.GetNamespaceSubgraph(ctx, scope.Namespace, scope.Labels)
 	if err != nil {
 		return nil, err
 	}

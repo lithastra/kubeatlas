@@ -618,7 +618,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 			return "memory"
 		},
 		ResourceCount: func(ctx context.Context) (int, error) {
-			counts, err := graphStore.KindCountsByNamespace(ctx, nil)
+			counts, err := graphStore.CountKindsByNamespace(ctx, nil)
 			if err != nil {
 				return 0, err
 			}

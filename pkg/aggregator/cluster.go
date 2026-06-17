@@ -23,7 +23,7 @@ func (ClusterAggregator) Level() Level { return LevelCluster }
 //
 // Anti-pattern guarded: do not do this relabel inside the GraphStore
 // pushdown methods. The store returns raw data; presentation is the
-// aggregator's job. Pushing this into KindCountsByNamespace would
+// aggregator's job. Pushing this into CountKindsByNamespace would
 // hide cluster-scoped vs ns="_cluster" (an unusable but legal name)
 // from the store layer.
 const clusterScopedBucket = "_cluster"
@@ -39,16 +39,16 @@ func (ClusterAggregator) Aggregate(ctx context.Context, store graph.GraphStore, 
 	// scope.Labels (F-114) is pushed into both queries: the store
 	// counts only resources — and edges between two resources —
 	// carrying every key=value pair.
-	nsKinds, err := store.KindCountsByNamespace(ctx, scope.Labels)
+	nsKinds, err := store.CountKindsByNamespace(ctx, scope.Labels)
 	if err != nil {
 		return nil, err
 	}
-	edgeCounts, err := store.CrossNamespaceEdgeCounts(ctx, scope.Labels)
+	edgeCounts, err := store.CountCrossNamespaceEdges(ctx, scope.Labels)
 	if err != nil {
 		return nil, err
 	}
 
-	// Relabel the cluster-scoped bucket. KindCountsByNamespace returns
+	// Relabel the cluster-scoped bucket. CountKindsByNamespace returns
 	// resources with empty-string Namespace under the "" key; the
 	// View exposes them as "_cluster".
 	if cs, ok := nsKinds[""]; ok {

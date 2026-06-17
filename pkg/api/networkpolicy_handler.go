@@ -46,7 +46,7 @@ func (s *Server) handleNetworkPolicySelected(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	out, err := s.store.ListOutgoing(r.Context(), id)
+	out, err := s.store.ListEdges(r.Context(), id, graph.DirectionOutgoing)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
@@ -66,7 +66,7 @@ func (s *Server) handleNetworkPolicyAllowGraph(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	out, err := s.store.ListOutgoing(r.Context(), id)
+	out, err := s.store.ListEdges(r.Context(), id, graph.DirectionOutgoing)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return

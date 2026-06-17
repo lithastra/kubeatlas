@@ -24,7 +24,7 @@ const defaultPruneInterval = time.Hour
 // Pruner is the store-side seam the Retainer needs.
 // graph.GraphStore satisfies it.
 type Pruner interface {
-	PruneEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
+	DeleteEventsBefore(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 // Retainer periodically deletes resource_events rows older than the
@@ -75,7 +75,7 @@ func (r *Retainer) Start(ctx context.Context) {
 // process).
 func (r *Retainer) pruneOnce(ctx context.Context) {
 	cutoff := time.Now().Add(-r.retention)
-	n, err := r.pruner.PruneEventsBefore(ctx, cutoff)
+	n, err := r.pruner.DeleteEventsBefore(ctx, cutoff)
 	if err != nil {
 		slog.Warn("snapshot retention: prune failed", "cutoff", cutoff, "err", err)
 		return

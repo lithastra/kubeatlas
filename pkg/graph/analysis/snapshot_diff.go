@@ -58,7 +58,7 @@ type DiffResult struct {
 // "not here anymore".
 //
 // An empty namespace diffs the whole cluster; a non-empty namespace
-// scopes the query. The store's QueryEvents already returns events
+// scopes the query. The store's ListEvents already returns events
 // oldest-first, so group[0] is the earliest and group[len-1] the
 // latest.
 func DiffWindow(ctx context.Context, store graph.GraphStore, from, to time.Time, namespace string) (DiffResult, error) {
@@ -70,7 +70,7 @@ func DiffWindow(ctx context.Context, store graph.GraphStore, from, to time.Time,
 		Modified: []DiffEntry{},
 	}
 
-	events, err := store.QueryEvents(ctx, namespace, from, to)
+	events, err := store.ListEvents(ctx, namespace, from, to)
 	if err != nil {
 		return DiffResult{}, err
 	}

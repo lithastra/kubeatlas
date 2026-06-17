@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// fakePruner records every PruneEventsBefore call. cutoffs is the
+// fakePruner records every DeleteEventsBefore call. cutoffs is the
 // list of cutoff times it was asked to prune before; deleteN is what
 // it reports deleted; failWith, when set, is returned as the error.
 type fakePruner struct {
@@ -20,7 +20,7 @@ type fakePruner struct {
 	failWith error
 }
 
-func (f *fakePruner) PruneEventsBefore(_ context.Context, cutoff time.Time) (int64, error) {
+func (f *fakePruner) DeleteEventsBefore(_ context.Context, cutoff time.Time) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cutoffs = append(f.cutoffs, cutoff)

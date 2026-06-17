@@ -112,7 +112,7 @@ func (s *Server) handlePolicyConstraintAffected(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	edges, err := s.store.ListOutgoing(r.Context(), constraintID)
+	edges, err := s.store.ListEdges(r.Context(), constraintID, graph.DirectionOutgoing)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return
@@ -175,7 +175,7 @@ func (s *Server) policyViolations(ctx context.Context, r graph.Resource, engine 
 	if engine == "gatekeeper" {
 		return violationCount(r.Raw)
 	}
-	edges, err := s.store.ListOutgoing(ctx, r.ID())
+	edges, err := s.store.ListEdges(ctx, r.ID(), graph.DirectionOutgoing)
 	if err != nil {
 		return 0
 	}

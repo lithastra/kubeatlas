@@ -40,7 +40,7 @@ func BlastRadius(ctx context.Context, store graph.GraphStore, startID string, op
 	if startID == "" {
 		return nil, fmt.Errorf("BlastRadius: startID is required")
 	}
-	out, err := store.Traverse(ctx, startID, graph.TraverseOptions{
+	out, err := store.ListReachable(ctx, startID, graph.TraverseOptions{
 		Direction: graph.DirectionIncoming,
 		MaxDepth:  opts.MaxDepth,
 		EdgeTypes: opts.EdgeTypes,
