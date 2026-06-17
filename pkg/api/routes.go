@@ -290,6 +290,14 @@ func (s *Server) Routes() []RouteInfo {
 		},
 		{
 			Method:      "GET",
+			Pattern:     "/api/v1/info",
+			Summary:     "Build metadata and internal store version",
+			Description: "Returns the server version/commit/build-date and the internal GraphStore interface version (graphstore_version, e.g. \"v2\"). The store interface version is an internal engineering version, unrelated to the product release version or the v1alpha1/v1 HTTP API versions. v1-only.",
+			Response:    ResponseSpec{Description: "Server build and store info", SchemaRef: "InfoResponse"},
+			handler:     s.handleInfo,
+		},
+		{
+			Method:      "GET",
 			Pattern:     "/api/v1/diagnose",
 			Summary:     "Self-contained diagnostic report",
 			Description: "Bundles the scoped dependency graph plus orphan, cycle, and top blast-radius analysis into one report. format=json returns the structured data; format=html returns a self-contained HTML document (inline CSS, no external resources) for air-gapped audits. Optional `namespace` narrows the scope; empty = whole cluster. v1-only (Phase 4). P4-T1 (F-301).",

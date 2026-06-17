@@ -10,7 +10,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
-// LabelStats tallies every label key/value across the cluster for
+// ListLabelStats tallies every label key/value across the cluster for
 // GET /api/v1/labels (F-114).
 //
 // jsonb_each_text expands each resource's labels object into (key,
@@ -23,7 +23,7 @@ import (
 // The (key, value, count) rows are folded into the sorted, capped
 // []LabelStat shape by graph.FoldLabelStats, shared with the Tier 1
 // store so both tiers cap and order identically.
-func (s *Store) LabelStats(ctx context.Context) ([]graph.LabelStat, error) {
+func (s *Store) ListLabelStats(ctx context.Context) ([]graph.LabelStat, error) {
 	const sql = `
 		SELECT l.key, l.value, COUNT(*) AS cnt
 		FROM resources, jsonb_each_text(resources.data->'labels') AS l(key, value)
@@ -31,7 +31,7 @@ func (s *Store) LabelStats(ctx context.Context) ([]graph.LabelStat, error) {
 	`
 	rows, err := s.pool.Query(ctx, sql)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.LabelStats: query: %w", err)
+		return nil, fmt.Errorf("postgres.ListLabelStats: query: %w", err)
 	}
 	defer rows.Close()
 
@@ -42,12 +42,12 @@ func (s *Store) LabelStats(ctx context.Context) ([]graph.LabelStat, error) {
 			cnt        int64
 		)
 		if err := rows.Scan(&key, &value, &cnt); err != nil {
-			return nil, fmt.Errorf("postgres.LabelStats: scan: %w", err)
+			return nil, fmt.Errorf("postgres.ListLabelStats: scan: %w", err)
 		}
 		byKey[key] = append(byKey[key], graph.LabelValue{Value: value, Count: int(cnt)})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("postgres.LabelStats: rows: %w", err)
+		return nil, fmt.Errorf("postgres.ListLabelStats: rows: %w", err)
 	}
 	return graph.FoldLabelStats(byKey), nil
 }

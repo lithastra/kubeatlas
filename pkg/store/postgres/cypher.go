@@ -190,7 +190,7 @@ func deleteEdgeCypher(edgeType graph.EdgeType) string {
 }
 
 // listIncomingCypher returns the cypher() SQL for the AGE-backed
-// implementation of GraphStore.ListIncoming. Result columns are
+// implementation of GraphStore.ListEdges (incoming). Result columns are
 // (other_id, edge_type) — the "other" end is the source vertex.
 const listIncomingCypher = `
 	SELECT a_id::text, et::text FROM cypher('` + graphName + `'::name, $$
@@ -313,7 +313,7 @@ func deleteEdge(ctx context.Context, tx pgx.Tx, from, to string, t graph.EdgeTyp
 }
 
 // listIncomingFromAGE is the cypher-backed implementation of
-// GraphStore.ListIncoming. The legacy SQL version is kept in
+// GraphStore.ListEdges (incoming). The legacy SQL version is kept in
 // listIncomingFromPG for benchmark comparison (P2-T4 acceptance
 // requires AGE >= 2x SQL on a 100-node / 500-edge graph).
 func (s *Store) listIncomingFromAGE(ctx context.Context, id string) ([]graph.Edge, error) {
@@ -468,7 +468,7 @@ func (s *Store) TraverseOutgoing(ctx context.Context, startID string, opts Trave
 // Two fixed SQL strings — one per direction. Using stable text
 // keeps pgx's per-connection statement cache hot and lets Postgres
 // reuse the plan instead of re-parsing the AGE cypher() call on
-// every Traverse. The edges table is the double-write source of
+// every ListReachable. The edges table is the double-write source of
 // truth alongside AGE; the recursive CTE walks it directly, which
 // turns out ~5x faster than the equivalent AGE variable-length
 // pattern on a 5K-resource cluster (P2-T23 baseline).
@@ -509,7 +509,7 @@ SELECT r.data
  GROUP BY r.id, r.data
 `
 
-// Traverse implements graph.GraphStore.Traverse using a recursive
+// ListReachable implements graph.GraphStore.ListReachable using a recursive
 // CTE on the plain Postgres edges table. The AGE vertex / edge
 // mirror is kept in sync by the double-write Upsert path, but
 // reads bypass AGE here — recursive CTE planning is well-trodden
@@ -519,9 +519,9 @@ SELECT r.data
 // Behaviour is identical to the previous AGE-backed implementation:
 // same depth defaults + cap, same direction enum semantics, same
 // edge-type allowlist enforcement, same Resource shape returned.
-func (s *Store) Traverse(ctx context.Context, startID string, opts graph.TraverseOptions) ([]graph.Resource, error) {
+func (s *Store) ListReachable(ctx context.Context, startID string, opts graph.TraverseOptions) ([]graph.Resource, error) {
 	if opts.Direction != graph.DirectionIncoming && opts.Direction != graph.DirectionOutgoing {
-		return nil, fmt.Errorf("Traverse: invalid direction %q", opts.Direction)
+		return nil, fmt.Errorf("ListReachable: invalid direction %q", opts.Direction)
 	}
 	depth := opts.MaxDepth
 	if depth <= 0 {
@@ -534,7 +534,7 @@ func (s *Store) Traverse(ctx context.Context, startID string, opts graph.Travers
 	edgeTypes := make([]string, 0, len(opts.EdgeTypes))
 	for _, t := range opts.EdgeTypes {
 		if !edgeLabelKnown(t) {
-			return nil, fmt.Errorf("Traverse: unknown edge type %q", t)
+			return nil, fmt.Errorf("ListReachable: unknown edge type %q", t)
 		}
 		edgeTypes = append(edgeTypes, string(t))
 	}

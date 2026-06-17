@@ -73,6 +73,11 @@ func (s *Store) Close() {
 	}
 }
 
+// StoreVersion reports the GraphStore interface version this backend
+// implements. Internal interface version only — unrelated to the
+// public release version or the HTTP API versions.
+func (s *Store) StoreVersion() string { return graph.StoreInterfaceVersion }
+
 // Init brings the database schema up to currentSchemaVersion by
 // running every migration under migrate/ that has not been applied
 // yet. It is idempotent and safe to call on every startup.
@@ -104,7 +109,7 @@ type storageBlob struct {
 //
 // Tier 2 keeps PG and AGE in sync via a single transaction: the
 // JSONB row is the source of truth, the AGE vertex mirrors it for
-// Cypher reads (ListIncoming/ListOutgoing/TraverseOutgoing). Unknown
+// Cypher reads (ListEdges / ListReachable). Unknown
 // kinds (CRDs not in migrate/001_initial.sql's allowlist) fall
 // through to PG-only — P2-T10 will register CRD labels at runtime.
 func (s *Store) UpsertResource(ctx context.Context, r graph.Resource) error {
@@ -279,7 +284,7 @@ func (s *Store) ListResourcesInCluster(ctx context.Context, clusterID string, fi
 	return scanResources(rows)
 }
 
-// GetEdgesAcrossClusters returns every edge whose endpoints are both
+// ListEdgesAcrossClusters returns every edge whose endpoints are both
 // resources in the given cluster set (P3-T20). Endpoints that are
 // dangling (no resource row) or whose cluster_id is outside the set
 // drop the edge — the visible-set rule the aggregators use.
@@ -287,7 +292,7 @@ func (s *Store) ListResourcesInCluster(ctx context.Context, clusterID string, fi
 // An empty clusterIDs slice returns no edges; passing []string{""}
 // returns edges entirely within the single-cluster subgraph so v1.2
 // callers keep their existing behaviour.
-func (s *Store) GetEdgesAcrossClusters(ctx context.Context, clusterIDs []string) ([]graph.Edge, error) {
+func (s *Store) ListEdgesAcrossClusters(ctx context.Context, clusterIDs []string) ([]graph.Edge, error) {
 	if len(clusterIDs) == 0 {
 		return nil, nil
 	}
@@ -301,13 +306,16 @@ func (s *Store) GetEdgesAcrossClusters(ctx context.Context, clusterIDs []string)
 	`
 	rows, err := s.pool.Query(ctx, sql, clusterIDs)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.GetEdgesAcrossClusters: query: %w", err)
+		return nil, fmt.Errorf("postgres.ListEdgesAcrossClusters: query: %w", err)
 	}
 	defer rows.Close()
 	return scanEdges(rows)
 }
 
-// ListIncoming returns every edge whose To equals id.
+// ListEdges returns the edges incident on id in the given direction:
+// DirectionIncoming selects edges whose To is id, DirectionOutgoing
+// edges whose From is id. Any other direction is an error — the same
+// rule ListReachable enforces.
 //
 // P2-T4 originally directed switching this to AGE Cypher, on the
 // premise that AGE would outperform indexed SQL by ~2x on a
@@ -316,31 +324,27 @@ func (s *Store) GetEdgesAcrossClusters(ctx context.Context, clusterIDs []string)
 // workload because per-call Cypher overhead (LOAD, tx, parser,
 // agtype serialization) dwarfs the inner work, and the edges
 // table's btree index on (from_id) makes the SQL path effectively
-// free. We therefore keep ListIncoming/ListOutgoing on SQL and
-// reserve AGE for TraverseOutgoing (variable-length paths), where
-// it has no SQL equivalent.
+// free. We therefore keep ListEdges on SQL and reserve AGE for
+// ListReachable (variable-length paths), where it has no SQL
+// equivalent.
 //
 // listIncomingFromAGE / listOutgoingFromAGE in cypher.go are
 // preserved so the benchmark can keep measuring both paths; if a
 // future workload (e.g. very high-fanout vertices) flips the
 // equation, callers can opt in.
-func (s *Store) ListIncoming(ctx context.Context, id string) ([]graph.Edge, error) {
-	const sql = `SELECT from_id, to_id, type, attributes FROM edges WHERE to_id = $1`
-	rows, err := s.pool.Query(ctx, sql, id)
-	if err != nil {
-		return nil, fmt.Errorf("postgres.ListIncoming: %s: %w", id, err)
+func (s *Store) ListEdges(ctx context.Context, id string, dir graph.Direction) ([]graph.Edge, error) {
+	var sql string
+	switch dir {
+	case graph.DirectionIncoming:
+		sql = `SELECT from_id, to_id, type, attributes FROM edges WHERE to_id = $1`
+	case graph.DirectionOutgoing:
+		sql = `SELECT from_id, to_id, type, attributes FROM edges WHERE from_id = $1`
+	default:
+		return nil, fmt.Errorf("postgres.ListEdges: invalid direction %q", dir)
 	}
-	defer rows.Close()
-	return scanEdges(rows)
-}
-
-// ListOutgoing is the mirror of ListIncoming. See the godoc on
-// ListIncoming for why this stays on SQL despite the P2-T4 sketch.
-func (s *Store) ListOutgoing(ctx context.Context, id string) ([]graph.Edge, error) {
-	const sql = `SELECT from_id, to_id, type, attributes FROM edges WHERE from_id = $1`
 	rows, err := s.pool.Query(ctx, sql, id)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.ListOutgoing: %s: %w", id, err)
+		return nil, fmt.Errorf("postgres.ListEdges: %s %s: %w", dir, id, err)
 	}
 	defer rows.Close()
 	return scanEdges(rows)
@@ -375,7 +379,7 @@ func (s *Store) Snapshot(ctx context.Context) (*graph.Graph, error) {
 	return &graph.Graph{Resources: resources, Edges: edges}, nil
 }
 
-// KindCountsByNamespace executes one GROUP BY query against the
+// CountKindsByNamespace executes one GROUP BY query against the
 // resources table, returning the per-(namespace, kind) counts the
 // cluster-level aggregator needs.
 //
@@ -405,10 +409,10 @@ func marshalLabelFilter(labels map[string]string) ([]byte, error) {
 	return b, nil
 }
 
-func (s *Store) KindCountsByNamespace(ctx context.Context, labels map[string]string) (map[string]map[string]int, error) {
+func (s *Store) CountKindsByNamespace(ctx context.Context, labels map[string]string) (map[string]map[string]int, error) {
 	labelsJSON, err := marshalLabelFilter(labels)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.KindCountsByNamespace: %w", err)
+		return nil, fmt.Errorf("postgres.CountKindsByNamespace: %w", err)
 	}
 	const sql = `
 		SELECT
@@ -421,7 +425,7 @@ func (s *Store) KindCountsByNamespace(ctx context.Context, labels map[string]str
 	`
 	rows, err := s.pool.Query(ctx, sql, labelsJSON)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.KindCountsByNamespace: query: %w", err)
+		return nil, fmt.Errorf("postgres.CountKindsByNamespace: query: %w", err)
 	}
 	defer rows.Close()
 	out := make(map[string]map[string]int)
@@ -429,7 +433,7 @@ func (s *Store) KindCountsByNamespace(ctx context.Context, labels map[string]str
 		var ns, kind string
 		var cnt int64
 		if err := rows.Scan(&ns, &kind, &cnt); err != nil {
-			return nil, fmt.Errorf("postgres.KindCountsByNamespace: scan: %w", err)
+			return nil, fmt.Errorf("postgres.CountKindsByNamespace: scan: %w", err)
 		}
 		bucket := out[ns]
 		if bucket == nil {
@@ -439,12 +443,12 @@ func (s *Store) KindCountsByNamespace(ctx context.Context, labels map[string]str
 		bucket[kind] = int(cnt)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("postgres.KindCountsByNamespace: rows: %w", err)
+		return nil, fmt.Errorf("postgres.CountKindsByNamespace: rows: %w", err)
 	}
 	return out, nil
 }
 
-// CrossNamespaceEdgeCounts executes one GROUP BY query that joins
+// CountCrossNamespaceEdges executes one GROUP BY query that joins
 // edges to both endpoints to bucket every edge into (from-ns, to-ns).
 // Edges whose endpoint is missing from resources are dropped by the
 // inner joins — matching the in-memory implementation's "skip
@@ -452,10 +456,10 @@ func (s *Store) KindCountsByNamespace(ctx context.Context, labels map[string]str
 //
 // Cluster_view does not differentiate edge types, so type is folded
 // into the count rather than appearing in the key.
-func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context, labels map[string]string) (map[graph.NamespacePair]int, error) {
+func (s *Store) CountCrossNamespaceEdges(ctx context.Context, labels map[string]string) (map[graph.NamespacePair]int, error) {
 	labelsJSON, err := marshalLabelFilter(labels)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: %w", err)
+		return nil, fmt.Errorf("postgres.CountCrossNamespaceEdges: %w", err)
 	}
 	const sql = `
 		SELECT
@@ -471,7 +475,7 @@ func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context, labels map[string]
 	`
 	rows, err := s.pool.Query(ctx, sql, labelsJSON)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: query: %w", err)
+		return nil, fmt.Errorf("postgres.CountCrossNamespaceEdges: query: %w", err)
 	}
 	defer rows.Close()
 	out := make(map[graph.NamespacePair]int)
@@ -479,17 +483,17 @@ func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context, labels map[string]
 		var fromNs, toNs string
 		var cnt int64
 		if err := rows.Scan(&fromNs, &toNs, &cnt); err != nil {
-			return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: scan: %w", err)
+			return nil, fmt.Errorf("postgres.CountCrossNamespaceEdges: scan: %w", err)
 		}
 		out[graph.NamespacePair{From: fromNs, To: toNs}] = int(cnt)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("postgres.CrossNamespaceEdgeCounts: rows: %w", err)
+		return nil, fmt.Errorf("postgres.CountCrossNamespaceEdges: rows: %w", err)
 	}
 	return out, nil
 }
 
-// NamespaceSubgraph returns the resources in namespace ns plus the
+// GetNamespaceSubgraph returns the resources in namespace ns plus the
 // edges whose endpoints are both in that namespace.
 //
 // Two SQL queries (not in a transaction; same isolation contract as
@@ -504,10 +508,10 @@ func (s *Store) CrossNamespaceEdgeCounts(ctx context.Context, labels map[string]
 // still large for that fixture. That is intrinsic to "return every
 // resource in this namespace"; the OOM fix is that we no longer
 // also fetch the 1K resources outside the namespace.
-func (s *Store) NamespaceSubgraph(ctx context.Context, ns string, labels map[string]string) (*graph.Graph, error) {
+func (s *Store) GetNamespaceSubgraph(ctx context.Context, ns string, labels map[string]string) (*graph.Graph, error) {
 	labelsJSON, err := marshalLabelFilter(labels)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.NamespaceSubgraph: %w", err)
+		return nil, fmt.Errorf("postgres.GetNamespaceSubgraph: %w", err)
 	}
 	const resourcesSQL = `
 		SELECT data FROM resources
@@ -516,12 +520,12 @@ func (s *Store) NamespaceSubgraph(ctx context.Context, ns string, labels map[str
 	`
 	rRows, err := s.pool.Query(ctx, resourcesSQL, ns, labelsJSON)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.NamespaceSubgraph: resources query: %w", err)
+		return nil, fmt.Errorf("postgres.GetNamespaceSubgraph: resources query: %w", err)
 	}
 	resources, err := scanResources(rRows)
 	rRows.Close()
 	if err != nil {
-		return nil, fmt.Errorf("postgres.NamespaceSubgraph: resources scan: %w", err)
+		return nil, fmt.Errorf("postgres.GetNamespaceSubgraph: resources scan: %w", err)
 	}
 	const edgesSQL = `
 		SELECT e.from_id, e.to_id, e.type, e.attributes
@@ -533,12 +537,12 @@ func (s *Store) NamespaceSubgraph(ctx context.Context, ns string, labels map[str
 	`
 	eRows, err := s.pool.Query(ctx, edgesSQL, ns, labelsJSON)
 	if err != nil {
-		return nil, fmt.Errorf("postgres.NamespaceSubgraph: edges query: %w", err)
+		return nil, fmt.Errorf("postgres.GetNamespaceSubgraph: edges query: %w", err)
 	}
 	edges, err := scanEdges(eRows)
 	eRows.Close()
 	if err != nil {
-		return nil, fmt.Errorf("postgres.NamespaceSubgraph: edges scan: %w", err)
+		return nil, fmt.Errorf("postgres.GetNamespaceSubgraph: edges scan: %w", err)
 	}
 	return &graph.Graph{Resources: resources, Edges: edges}, nil
 }
