@@ -58,6 +58,11 @@ func New() *Store {
 	}
 }
 
+// StoreVersion reports the GraphStore interface version this backend
+// implements. Internal interface version only — unrelated to the
+// public release version or the HTTP API versions.
+func (s *Store) StoreVersion() string { return graph.StoreInterfaceVersion }
+
 // UpsertResource inserts or replaces the resource at r.ID().
 func (s *Store) UpsertResource(_ context.Context, r graph.Resource) error {
 	s.mu.Lock()
@@ -179,11 +184,11 @@ func (s *Store) ListResourcesInCluster(_ context.Context, clusterID string, filt
 	return out, nil
 }
 
-// GetEdgesAcrossClusters returns every edge whose endpoints are
+// ListEdgesAcrossClusters returns every edge whose endpoints are
 // resources in the given cluster set. Endpoints that are dangling
 // (no resource row) or whose ClusterID is outside the set drop the
 // edge, matching the visible-set rule used by the aggregators.
-func (s *Store) GetEdgesAcrossClusters(_ context.Context, clusterIDs []string) ([]graph.Edge, error) {
+func (s *Store) ListEdgesAcrossClusters(_ context.Context, clusterIDs []string) ([]graph.Edge, error) {
 	if len(clusterIDs) == 0 {
 		return nil, nil
 	}
@@ -216,18 +221,21 @@ func (s *Store) GetEdgesAcrossClusters(_ context.Context, clusterIDs []string) (
 	return out, nil
 }
 
-// ListIncoming returns every edge whose To equals id.
-func (s *Store) ListIncoming(_ context.Context, id string) ([]graph.Edge, error) {
+// ListEdges returns the edges incident on id in the given direction:
+// DirectionIncoming yields edges whose To is id, DirectionOutgoing
+// yields edges whose From is id. Any other direction is an error —
+// the same rule ListReachable enforces.
+func (s *Store) ListEdges(_ context.Context, id string, dir graph.Direction) ([]graph.Edge, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return collect(s.incoming[id]), nil
-}
-
-// ListOutgoing returns every edge whose From equals id.
-func (s *Store) ListOutgoing(_ context.Context, id string) ([]graph.Edge, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return collect(s.outgoing[id]), nil
+	switch dir {
+	case graph.DirectionIncoming:
+		return collect(s.incoming[id]), nil
+	case graph.DirectionOutgoing:
+		return collect(s.outgoing[id]), nil
+	default:
+		return nil, fmt.Errorf("ListEdges: invalid direction %q", dir)
+	}
 }
 
 // Snapshot returns a consistent point-in-time copy of the entire
@@ -251,12 +259,12 @@ func (s *Store) Snapshot(_ context.Context) (*graph.Graph, error) {
 	return g, nil
 }
 
-// Traverse walks the in-memory adjacency maps in BFS order and
+// ListReachable walks the in-memory adjacency maps in BFS order and
 // returns every distinct resource reachable from startID within
 // opts.MaxDepth hops in the requested direction. The starting node
 // is not included, and unresolved IDs (edges whose endpoint never
 // got an UpsertResource) are silently skipped.
-func (s *Store) Traverse(_ context.Context, startID string, opts graph.TraverseOptions) ([]graph.Resource, error) {
+func (s *Store) ListReachable(_ context.Context, startID string, opts graph.TraverseOptions) ([]graph.Resource, error) {
 	depth := opts.MaxDepth
 	if depth <= 0 {
 		depth = 5
@@ -265,7 +273,7 @@ func (s *Store) Traverse(_ context.Context, startID string, opts graph.TraverseO
 		depth = 10
 	}
 	if opts.Direction != graph.DirectionIncoming && opts.Direction != graph.DirectionOutgoing {
-		return nil, fmt.Errorf("Traverse: invalid direction %q", opts.Direction)
+		return nil, fmt.Errorf("ListReachable: invalid direction %q", opts.Direction)
 	}
 
 	allowed := edgeTypeSet(opts.EdgeTypes)
@@ -305,7 +313,7 @@ func (s *Store) Traverse(_ context.Context, startID string, opts graph.TraverseO
 	return out, nil
 }
 
-// KindCountsByNamespace walks the resource map once and tallies
+// CountKindsByNamespace walks the resource map once and tallies
 // counts by (namespace, kind). Cluster-scoped resources land in the
 // empty-string namespace bucket.
 //
@@ -313,7 +321,7 @@ func (s *Store) Traverse(_ context.Context, startID string, opts graph.TraverseO
 // added in the same change. It allocates only the result maps, not
 // the per-resource structs Snapshot would clone — that is the whole
 // point of the pushdown.
-func (s *Store) KindCountsByNamespace(_ context.Context, labels map[string]string) (map[string]map[string]int, error) {
+func (s *Store) CountKindsByNamespace(_ context.Context, labels map[string]string) (map[string]map[string]int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make(map[string]map[string]int)
@@ -331,12 +339,12 @@ func (s *Store) KindCountsByNamespace(_ context.Context, labels map[string]strin
 	return out, nil
 }
 
-// CrossNamespaceEdgeCounts walks every outgoing adjacency list once
+// CountCrossNamespaceEdges walks every outgoing adjacency list once
 // and tallies counts by (from-ns, to-ns). Edges whose endpoint is not
 // present as a resource row are skipped — they cannot be assigned a
 // namespace and would otherwise crash the aggregator with empty
 // strings on both sides.
-func (s *Store) CrossNamespaceEdgeCounts(_ context.Context, labels map[string]string) (map[graph.NamespacePair]int, error) {
+func (s *Store) CountCrossNamespaceEdges(_ context.Context, labels map[string]string) (map[graph.NamespacePair]int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make(map[graph.NamespacePair]int)
@@ -356,13 +364,13 @@ func (s *Store) CrossNamespaceEdgeCounts(_ context.Context, labels map[string]st
 	return out, nil
 }
 
-// NamespaceSubgraph returns the resources in namespace ns plus the
+// GetNamespaceSubgraph returns the resources in namespace ns plus the
 // edges whose endpoints are both in that namespace. The owner-chain
 // rule in K8s keeps OwnerReferences in-namespace (cluster-scoped
 // owners excepted), so the namespace aggregator's owner-walk runs
 // correctly against the subgraph without ever touching the rest of
 // the store.
-func (s *Store) NamespaceSubgraph(_ context.Context, ns string, labels map[string]string) (*graph.Graph, error) {
+func (s *Store) GetNamespaceSubgraph(_ context.Context, ns string, labels map[string]string) (*graph.Graph, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	g := &graph.Graph{Resources: make([]graph.Resource, 0), Edges: make([]graph.Edge, 0)}
@@ -395,11 +403,11 @@ func (s *Store) NamespaceSubgraph(_ context.Context, ns string, labels map[strin
 	return g, nil
 }
 
-// LabelStats tallies every label key/value across the resource map
+// ListLabelStats tallies every label key/value across the resource map
 // for GET /api/v1/labels (F-114). The raw key -> (value, count)
 // tallies are handed to graph.FoldLabelStats so the Tier 1 result
 // is sorted and capped exactly like the Tier 2 GROUP BY path.
-func (s *Store) LabelStats(_ context.Context) ([]graph.LabelStat, error) {
+func (s *Store) ListLabelStats(_ context.Context) ([]graph.LabelStat, error) {
 	s.mu.RLock()
 	counts := make(map[string]map[string]int) // key -> value -> count
 	for _, r := range s.resources {
@@ -446,9 +454,9 @@ func (s *Store) AppendEvent(_ context.Context, e graph.ResourceEvent) error {
 	return nil
 }
 
-// WriteSnapshotMeta records one SnapshotMeta marker, bounded under
+// AppendSnapshotMeta records one SnapshotMeta marker, bounded under
 // the same cap as the event ring buffer.
-func (s *Store) WriteSnapshotMeta(_ context.Context, m graph.SnapshotMeta) error {
+func (s *Store) AppendSnapshotMeta(_ context.Context, m graph.SnapshotMeta) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.eventSeq++
@@ -463,7 +471,7 @@ func (s *Store) WriteSnapshotMeta(_ context.Context, m graph.SnapshotMeta) error
 	return nil
 }
 
-// QueryEvents returns the buffered events in [from, to], oldest
+// ListEvents returns the buffered events in [from, to], oldest
 // first. An empty namespace matches every namespace. Results are
 // copied so callers cannot mutate the buffer.
 //
@@ -472,7 +480,7 @@ func (s *Store) WriteSnapshotMeta(_ context.Context, m graph.SnapshotMeta) error
 // out-of-order Timestamp). The result is sorted by (Timestamp, ID)
 // so the oldest-first contract holds regardless — matching the
 // postgres backend's ORDER BY ts ASC, id ASC.
-func (s *Store) QueryEvents(_ context.Context, namespace string, from, to time.Time) ([]graph.ResourceEvent, error) {
+func (s *Store) ListEvents(_ context.Context, namespace string, from, to time.Time) ([]graph.ResourceEvent, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]graph.ResourceEvent, 0)
@@ -511,12 +519,12 @@ func (s *Store) ListSnapshotMeta(_ context.Context) ([]graph.SnapshotMeta, error
 	return out, nil
 }
 
-// PruneEventsBefore drops ring-buffer events older than cutoff and
+// DeleteEventsBefore drops ring-buffer events older than cutoff and
 // returns the count removed. No batching is needed — the buffer is
 // capped at maxMemoryEvents, so this is always a small in-memory
 // filter. (Postgres batches because its table is unbounded; the
 // memory store is bounded by construction.)
-func (s *Store) PruneEventsBefore(_ context.Context, cutoff time.Time) (int64, error) {
+func (s *Store) DeleteEventsBefore(_ context.Context, cutoff time.Time) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	kept := s.events[:0:0]

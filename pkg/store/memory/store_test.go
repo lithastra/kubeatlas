@@ -59,7 +59,7 @@ func TestStore_DeleteResourceLeavesUnrelatedEdgesAlone(t *testing.T) {
 	if err := s.DeleteResource(ctx, "demo/Deployment/a"); err != nil {
 		t.Fatal(err)
 	}
-	in, _ := s.ListIncoming(ctx, "demo/ConfigMap/shared")
+	in, _ := s.ListEdges(ctx, "demo/ConfigMap/shared", graph.DirectionIncoming)
 	if len(in) != 1 {
 		t.Errorf("expected 1 surviving incoming edge, got %d", len(in))
 	}
