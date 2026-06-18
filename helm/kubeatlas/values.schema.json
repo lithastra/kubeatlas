@@ -369,6 +369,25 @@
         "enabled": { "type": "boolean" }
       }
     },
+    "otel": {
+      "type": "object",
+      "description": "OpenTelemetry trace overlay (F-204 / Tier 2 only). Default-off. otel.enabled=true requires persistence.enabled=true — spans persist to a PostgreSQL table; enabling on a Tier 1 install is rejected (guide invariant 2.2 / 2.5). The receiver listens on its own gRPC port, separate from the HTTP API.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "receiver": {
+          "type": "object",
+          "properties": {
+            "port":       { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "bufferSize": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "retention": {
+          "description": "How long otel_spans rows are kept. Day suffix (\"7d\") or any Go duration (\"168h\").",
+          "type": "string",
+          "pattern": "^[0-9]+d$|^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        }
+      }
+    },
     "multicluster": {
       "type": "object",
       "description": "Multi-cluster federation (F-201, v1.3). When enabled, KubeAtlas attaches an informer to every kubeconfig in the named Secret and tags every Resource with its ClusterID.",
@@ -416,6 +435,27 @@
           }
         },
         "required": ["snapshots"]
+      },
+      "then": {
+        "properties": {
+          "persistence": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["persistence"]
+      }
+    },
+    {
+      "comment": "OTLP span storage (F-204) requires Tier 2 — spans persist to a PostgreSQL table. otel.enabled=true without persistence.enabled=true is rejected (guide invariant 2.2 / 2.5: no Tier 1 spans).",
+      "if": {
+        "properties": {
+          "otel": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["otel"]
       },
       "then": {
         "properties": {

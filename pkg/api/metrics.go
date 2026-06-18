@@ -10,6 +10,7 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
+	"github.com/lithastra/kubeatlas/pkg/otel"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 	"github.com/lithastra/kubeatlas/pkg/telemetry"
 )
@@ -103,7 +104,7 @@ func (vc *versionCounter) snapshot() (v1alpha1, v1 map[string]uint64) {
 //
 // Write errors are ignored: a hung-up scraper isn't something /metrics
 // can do anything useful about.
-func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int, dynMetrics *discovery.DynamicMetrics, versionMetrics *versionCounter, telMetrics *telemetry.Metrics) {
+func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int, dynMetrics *discovery.DynamicMetrics, versionMetrics *versionCounter, telMetrics *telemetry.Metrics, otelMetrics *otel.Metrics) {
 	p := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) }
 
 	p("# HELP kubeatlas_goroutines Number of currently running goroutines.\n")
@@ -216,6 +217,25 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, 
 		p("# HELP kubeatlas_telemetry_send_errors_total Telemetry reports that failed to send.\n")
 		p("# TYPE kubeatlas_telemetry_send_errors_total counter\n")
 		p("kubeatlas_telemetry_send_errors_total %d\n", ts.Errors)
+	}
+
+	// F-204 OTLP trace receiver block — emitted only when main.go
+	// wired WithOtelReceiverMetrics, i.e. on a Tier 2 install with
+	// otel.enabled. A Tier 1 / otel-off scrape stays free of this block.
+	if otelMetrics != nil {
+		s := otelMetrics.Snapshot()
+		p("# HELP kubeatlas_otel_received_total Trace spans received over OTLP gRPC.\n")
+		p("# TYPE kubeatlas_otel_received_total counter\n")
+		p("kubeatlas_otel_received_total %d\n", s.Received)
+		p("# HELP kubeatlas_otel_dropped_total Spans dropped because the receiver queue was full.\n")
+		p("# TYPE kubeatlas_otel_dropped_total counter\n")
+		p("kubeatlas_otel_dropped_total %d\n", s.Dropped)
+		p("# HELP kubeatlas_otel_written_total Spans durably written to PostgreSQL.\n")
+		p("# TYPE kubeatlas_otel_written_total counter\n")
+		p("kubeatlas_otel_written_total %d\n", s.Written)
+		p("# HELP kubeatlas_otel_retention_deleted_total Expired spans deleted by the hourly retention worker.\n")
+		p("# TYPE kubeatlas_otel_retention_deleted_total counter\n")
+		p("kubeatlas_otel_retention_deleted_total %d\n", s.RetentionDeleted)
 	}
 
 	// Phase 4 dynamic informer block — emitted only when main.go wired

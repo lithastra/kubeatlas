@@ -30,6 +30,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/gatekeeper"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/multicluster"
+	"github.com/lithastra/kubeatlas/pkg/otel"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 	"github.com/lithastra/kubeatlas/pkg/store"
 	"github.com/lithastra/kubeatlas/pkg/store/postgres"
@@ -583,6 +584,38 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		}
 	}
 
+	// F-204 OTLP trace receiver. Like snapshots, it is Tier 2 only —
+	// spans persist to a PostgreSQL table (invariant 2.2 / 2.5) — and
+	// opt-in (otel.enabled, default false). otelStarter stays a
+	// noopStarter when disabled or on Tier 1, so the component loop
+	// below has nothing to listen on and no goroutine is spawned —
+	// zero overhead when off. otelMetrics is nil unless the receiver
+	// runs; the API server only surfaces the /metrics otel block then.
+	otelCfg, err := otel.LoadConfig()
+	if err != nil {
+		log.Fatalf("otel config: %v", err)
+	}
+	var otelStarter componentStarter = noopStarter{}
+	var otelMetrics *otel.Metrics
+	if otelCfg.Enabled {
+		if storeCfg.Backend != store.BackendPostgres {
+			slog.Warn("KUBEATLAS_OTEL_ENABLED set but backend is not postgres; " +
+				"span storage requires Tier 2 — skipping otel receiver (invariant 2.2)")
+		} else if pgStore, ok := graphStore.(*postgres.Store); !ok {
+			// store.New returns *postgres.Store on Tier 2; this only
+			// fires if that contract ever changes — fail loud.
+			log.Fatalf("otel: backend=postgres but store is %T, not *postgres.Store", graphStore)
+		} else {
+			otelMetrics = otel.NewMetrics()
+			otelStarter = otel.NewReceiver(otelCfg.GRPCAddr, pgStore, otelCfg.BufferSize, otelMetrics)
+			// Span retention: hourly prune of otel_spans older than the
+			// window. Detached background sweep like the snapshot one.
+			go otel.NewSpanRetainer(pgStore, otelCfg.Retention, otelMetrics).Start(ctx)
+			slog.Info("otel receiver started",
+				"addr", otelCfg.GRPCAddr, "retention", otelCfg.Retention)
+		}
+	}
+
 	// Phase 2 wire-up: the rego engine handles CRD-driven edge
 	// derivation; the built-in extractor.Default() still owns core
 	// K8s GVRs. The two pipelines write to the same store but never
@@ -648,6 +681,12 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		apiOpts = append(apiOpts,
 			api.WithSnapshotMetrics(snapWriter.Metrics(), snapWriter.QueueDepth),
 			api.WithSnapshots(snapRetention))
+	}
+	// otelMetrics is nil unless the receiver is running (Tier 2 +
+	// otel.enabled). Appended to apiOpts so it survives the multi-
+	// cluster api.New rebuild below, which reuses this same slice.
+	if otelMetrics != nil {
+		apiOpts = append(apiOpts, api.WithOtelReceiverMetrics(otelMetrics))
 	}
 	// KUBEATLAS_API_ADDR overrides the default ":8080" listen address.
 	// The Helm chart never sets it (the Pod always serves :8080 on the
@@ -754,12 +793,13 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		who string
 		err error
 	}
-	const componentCount = 4
+	const componentCount = 5
 	results := make(chan result, componentCount)
 	go func() { results <- result{"informer", informerStarter.Start(ctx)} }()
 	go func() { results <- result{"api", srv.Start(ctx)} }()
 	go func() { results <- result{"crd-discovery", crdStarter.Start(ctx)} }()
 	go func() { results <- result{"gatekeeper", gkStarter.Start(ctx)} }()
+	go func() { results <- result{"otel", otelStarter.Start(ctx)} }()
 
 	collected := make([]result, 0, componentCount)
 	collected = append(collected, <-results)
