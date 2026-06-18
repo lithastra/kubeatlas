@@ -18,7 +18,7 @@ import (
 // how to apply. Bumping it requires a matching migrate/NNN_*.sql
 // file shipped in the same commit; ADRs guard breaking changes
 // (guide §2.1: GraphStore interface frozen).
-const currentSchemaVersion = 8
+const currentSchemaVersion = 9
 
 //go:embed migrate/*.sql
 var migrationFS embed.FS

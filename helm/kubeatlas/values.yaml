@@ -334,3 +334,32 @@ extraLabels: {}
 # /api/v1/telemetry/preview. See docs/concepts/telemetry-schema.md.
 telemetry:
   enabled: false
+
+# OpenTelemetry trace overlay (F-204, v1.5). When enabled, KubeAtlas
+# runs an OTLP/gRPC receiver that ingests trace spans and persists
+# them to a PostgreSQL table, so a later overlay can show observed
+# runtime call edges alongside the declared dependency graph.
+#
+# Tier 2 only — spans persist to PostgreSQL, so otel.enabled requires
+# persistence.enabled=true (the values schema rejects otel-without-
+# persistence). Default off; when off there is no receiver, no
+# listener, and zero overhead.
+#
+# The receiver listens on its OWN gRPC port (4317 by convention),
+# separate from the 8080 HTTP API, exposed via its own ClusterIP
+# Service so the two can be network-policied independently.
+otel:
+  enabled: false
+  receiver:
+    # OTLP/gRPC listen port. Kept off the HTTP API port on purpose.
+    port: 4317
+    # Span-queue capacity. The receiver enqueues here; writer
+    # goroutines drain into PG. A full queue drops spans (counted as
+    # kubeatlas_otel_dropped_total) rather than blocking the gRPC
+    # caller or the core graph path.
+    bufferSize: 4096
+  # How long to keep otel_spans rows. An hourly retention worker
+  # prunes anything older. Accepts a day suffix ("7d") or any Go
+  # duration ("168h"). A typo fails the pod at startup rather than
+  # silently defaulting.
+  retention: 7d
