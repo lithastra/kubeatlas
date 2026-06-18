@@ -15,6 +15,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/otel"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 )
 
@@ -65,6 +66,12 @@ type Server struct {
 	// left nil when no dynamic informers run (e.g. multi-cluster mode),
 	// in which case /metrics omits the block.
 	dynamicMetrics *discovery.DynamicMetrics
+
+	// otelMetrics is the F-204 hook for the OTLP trace receiver's
+	// counters. main.go wires it via WithOtelReceiverMetrics, but only
+	// when the receiver is running (Tier 2 + otel.enabled) — left nil
+	// otherwise so /metrics stays otel-block-free on a Tier 1 install.
+	otelMetrics *otel.Metrics
 
 	// telemetry backs the /api/v1/telemetry/* endpoints and the
 	// telemetry block on /metrics. Wired via WithTelemetry; nil leaves
@@ -164,6 +171,16 @@ func WithSnapshotMetrics(m *snapshot.Metrics, queueDepth func() int) ServerOptio
 	return func(s *Server) {
 		s.snapshotMetrics = m
 		s.snapshotQueueDepth = queueDepth
+	}
+}
+
+// WithOtelReceiverMetrics wires the F-204 OTLP trace receiver's
+// counters into /metrics. main.go passes this only when the receiver
+// is running (Tier 2 + otel.enabled); a Tier 1 / otel-off install
+// leaves it nil and /metrics emits no otel block.
+func WithOtelReceiverMetrics(m *otel.Metrics) ServerOption {
+	return func(s *Server) {
+		s.otelMetrics = m
 	}
 }
 

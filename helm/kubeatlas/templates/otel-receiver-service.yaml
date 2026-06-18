@@ -1,0 +1,23 @@
+{{- if .Values.otel.enabled }}
+# F-204 OTLP/gRPC trace receiver Service. Separate from the main HTTP
+# Service so the span-ingestion port (4317) can be reached and network-
+# policied independently of the 8080 API. Same selector — it targets
+# the same Pod, just the otel-grpc container port. ClusterIP only:
+# OTLP ingestion is an in-cluster concern, never exposed via Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubeatlas.fullname" . }}-otel-receiver
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeatlas.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: otel-grpc
+      port: {{ .Values.otel.receiver.port | default 4317 }}
+      targetPort: otel-grpc
+      protocol: TCP
+  selector:
+    {{- include "kubeatlas.selectorLabels" . | nindent 4 }}
+{{- end }}

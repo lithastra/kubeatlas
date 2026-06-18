@@ -56,6 +56,13 @@ spec:
             - name: http
               containerPort: {{ .Values.service.containerPort }}
               protocol: TCP
+            {{- if .Values.otel.enabled }}
+            # F-204 OTLP/gRPC receiver. Separate from the HTTP API
+            # port so the two surfaces can be network-policied apart.
+            - name: otel-grpc
+              containerPort: {{ .Values.otel.receiver.port | default 4317 }}
+              protocol: TCP
+            {{- end }}
           env:
             # rulePacks.openshift selects the OpenShift detector
             # mode (auto | true | false). Accepts string OR bool
@@ -112,6 +119,20 @@ spec:
               value: {{ .Values.snapshots.workers | quote }}
             - name: KUBEATLAS_SNAPSHOTS_RETENTION
               value: {{ .Values.snapshots.retention | quote }}
+            {{- end }}
+            {{- if .Values.otel.enabled }}
+            # F-204 OTLP trace receiver. Nested inside persistence.enabled
+            # because spans persist to PostgreSQL (Tier 2 only); the
+            # values.schema gate guarantees otel.enabled implies
+            # persistence.enabled (invariant 2.2 / 2.5).
+            - name: KUBEATLAS_OTEL_ENABLED
+              value: "true"
+            - name: KUBEATLAS_OTEL_GRPC_ADDR
+              value: ":{{ .Values.otel.receiver.port | default 4317 }}"
+            - name: KUBEATLAS_OTEL_BUFFER_SIZE
+              value: {{ .Values.otel.receiver.bufferSize | quote }}
+            - name: KUBEATLAS_OTEL_RETENTION
+              value: {{ .Values.otel.retention | quote }}
             {{- end }}
           {{- end }}
           {{- if .Values.multicluster.enabled }}
