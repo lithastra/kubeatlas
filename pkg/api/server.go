@@ -115,6 +115,12 @@ type Server struct {
 	// single-cluster mode (an empty list) and /federation/graph
 	// returns 503.
 	clusterLister ClusterLister
+
+	// rbac filters which clusters a request may see, keyed on its
+	// bearer token (F-206). main.go wires it via WithClusterRBAC; nil
+	// (or a scope with no rules) means every caller sees every cluster —
+	// the backward-compatible v1.4 behaviour.
+	rbac ClusterRBAC
 }
 
 // ClusterLister returns the names of every cluster the federation
@@ -123,6 +129,16 @@ type Server struct {
 // pkg/multicluster (and lets tests stub a fixed list).
 type ClusterLister interface {
 	ListClusters() []string
+}
+
+// ClusterRBAC resolves a request's visible cluster set from its bearer
+// token (F-206). multicluster.RBACScope satisfies it; the interface
+// keeps pkg/api free of a hard dependency on pkg/multicluster, mirroring
+// ClusterLister. VisibleClusters returns a status of 0 when authorised —
+// a nil allow-set then means "unrestricted" (RBAC off) — or 401/403 when
+// the caller is unauthenticated / unauthorised for any cluster.
+type ClusterRBAC interface {
+	VisibleClusters(r *http.Request) (allow map[string]struct{}, status int)
 }
 
 // ServerOption tweaks an optional aspect of the Server. Required
@@ -137,6 +153,14 @@ type ServerOption func(*Server)
 // single-cluster mode when no lister is wired.
 func WithClusterLister(l ClusterLister) ServerOption {
 	return func(s *Server) { s.clusterLister = l }
+}
+
+// WithClusterRBAC registers the F-206 read-side cluster visibility
+// filter. main.go passes a multicluster.RBACScope; without it (or with
+// a scope that has no rules configured) the federation surface stays
+// open to every caller, exactly as v1.4.
+func WithClusterRBAC(rbac ClusterRBAC) ServerOption {
+	return func(s *Server) { s.rbac = rbac }
 }
 
 // WithWebFS mounts the given filesystem under "/" so the Web UI

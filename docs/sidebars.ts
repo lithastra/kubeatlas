@@ -19,6 +19,7 @@ const sidebars: SidebarsConfig = {
         'installation/openshift',
         'installation/cert-manager',
         'installation/eks',
+        'installation/multicluster',
         'installation/otel-integration',
       ],
     },
