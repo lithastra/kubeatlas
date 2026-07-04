@@ -611,6 +611,13 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 			// Span retention: hourly prune of otel_spans older than the
 			// window. Detached background sweep like the snapshot one.
 			go otel.NewSpanRetainer(pgStore, otelCfg.Retention, otelMetrics).Start(ctx)
+			// Correlator (F-204 part 2, P5-T5): a detached background job
+			// that folds recent spans into CALLS_AT_RUNTIME overlay edges
+			// in otel_runtime_edges. It reads spans (pgStore) and the
+			// declarative resources (graphStore, read-only via
+			// ResourceLister) and writes runtime edges (pgStore) — never
+			// the critical path (invariant 2.5).
+			go otel.NewCorrelator(pgStore, graphStore, pgStore, otelCfg.Retention, otelMetrics).Start(ctx)
 			slog.Info("otel receiver started",
 				"addr", otelCfg.GRPCAddr, "retention", otelCfg.Retention)
 		}

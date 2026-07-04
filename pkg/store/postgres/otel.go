@@ -165,3 +165,100 @@ func (s *Store) DeleteOldSpans(ctx context.Context, cutoff time.Time) (int64, er
 		}
 	}
 }
+
+// Runtime overlay edges (F-204 part 2, P5-T5). otel_runtime_edges is
+// written by the correlator, queried by the overlay API, and pruned by
+// the correlator's own retention step. Like otel_spans it is a plain
+// SQL, Tier 2-only concern reached through the otel package's narrow
+// RuntimeEdgeSink seam — never on graph.GraphStore, so runtime edges
+// stay off the declarative graph (invariant 2.2).
+
+// UpsertRuntimeEdges inserts or folds a batch of inferred runtime edges.
+// (from_id, to_id) is the primary key, so re-observing a call updates
+// the existing row: first_seen keeps the earliest observation,
+// last_seen the latest, and call_count the peak per-window count
+// (GREATEST, not a running sum — see graph.RuntimeEdge). The whole
+// batch goes in one round-trip; a single failing statement fails the
+// call (the correlator logs and retries next pass).
+func (s *Store) UpsertRuntimeEdges(ctx context.Context, edges []graph.RuntimeEdge) error {
+	if len(edges) == 0 {
+		return nil
+	}
+	const sql = `
+		INSERT INTO otel_runtime_edges
+			(from_id, to_id, from_service, to_service, namespace,
+			 first_seen, last_seen, call_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (from_id, to_id) DO UPDATE SET
+			from_service = EXCLUDED.from_service,
+			to_service   = EXCLUDED.to_service,
+			namespace    = EXCLUDED.namespace,
+			first_seen   = LEAST(otel_runtime_edges.first_seen, EXCLUDED.first_seen),
+			last_seen    = GREATEST(otel_runtime_edges.last_seen, EXCLUDED.last_seen),
+			call_count   = GREATEST(otel_runtime_edges.call_count, EXCLUDED.call_count)
+	`
+	batch := &pgx.Batch{}
+	for _, e := range edges {
+		batch.Queue(sql,
+			e.FromID, e.ToID, e.FromService, e.ToService, e.Namespace,
+			e.FirstSeen, e.LastSeen, e.CallCount,
+		)
+	}
+	br := s.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for i := 0; i < len(edges); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("postgres.UpsertRuntimeEdges: upsert %s->%s: %w", edges[i].FromID, edges[i].ToID, err)
+		}
+	}
+	return nil
+}
+
+// QueryRuntimeEdges returns runtime edges observed at or after since,
+// ordered by (from_id, to_id). An empty namespace matches every
+// namespace; a non-empty one filters to it (served from
+// idx_otel_runtime_edges_ns).
+func (s *Store) QueryRuntimeEdges(ctx context.Context, namespace string, since time.Time) ([]graph.RuntimeEdge, error) {
+	const sql = `
+		SELECT from_id, to_id, from_service, to_service, namespace,
+		       first_seen, last_seen, call_count
+		FROM otel_runtime_edges
+		WHERE last_seen >= $1
+		  AND ($2::text = '' OR namespace = $2)
+		ORDER BY from_id, to_id
+	`
+	rows, err := s.pool.Query(ctx, sql, since, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("postgres.QueryRuntimeEdges: query: %w", err)
+	}
+	defer rows.Close()
+	out := make([]graph.RuntimeEdge, 0)
+	for rows.Next() {
+		var e graph.RuntimeEdge
+		if err := rows.Scan(
+			&e.FromID, &e.ToID, &e.FromService, &e.ToService, &e.Namespace,
+			&e.FirstSeen, &e.LastSeen, &e.CallCount,
+		); err != nil {
+			return nil, fmt.Errorf("postgres.QueryRuntimeEdges: scan: %w", err)
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("postgres.QueryRuntimeEdges: rows: %w", err)
+	}
+	return out, nil
+}
+
+// DeleteOldRuntimeEdges deletes runtime edges not re-observed since
+// cutoff, so a decommissioned call path drops out of the overlay.
+// Returns the number deleted. The table holds one row per resource
+// pair, so a single unbounded DELETE is safe here (unlike the batched
+// otel_spans sweep).
+func (s *Store) DeleteOldRuntimeEdges(ctx context.Context, cutoff time.Time) (int64, error) {
+	const sql = `DELETE FROM otel_runtime_edges WHERE last_seen < $1`
+	tag, err := s.pool.Exec(ctx, sql, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("postgres.DeleteOldRuntimeEdges: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
