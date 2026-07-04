@@ -320,6 +320,27 @@ multicluster:
   # others still attach.
   kubeconfigSecret: ""
 
+  # F-206 read-side RBAC visibility (P5-T7). Each rule maps a bearer
+  # token to the clusters a caller presenting it may see on the
+  # federation surface (/api/v1/federation/*). An empty list (the
+  # default) leaves federation open to every caller — exactly as v1.4.
+  #
+  # This is visibility filtering ONLY: it never fetches or rotates
+  # credentials, adds no OIDC/SSO, and introduces no CRD. A caller with
+  # no token, or an unknown token, is rejected 401/403 (never shown an
+  # empty list). The process stores only the SHA-256 hash of each token.
+  #
+  # SECURITY: tokens are secret material. Supply them from a secret
+  # values source (sealed-secrets / SOPS / `-f secret-values.yaml`) —
+  # never commit plaintext tokens. The chart renders them into a Secret
+  # (<release>-rbac-rules) mounted read-only into the pod.
+  rbac:
+    rules: []
+    #  - token: "REPLACE-with-a-bearer-token"
+    #    clusters: [prod, prod-dr]
+    #  - token: "REPLACE-with-another-token"
+    #    clusters: [staging]
+
 # Extra labels applied to every resource the chart renders.
 extraLabels: {}
 

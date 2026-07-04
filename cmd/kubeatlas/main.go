@@ -701,6 +701,16 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	if otelReader != nil {
 		apiOpts = append(apiOpts, api.WithOtelOverlay(otelReader))
 	}
+	// F-206 multi-cluster RBAC visibility. Load the optional token ->
+	// visible-cluster rules; an empty rule set yields a disabled scope
+	// (every caller sees every cluster — the v1.4 default). A malformed
+	// config is fatal so a mis-mounted Secret can't silently disable
+	// access control (fail closed on config, open on absence).
+	rbacRules, err := multicluster.LoadRBACConfig()
+	if err != nil {
+		log.Fatalf("multicluster rbac: %v", err)
+	}
+	apiOpts = append(apiOpts, api.WithClusterRBAC(multicluster.NewRBACScope(rbacRules)))
 	// KUBEATLAS_API_ADDR overrides the default ":8080" listen address.
 	// The Helm chart never sets it (the Pod always serves :8080 on the
 	// PodSpec port); local perf / chaos harnesses set it to avoid
