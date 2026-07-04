@@ -140,6 +140,21 @@ const (
 	EdgeTypeEnforces EdgeType = "ENFORCES"
 )
 
+// EdgeTypeCallsAtRuntime is the F-204 OTel overlay's observed runtime
+// call edge (caller workload -> callee workload), inferred from OTLP
+// trace spans by the correlator (P5-T5).
+//
+// It is deliberately NOT a member of AllEdgeTypes and is never written
+// to the declarative graph store: runtime edges are an opt-in overlay
+// persisted to the Tier 2 otel_runtime_edges table and served ONLY by
+// GET /api/v1/otel/overlay. Keeping it off AllEdgeTypes is what keeps
+// /api/v1/graph and /api/v1alpha1/graph byte-identical to v1.4
+// (invariant 2.2) and keeps CALLS_AT_RUNTIME a distinct type from the
+// declarative ROUTES_TO (invariant 2.5): no extractor is registered
+// for it, cypher.go never stores it, and the OpenAPI edge-type enum
+// never lists it.
+const EdgeTypeCallsAtRuntime EdgeType = "CALLS_AT_RUNTIME"
+
 // AllEdgeTypes is the canonical edge-type list. Adding a new type
 // means: add the constant above, append to this slice, write an
 // extractor in pkg/extractor (or a Rego rule in

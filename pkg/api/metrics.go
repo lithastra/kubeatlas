@@ -236,6 +236,12 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, 
 		p("# HELP kubeatlas_otel_retention_deleted_total Expired spans deleted by the hourly retention worker.\n")
 		p("# TYPE kubeatlas_otel_retention_deleted_total counter\n")
 		p("kubeatlas_otel_retention_deleted_total %d\n", s.RetentionDeleted)
+		p("# HELP kubeatlas_otel_unmatched_spans_total Correlator call endpoints that could not be mapped to a graph resource.\n")
+		p("# TYPE kubeatlas_otel_unmatched_spans_total counter\n")
+		p("kubeatlas_otel_unmatched_spans_total %d\n", s.Unmatched)
+		p("# HELP kubeatlas_otel_runtime_edges_total CALLS_AT_RUNTIME overlay edges written by the correlator.\n")
+		p("# TYPE kubeatlas_otel_runtime_edges_total counter\n")
+		p("kubeatlas_otel_runtime_edges_total %d\n", s.RuntimeEdges)
 	}
 
 	// Phase 4 dynamic informer block — emitted only when main.go wired

@@ -5,8 +5,8 @@ package otel
 
 import "sync/atomic"
 
-// Metrics is the lock-free counter set the receiver and retention
-// worker update. It mirrors snapshot.Metrics — the hand-rolled
+// Metrics is the lock-free counter set the receiver, retention worker,
+// and correlator update. It mirrors snapshot.Metrics — the hand-rolled
 // pattern KubeAtlas uses instead of prometheus/client_golang for a
 // handful of counters.
 //
@@ -17,11 +17,15 @@ import "sync/atomic"
 //	kubeatlas_otel_dropped_total           spans dropped because the queue was full
 //	kubeatlas_otel_written_total           spans durably written to PostgreSQL
 //	kubeatlas_otel_retention_deleted_total spans deleted by the hourly retention sweep
+//	kubeatlas_otel_unmatched_spans_total   call endpoints the correlator could not map to a resource
+//	kubeatlas_otel_runtime_edges_total     runtime overlay edges written by the correlator
 type Metrics struct {
 	received         atomic.Uint64
 	dropped          atomic.Uint64
 	written          atomic.Uint64
 	retentionDeleted atomic.Uint64
+	unmatched        atomic.Uint64
+	runtimeEdges     atomic.Uint64
 }
 
 // NewMetrics returns a zero-valued counter set.
@@ -41,6 +45,14 @@ type MetricsSnapshot struct {
 	Written uint64
 	// RetentionDeleted counts spans removed by the hourly sweep.
 	RetentionDeleted uint64
+	// Unmatched counts correlator call endpoints that could not be
+	// resolved to a graph resource (a missing k8s.* attribute or a
+	// service with no matching workload). The correlator degrades on
+	// these rather than panicking (invariant 2.5).
+	Unmatched uint64
+	// RuntimeEdges counts CALLS_AT_RUNTIME overlay edges the correlator
+	// upserted into the Tier 2 otel_runtime_edges table.
+	RuntimeEdges uint64
 }
 
 // Snapshot copies the current values without locking.
@@ -50,6 +62,8 @@ func (m *Metrics) Snapshot() MetricsSnapshot {
 		Dropped:          m.dropped.Load(),
 		Written:          m.written.Load(),
 		RetentionDeleted: m.retentionDeleted.Load(),
+		Unmatched:        m.unmatched.Load(),
+		RuntimeEdges:     m.runtimeEdges.Load(),
 	}
 }
 
@@ -57,3 +71,5 @@ func (m *Metrics) addReceived(n uint64)         { m.received.Add(n) }
 func (m *Metrics) addDropped(n uint64)          { m.dropped.Add(n) }
 func (m *Metrics) addWritten(n uint64)          { m.written.Add(n) }
 func (m *Metrics) addRetentionDeleted(n uint64) { m.retentionDeleted.Add(n) }
+func (m *Metrics) addUnmatched(n uint64)        { m.unmatched.Add(n) }
+func (m *Metrics) addRuntimeEdges(n uint64)     { m.runtimeEdges.Add(n) }
