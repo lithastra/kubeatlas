@@ -142,6 +142,11 @@ const EDGE_STYLES: Record<string, EdgeStyleSpec> = {
   PROTECTS: { weight: 'light', dash: 'dotted', domain: 'policy', arrow: 'diamond' },
   BINDS_PLATFORM_IDENTITY: { weight: 'medium', dash: 'longShort', domain: 'federation', arrow: 'double-tri' },
   CRD_REF: { weight: 'light', dash: 'longDash', domain: 'structural', arrow: 'open' },
+  // F-204 observed runtime call (correlated from OTLP traces). Blue,
+  // dotted, and flowing so it reads as live, ephemeral traffic — apart
+  // from the amber declarative ROUTES_TO it is overlaid on top of. Never
+  // part of the declarative graph; only ever added by the OTel overlay.
+  CALLS_AT_RUNTIME: { weight: 'medium', dash: 'dotted', domain: 'runtime', arrow: 'filled-tri', flow: true },
 };
 
 const DEFAULT_EDGE_STYLE: EdgeStyleSpec = {

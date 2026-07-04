@@ -21,6 +21,9 @@ export interface AtlasEdgePalette {
   enforcement: string;
   storage: string;
   federation: string;
+  // F-204 observed runtime calls (CALLS_AT_RUNTIME). A distinct blue so
+  // the overlay reads apart from the amber declarative traffic edges.
+  runtime: string;
 }
 
 export interface AtlasPalette {
@@ -67,6 +70,7 @@ export const themePalettes = {
       enforcement: '#C0392B',
       storage: '#7A6B5A',
       federation: '#A14638',
+      runtime: '#2F6FB0',
     },
   },
   survey: {
@@ -94,6 +98,7 @@ export const themePalettes = {
       enforcement: '#CB3A2C',
       storage: '#5E6B78',
       federation: '#A8443B',
+      runtime: '#1F7BC0',
     },
   },
   terrain: {
@@ -121,6 +126,7 @@ export const themePalettes = {
       enforcement: '#BE3B2D',
       storage: '#6E6446',
       federation: '#9E4030',
+      runtime: '#2E86C1',
     },
   },
   ink: {
@@ -148,6 +154,7 @@ export const themePalettes = {
       enforcement: '#D14637',
       storage: '#56564E',
       federation: '#8E3826',
+      runtime: '#3B7DD8',
     },
   },
   slate: {
@@ -179,6 +186,7 @@ export const themePalettes = {
       enforcement: '#E2574A',
       storage: '#9A8B78',
       federation: '#C46857',
+      runtime: '#5DA0E0',
     },
   },
 } satisfies Record<string, AtlasPalette>;

@@ -371,5 +371,36 @@ func (s *Server) Routes() []RouteInfo {
 			Response: ResponseSpec{Description: "Federated graph view", SchemaRef: "FederatedView"},
 			handler:  s.handleFederationGraph,
 		},
+
+		// F-204 OpenTelemetry runtime overlay (P5-T6). v1-only — the
+		// v1alpha1 surface is frozen (invariant 2.2), and these routes
+		// carry the /api/v1/ prefix so registerRoutes and the OpenAPI
+		// generator bind them exactly once, never under v1alpha1. The
+		// overlay is Tier 2 + otel.enabled only; otherwise 503.
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/otel/traces",
+			Summary:     "Recent trace summaries",
+			Description: "Condenses recently received OTLP traces into per-trace summaries (services touched, span count, duration). KubeAtlas is not a trace viewer — it distils traces into a runtime-call topology; use Jaeger/Tempo for span-level inspection. Tier 2 + otel.enabled only — otherwise 503. v1-only (F-204).",
+			QueryParams: []ParamSpec{
+				{Name: "service", Description: "Filter to one service.name; empty = all services", Type: "string"},
+				{Name: "last", Description: "Recency window as a Go duration ('5m', '1h'); default 1h, max 24h", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Recent trace summaries"},
+			handler:  s.handleOtelTraces,
+		},
+		{
+			Method:      "GET",
+			Pattern:     "/api/v1/otel/overlay",
+			Summary:     "Observed runtime call overlay",
+			Description: "Returns the observed CALLS_AT_RUNTIME edges the correlator inferred from traces — the runtime call topology, layered over (never merged into) the declarative graph. With compare=true it classifies each pair against the namespace's declared ROUTES_TO edges as declared_only / observed_only / both (compare requires a namespace). Tier 2 + otel.enabled only — otherwise 503. v1-only (F-204).",
+			QueryParams: []ParamSpec{
+				{Name: "namespace", Description: "Restrict the overlay to one namespace; required when compare=true", Type: "string"},
+				{Name: "compare", Description: "Classify declared vs observed (declared_only/observed_only/both)", Type: "string", Enum: []string{"true", "false"}},
+				{Name: "last", Description: "Recency window as a Go duration ('5m', '1h'); default 1h, max 24h", Type: "string"},
+			},
+			Response: ResponseSpec{Description: "Runtime overlay edges (or the three-way comparison)"},
+			handler:  s.handleOtelOverlay,
+		},
 	}
 }
