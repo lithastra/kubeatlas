@@ -5,9 +5,48 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
-## [Unreleased]
+## [Unreleased] — v1.5: OpenTelemetry overlay, multi-cluster RBAC, GraphStore v2
 
-_(none yet)_
+v1.5 is a **non-breaking minor release**. The public HTTP API is only
+added to: `v1alpha1` stays byte-for-byte frozen (its `openapi-v1alpha1.json`
+is unchanged and it gains no `_sunset`), and `/api/v1/*` responses are
+unchanged. The internal "GraphStore v2" is an engineering interface
+version only — it does **not** bump the product version and there is no
+v2.0. Everything below is additive.
+
+### Added
+
+- **OpenTelemetry runtime overlay (F-204)** — an opt-in, Tier 2-only
+  observability overlay. A standalone OTLP/gRPC receiver (`:4317`,
+  drop-on-backpressure, zero overhead when disabled) persists trace
+  spans; a background correlator infers `CALLS_AT_RUNTIME` edges between
+  workloads (a distinct, overlay-only edge type — never part of the
+  declarative graph) and serves them at `GET /api/v1/otel/overlay`
+  (with `compare=true` for declared-vs-observed classification) and
+  `GET /api/v1/otel/traces`. Surfaced by a "Show OTel overlay" toggle in
+  the Web UI, a Headlamp OTel Overlay view, and a Backstage
+  runtime-calls card. New `/metrics`: `kubeatlas_otel_{received,dropped,
+  written,retention_deleted,unmatched_spans,runtime_edges}_total`.
+- **Read-side multi-cluster RBAC visibility (F-206)** — filter which
+  clusters a caller may see on the federation surface, keyed on its
+  bearer token (hashed in memory). Configured via
+  `multicluster.rbac.rules`; unconfigured leaves federation open to
+  every caller (v1.4 behaviour). Visibility only — no credential
+  fetch/rotation, no OIDC, no CRDs. An unknown/absent token is rejected
+  401/403, never shown an empty list.
+- **GraphStore v2 (internal)** — standardised store-interface verbs plus
+  `StoreVersion()`, exposed to operators as `graphstore_version` on
+  `GET /api/v1/info`. Purely internal debt cleanup; both `v1alpha1` and
+  `v1` responses are byte-identical to v1.4.
+- **Ecosystem parity** — the Headlamp plugin adds an OTel Overlay view
+  (+ TraceTimeline); the Backstage plugin reaches Headlamp parity with
+  an Admission-policies card (F-205) and a Runtime-calls card (F-204).
+
+### Notes
+
+- No breaking change; the only release point is minor v1.5.
+- `v1alpha1` is untouched — retiring it remains a deferred future
+  decision, not part of this release.
 
 ## [v1.4.0] — offline diagnostics, policy visibility, opt-in telemetry
 

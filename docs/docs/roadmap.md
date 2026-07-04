@@ -17,8 +17,8 @@ For the current state, see [What is KubeAtlas](./).
 plugins), v1.2 (offline rendering), and v1.3 (multi-cluster
 federation, platform-identity edges, cartography UI). **v1.4** adds
 offline diagnostics, Gatekeeper/Kyverno policy visibility, opt-in
-anonymous telemetry, and v1alpha1 usage tracking ahead of the
-eventual v2.0 removal. Install with
+anonymous telemetry, and v1alpha1 usage tracking that will inform a
+future decision on retiring v1alpha1. Install with
 `helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.4.0`
 — see the [Quick Start](./quick-start.md).
 
@@ -28,8 +28,8 @@ eventual v2.0 removal. Install with
 | **v0.1.0** (MVP) | ✅ Released | REST + WebSocket API, React/MUI Web UI with Cytoscape topology and Mermaid neighbour view, Helm Chart with secure defaults, Playwright E2E, multi-platform release. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:0.1.0`. |
 | **v1.0** | ✅ Released | Tier 2 persistence (PostgreSQL + Apache AGE), Rego rule packs, RBAC graph, blast radius, orphan + cycle detection, `/api/v1/*` GA, cert-manager TLS, OpenShift detector + embedded pack, chaos test suite. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.0.0`. |
 | **v1.1 / v1.2 / v1.3** | ✅ Released | Cloud rule packs, snapshots, search, plugins (v1.1). Offline `kubectl atlas`, graph-image export (v1.2). Multi-cluster federation, platform-identity edges, HPA support, GitHub Action, cartography Web UI redesign (v1.3). |
-| **v1.4 / v1.5 / v2.0** | 🚧 In progress | Offline diagnostic report, Gatekeeper/Kyverno policy visibility, opt-in anonymous telemetry, v1alpha1 usage counters (v1.4 — released). OTel runtime overlay and credential rotation (v1.5), GraphStore v2 and the v1alpha1 removal (v2.0) planned. |
-| **Beyond v2.0** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference. |
+| **v1.4 / v1.5** | 🚧 In progress | Offline diagnostic report, Gatekeeper/Kyverno policy visibility, opt-in anonymous telemetry, v1alpha1 usage counters (v1.4 — released). v1.5 (a non-breaking minor): OpenTelemetry runtime overlay (`CALLS_AT_RUNTIME`), read-side multi-cluster RBAC visibility, and an internal GraphStore v2 clean-up. `v1alpha1` stays frozen — there is no v2.0 on the committed roadmap. |
+| **Further out** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference; a possible future `v1alpha1` retirement (which would version a v2.0). |
 
 ## Related tools
 
@@ -279,7 +279,7 @@ Polish items deferred from v1.3.0, now shipped in v1.3.1:
   cytoscape zoom level today; the aggregated → expanded node
   split/merge with the design's 400ms FLIP choreography is queued.
 
-## v1.4 / v1.5 / v2.0 (in progress)
+## v1.4 / v1.5 (in progress)
 
 ### v1.4 (shipped) — offline diagnostics, policy visibility, telemetry
 
@@ -298,20 +298,37 @@ Polish items deferred from v1.3.0, now shipped in v1.3.1:
   endpoint, with a transparent `/api/v1/telemetry/preview` and a
   documented [trust contract](./concepts/telemetry-schema.md).
 - **v1alpha1 usage counters** — `kubeatlas_api_v1alpha1_requests_total`
-  vs `kubeatlas_api_v1_requests_total`, the data behind the v2.0
-  removal decision.
+  vs `kubeatlas_api_v1_requests_total`, the data that will inform a
+  future decision on retiring `v1alpha1`.
 - **Ecosystem** — Backstage plugin (v0.1), Headlamp Policy view, and
   a GitHub Action `policy-report` option.
 
-### Remaining (planned)
+### v1.5 (in progress) — OTel overlay, multi-cluster RBAC, GraphStore v2
 
-- **v1.5** — OpenTelemetry runtime overlay (observed
-  `CALLS_AT_RUNTIME` edges layered over the declarative graph),
-  multi-cluster credential rotation, and a `v1alpha1` sunset notice
-  in responses.
-- **v2.0** — a `GraphStore` v2 interface, and removal of the
-  `v1alpha1` API once the usage counters justify it (a tracked,
-  announced deprecation — not a surprise break).
+v1.5 is a deliberately **non-breaking minor release**. The public HTTP
+API is only added to, never changed: `v1alpha1` stays byte-for-byte
+frozen, and there is **no v2.0** on the committed roadmap.
+
+- **OpenTelemetry runtime overlay** (F-204) — observed
+  `CALLS_AT_RUNTIME` edges, correlated from OTLP traces and layered
+  over the declarative graph via `GET /api/v1/otel/overlay` (opt-in,
+  Tier 2 only). See [OpenTelemetry overlay](./concepts/otel-overlay.md).
+- **Read-side multi-cluster RBAC visibility** (F-206) — filter which
+  clusters a caller sees on the federation surface, keyed on its bearer
+  token. Visibility only — no credential fetch/rotation, no OIDC. See
+  [Multi-cluster & RBAC visibility](./installation/multicluster.md).
+- **Internal GraphStore v2** — a purely internal interface clean-up
+  (verb standardisation + a `StoreVersion` exposed on `/api/v1/info`),
+  invisible to the HTTP API. It ships **inside v1.5** and does not
+  imply a v2.0.
+
+### Deferred — future human decisions, not commitments
+
+- Retiring / removing the `v1alpha1` API — driven by the usage
+  counters, and only ever as a tracked, announced deprecation that
+  versions a v2.0. Not scheduled.
+- Multi-cluster credential auto-rotation, OIDC/SSO, and deeper
+  tenancy beyond read-side visibility.
 
 ## Beyond v2.0 (sketch)
 
