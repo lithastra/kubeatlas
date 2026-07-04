@@ -101,5 +101,11 @@
   "action": {
     "refresh": "Refresh",
     "openDetails": "Open details"
+  },
+  "otel": {
+    "overlay": {
+      "toggle": "OTel overlay",
+      "hint": "Overlay observed runtime calls (CALLS_AT_RUNTIME) inferred from OpenTelemetry traces. Requires otel.enabled on a Tier 2 server."
+    }
   }
 }

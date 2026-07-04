@@ -597,6 +597,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	}
 	var otelStarter componentStarter = noopStarter{}
 	var otelMetrics *otel.Metrics
+	var otelReader api.OtelReader
 	if otelCfg.Enabled {
 		if storeCfg.Backend != store.BackendPostgres {
 			slog.Warn("KUBEATLAS_OTEL_ENABLED set but backend is not postgres; " +
@@ -618,6 +619,8 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 			// ResourceLister) and writes runtime edges (pgStore) — never
 			// the critical path (invariant 2.5).
 			go otel.NewCorrelator(pgStore, graphStore, pgStore, otelCfg.Retention, otelMetrics).Start(ctx)
+			// Overlay read seam for /api/v1/otel/* (spans + runtime edges).
+			otelReader = pgStore
 			slog.Info("otel receiver started",
 				"addr", otelCfg.GRPCAddr, "retention", otelCfg.Retention)
 		}
@@ -694,6 +697,9 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	// cluster api.New rebuild below, which reuses this same slice.
 	if otelMetrics != nil {
 		apiOpts = append(apiOpts, api.WithOtelReceiverMetrics(otelMetrics))
+	}
+	if otelReader != nil {
+		apiOpts = append(apiOpts, api.WithOtelOverlay(otelReader))
 	}
 	// KUBEATLAS_API_ADDR overrides the default ":8080" listen address.
 	// The Helm chart never sets it (the Pod always serves :8080 on the

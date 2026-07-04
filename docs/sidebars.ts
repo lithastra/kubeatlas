@@ -19,6 +19,7 @@ const sidebars: SidebarsConfig = {
         'installation/openshift',
         'installation/cert-manager',
         'installation/eks',
+        'installation/otel-integration',
       ],
     },
     {
@@ -44,6 +45,7 @@ const sidebars: SidebarsConfig = {
         },
         'concepts/api-versioning',
         'concepts/snapshots',
+        'concepts/otel-overlay',
         'concepts/performance',
         'concepts/rule-pack-security',
       ],
