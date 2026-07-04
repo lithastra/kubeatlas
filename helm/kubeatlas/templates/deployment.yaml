@@ -145,6 +145,14 @@ spec:
             - name: KUBEATLAS_MULTICLUSTER_KUBECONFIG_DIR
               value: /etc/kubeatlas/multicluster
           {{- end }}
+          {{- if .Values.multicluster.rbac.rules }}
+            # F-206 read-side cluster visibility (P5-T7). The rules Secret
+            # (chart-rendered) maps bearer tokens to visible clusters; the
+            # process stores only their SHA-256 hashes. Filters the
+            # federation surface only — visibility, not credential auth.
+            - name: KUBEATLAS_MULTICLUSTER_RBAC_RULES_FILE
+              value: /etc/kubeatlas/rbac/rules.json
+          {{- end }}
           {{- if .Values.telemetry.enabled }}
             # Opt-in anonymous usage telemetry (default off). The receiver
             # endpoint is hard-coded in the binary and not configurable —
@@ -176,6 +184,11 @@ spec:
               mountPath: /etc/kubeatlas/multicluster
               readOnly: true
             {{- end }}
+            {{- if .Values.multicluster.rbac.rules }}
+            - name: rbac-rules
+              mountPath: /etc/kubeatlas/rbac
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
@@ -183,6 +196,11 @@ spec:
         - name: multicluster-kubeconfigs
           secret:
             secretName: {{ .Values.multicluster.kubeconfigSecret | quote }}
+        {{- end }}
+        {{- if .Values.multicluster.rbac.rules }}
+        - name: rbac-rules
+          secret:
+            secretName: {{ include "kubeatlas.fullname" . }}-rbac-rules
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
