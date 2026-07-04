@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { Alert, Box, CircularProgress } from '@mui/material';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Box, CircularProgress, FormControlLabel, Switch, Tooltip } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
 import { useFederationGraph } from '../api/federation';
 import { useGraph } from '../api/graph';
+import { useOtelOverlay } from '../api/otel';
+import { mergeOverlayEdges } from '../lib/overlay';
 import type { Level } from '../api/types';
 import { LabelFilter } from '../components/LabelFilter';
 import { LevelTabs } from '../components/LevelTabs';
@@ -36,6 +38,7 @@ export function TopologyPage() {
   const cluster = useClusterSelection();
   const [zoom, setZoom] = useState(1);
   const [edgePreset, setEdgePreset] = useState<EdgeFilterPreset>('all');
+  const [overlayOn, setOverlayOn] = useState(false);
   const controlsRef = useRef<TopologyControls | null>(null);
 
   // Fetch dispatch. Two paths share the same View shape so the rest
@@ -65,6 +68,20 @@ export function TopologyPage() {
       : { level: 'namespace' as const, namespace: namespace ?? undefined, labels: labelFilter };
   const localQuery = useGraph(params);
   const { data, isLoading, isError, error } = cluster.selected ? fedQuery : localQuery;
+
+  // F-204 OTel overlay. Namespace-scoped and single-cluster only — the
+  // correlator infers workload→workload runtime edges within a
+  // namespace, which only line up with nodes at the namespace level.
+  // The observed CALLS_AT_RUNTIME edges are layered onto the
+  // declarative view for rendering (mergeOverlayEdges is non-
+  // destructive; invariant 2.2 keeps them out of the graph proper).
+  const overlayActive = overlayOn && level === 'namespace' && Boolean(namespace) && !cluster.selected;
+  const overlayQuery = useOtelOverlay(namespace ?? '', overlayActive);
+  const viewData = useMemo(() => {
+    if (!data) return data;
+    if (overlayActive && overlayQuery.data) return mergeOverlayEdges(data, overlayQuery.data.edges);
+    return data;
+  }, [data, overlayActive, overlayQuery.data]);
 
   // Clear the right panel when leaving the topology page.
   useEffect(() => () => setContent(null), [setContent]);
@@ -133,6 +150,22 @@ export function TopologyPage() {
           {level === 'namespace' && <NamespacePicker />}
           <LabelFilter value={labelFilter} onChange={setLabelFilter} />
           <EdgeTypeFilter value={edgePreset} onChange={setEdgePreset} />
+          {level === 'namespace' && namespace && (
+            <Tooltip title={t('otel.overlay.hint')}>
+              <FormControlLabel
+                sx={{ ml: 0 }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={overlayOn}
+                    onChange={(e) => setOverlayOn(e.target.checked)}
+                    inputProps={{ 'aria-label': t('otel.overlay.toggle') }}
+                  />
+                }
+                label={t('otel.overlay.toggle')}
+              />
+            </Tooltip>
+          )}
         </Box>
       </Panel>
 
@@ -151,7 +184,7 @@ export function TopologyPage() {
       ) : (
         <>
           <TopologyView
-            view={data}
+            view={viewData}
             onSelect={handleSelect}
             onZoom={setZoom}
             onReady={(c) => {

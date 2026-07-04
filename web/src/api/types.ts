@@ -23,7 +23,11 @@ export type EdgeType =
   | 'SCALES'
   // Admission policy (Gatekeeper Constraint / Kyverno Policy) → the
   // resource it restricts.
-  | 'ENFORCES';
+  | 'ENFORCES'
+  // F-204 observed runtime call (caller workload → callee workload),
+  // correlated from OTLP traces. Overlay-only: it never appears in
+  // /api/v1/graph, solely in the GET /api/v1/otel/overlay response.
+  | 'CALLS_AT_RUNTIME';
 
 export interface ViewNode {
   id: string;
@@ -178,6 +182,33 @@ export interface DiffResult {
   added: DiffEntry[];
   removed: DiffEntry[];
   modified: DiffEntry[];
+}
+
+// --- OTel runtime overlay (F-204) -----------------------------------
+
+// OverlayEdge is one classified edge in the ?compare=true response:
+// declared_only / observed_only / both, with the observed call count.
+export interface OverlayEdge {
+  from: string;
+  to: string;
+  class: 'declared_only' | 'observed_only' | 'both';
+  callCount?: number;
+}
+
+// Body of GET /api/v1/otel/overlay (default, non-compare): the observed
+// CALLS_AT_RUNTIME edges only.
+export interface OtelOverlayResponse {
+  namespace: string;
+  edges: Edge[];
+  count: number;
+}
+
+// Body of GET /api/v1/otel/overlay?compare=true.
+export interface OtelOverlayCompareResponse {
+  namespace: string;
+  edges: OverlayEdge[];
+  summary: { declaredOnly: number; observedOnly: number; both: number };
+  count: number;
 }
 
 // --- Policy integration (F-205) -------------------------------------

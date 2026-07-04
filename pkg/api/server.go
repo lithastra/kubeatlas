@@ -73,6 +73,12 @@ type Server struct {
 	// otherwise so /metrics stays otel-block-free on a Tier 1 install.
 	otelMetrics *otel.Metrics
 
+	// otelReader backs the F-204 /api/v1/otel/* overlay endpoints
+	// (spans + correlated runtime edges). Wired via WithOtelOverlay only
+	// when the receiver is running (Tier 2 + otel.enabled); nil leaves
+	// the overlay endpoints returning 503 (invariant 2.2: Tier 2 only).
+	otelReader OtelReader
+
 	// telemetry backs the /api/v1/telemetry/* endpoints and the
 	// telemetry block on /metrics. Wired via WithTelemetry; nil leaves
 	// the endpoints reporting disabled.
@@ -181,6 +187,17 @@ func WithSnapshotMetrics(m *snapshot.Metrics, queueDepth func() int) ServerOptio
 func WithOtelReceiverMetrics(m *otel.Metrics) ServerOption {
 	return func(s *Server) {
 		s.otelMetrics = m
+	}
+}
+
+// WithOtelOverlay wires the F-204 overlay read seam (recent spans +
+// correlated runtime edges) that backs /api/v1/otel/traces and
+// /api/v1/otel/overlay. main.go passes the *postgres.Store only on a
+// Tier 2 install with otel.enabled; without it those endpoints return
+// 503 (invariant 2.2: the overlay is Tier 2 only).
+func WithOtelOverlay(r OtelReader) ServerOption {
+	return func(s *Server) {
+		s.otelReader = r
 	}
 }
 
