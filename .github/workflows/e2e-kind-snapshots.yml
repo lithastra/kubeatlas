@@ -64,9 +64,12 @@ jobs:
 
       - name: Build kubeatlas runtime image
         run: |
-          mkdir -p .docker-context
+          # The Dockerfile COPYs linux/${TARGETARCH}/kubeatlas (the layout
+          # goreleaser stages), so place the binary under linux/amd64/ in
+          # the build context rather than at its root.
+          mkdir -p .docker-context/linux/amd64
           cp Dockerfile .docker-context/
-          cp bin/kubeatlas .docker-context/
+          cp bin/kubeatlas .docker-context/linux/amd64/kubeatlas
           docker build -t kubeatlas:snapshots-test .docker-context
 
       - name: Load image into kind
