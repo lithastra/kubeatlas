@@ -1,0 +1,55 @@
+{
+  "$schema": "https://kubeatlas.lithastra.com/schemas/perf-baseline-v1.json",
+  "phase": "5-v1.5.0",
+  "fixture": {
+    "namespace": "petclinic-stress",
+    "approximate_resource_count": 1102,
+    "approximate_edge_count": 1200,
+    "samples_per_endpoint": 100
+  },
+  "description": "v1.5.0 perf baseline (P5-T9). Captured against the 1k stress fixture (1000 ConfigMaps + 100 Deployments, replicas=0, in the petclinic-stress namespace) on the Docker Desktop Kubernetes cluster (k8s v1.36.1) under WSL2. Tier 1 is the memory-backed v1.5 binary run locally against the cluster; Tier 2 is the same binary in postgres mode against a standalone apache/age:release_PG16_1.6.0 Postgres+AGE pod reached over kubectl port-forward (which adds per-round-trip WSL2 networking overhead). This baseline confirms the GraphStore v2 interface rename (P5-T1..T3) introduced no regression: both tiers meet every spec target with large headroom — Tier 2 cluster_view p95 ~29ms, namespace_view p95 ~39ms, blast_radius p95 ~4ms, all far under the 1000ms/500ms SLOs — and /api/v1/info reports graphstore_version=\"v2\" while migration 010 (otel_runtime_edges) and the otel_spans table applied cleanly to the AGE database. The OTel overlay (F-204) is not exercised here: correlation runs as a detached background job (<=1min cadence, off the request path — not a request-latency SLO), and the /api/v1/otel/overlay READ endpoint is a cheap Tier-2 gate (~3ms 503 when otel.enabled=false). NOTE: this is a 1k fixture, deliberately lighter than the v1.4 10k baseline to spare a local dev cluster — the numbers demonstrate SLO compliance and no v2-store regression, not a direct magnitude comparison to the v1.4 10k run; a 10k re-run belongs in CI / the release environment.",
+  "spec_targets": {
+    "_comment": "The v1.2 reclaimed SLOs, carried forward unchanged: cluster_view / namespace_view p95 <= 1000ms, blast_radius p95 <= 500ms. v1.5 meets them on both tiers with large headroom.",
+    "cluster_view_p50_ms": 500,
+    "cluster_view_p95_ms": 1000,
+    "namespace_view_p50_ms": 500,
+    "namespace_view_p95_ms": 1000,
+    "blast_radius_p95_ms": 500
+  },
+  "tier1": {
+    "cluster_view_p50_ms": 1.157,
+    "cluster_view_p95_ms": 1.704,
+    "cluster_view_p99_ms": 1.911,
+    "namespace_view_p50_ms": 3.696,
+    "namespace_view_p95_ms": 7.725,
+    "namespace_view_p99_ms": 8.881,
+    "blast_radius_p50_ms": 0.416,
+    "blast_radius_p95_ms": 0.656,
+    "blast_radius_p99_ms": 0.806,
+    "namespace_count": 7,
+    "captured_at": "2026-07-05T10:04:56+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.18.33.2-microsoft-standard-WSL2"
+    }
+  },
+  "tier2": {
+    "cluster_view_p50_ms": 24.576,
+    "cluster_view_p95_ms": 28.947,
+    "cluster_view_p99_ms": 30.413,
+    "namespace_view_p50_ms": 34.398,
+    "namespace_view_p95_ms": 39.190,
+    "namespace_view_p99_ms": 42.171,
+    "blast_radius_p50_ms": 2.760,
+    "blast_radius_p95_ms": 3.949,
+    "blast_radius_p99_ms": 4.520,
+    "namespace_count": 7,
+    "captured_at": "2026-07-05T10:08:12+09:00",
+    "captured_on": {
+      "os": "linux",
+      "arch": "x86_64",
+      "kernel": "6.18.33.2-microsoft-standard-WSL2"
+    }
+  }
+}
