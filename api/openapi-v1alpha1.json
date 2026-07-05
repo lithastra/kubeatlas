@@ -29,6 +29,15 @@
       },
       "CycleReport": {
         "properties": {
+          "category": {
+            "description": "Cycle shape classification. bootstrap-cert: 2-cycle where one member is a Secret owned by the other (cert-manager / CNPG / kyverno bootstrap pattern, benign). intentional: any member carries the kubeatlas.io/intentional-cycle=true annotation. unknown: every other cycle — verifiers and the GitHub Action treat this as actionable. Clients should treat unrecognised values as 'unknown'.",
+            "enum": [
+              "bootstrap-cert",
+              "intentional",
+              "unknown"
+            ],
+            "type": "string"
+          },
           "members": {
             "items": {
               "$ref": "#/components/schemas/Resource"
@@ -37,7 +46,8 @@
           }
         },
         "required": [
-          "members"
+          "members",
+          "category"
         ],
         "type": "object"
       },
@@ -59,8 +69,89 @@
         ],
         "type": "object"
       },
+      "DiffEntry": {
+        "properties": {
+          "eventType": {
+            "enum": [
+              "add",
+              "update",
+              "delete"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "namespace",
+          "kind",
+          "name",
+          "eventType",
+          "ts"
+        ],
+        "type": "object"
+      },
+      "DiffResult": {
+        "properties": {
+          "added": {
+            "items": {
+              "$ref": "#/components/schemas/DiffEntry"
+            },
+            "type": "array"
+          },
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "modified": {
+            "items": {
+              "$ref": "#/components/schemas/DiffEntry"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "items": {
+              "$ref": "#/components/schemas/DiffEntry"
+            },
+            "type": "array"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "added",
+          "removed",
+          "modified"
+        ],
+        "type": "object"
+      },
       "Edge": {
         "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Optional edge metadata. ENFORCES edges carry policy violation status (violated, violation_message); omitted when empty.",
+            "type": "object"
+          },
           "from": {
             "description": "Source resource id (namespace/kind/name).",
             "type": "string"
@@ -78,7 +169,8 @@
               "SELECTS",
               "USES_SERVICEACCOUNT",
               "ROUTES_TO",
-              "ATTACHED_TO"
+              "ATTACHED_TO",
+              "ENFORCES"
             ],
             "type": "string"
           }
@@ -133,6 +225,112 @@
         },
         "required": [
           "status"
+        ],
+        "type": "object"
+      },
+      "LabelStat": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "resourceCount": {
+            "type": "integer"
+          },
+          "valueCount": {
+            "description": "Distinct values seen; exceeds len(values) when the value list was capped.",
+            "type": "integer"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/LabelValue"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "resourceCount",
+          "valueCount"
+        ],
+        "type": "object"
+      },
+      "LabelValue": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ],
+        "type": "object"
+      },
+      "LabelsResponse": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/LabelStat"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "labels",
+          "count"
+        ],
+        "type": "object"
+      },
+      "NetworkPolicyAllowGraphResponse": {
+        "properties": {
+          "allowFrom": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array"
+          },
+          "allowTo": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array"
+          },
+          "networkPolicy": {
+            "$ref": "#/components/schemas/Resource"
+          }
+        },
+        "required": [
+          "networkPolicy",
+          "allowFrom",
+          "allowTo"
+        ],
+        "type": "object"
+      },
+      "NetworkPolicySelectedResponse": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "networkPolicy": {
+            "$ref": "#/components/schemas/Resource"
+          },
+          "selected": {
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "networkPolicy",
+          "selected",
+          "count"
         ],
         "type": "object"
       },
@@ -383,12 +581,101 @@
           },
           "truncated": {
             "type": "boolean"
+          },
+          "warning": {
+            "description": "Present when search ran as an unindexed Tier 1 linear scan.",
+            "type": "string"
           }
         },
         "required": [
           "matches",
           "total",
           "truncated"
+        ],
+        "type": "object"
+      },
+      "SnapshotListResponse": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "snapshots": {
+            "items": {
+              "$ref": "#/components/schemas/SnapshotMeta"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "snapshots",
+          "count"
+        ],
+        "type": "object"
+      },
+      "SnapshotMeta": {
+        "properties": {
+          "clusterId": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer"
+          },
+          "edgeCount": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "resourceCount": {
+            "type": "integer"
+          },
+          "trigger": {
+            "enum": [
+              "periodic",
+              "manual",
+              "startup"
+            ],
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ts",
+          "resourceCount",
+          "edgeCount",
+          "durationMs",
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "SnapshotTriggerResponse": {
+        "properties": {
+          "durationMs": {
+            "type": "integer"
+          },
+          "edgeCount": {
+            "type": "integer"
+          },
+          "resourceCount": {
+            "type": "integer"
+          },
+          "trigger": {
+            "enum": [
+              "periodic",
+              "manual"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger",
+          "resourceCount",
+          "edgeCount",
+          "durationMs"
         ],
         "type": "object"
       },
@@ -521,6 +808,40 @@
   },
   "openapi": "3.0.3",
   "paths": {
+    "/api/_internal/snapshot/trigger": {
+      "post": {
+        "description": "Writes one snapshot_meta row anchoring the diff endpoint to a known full-sync point. Internal: served only on the ClusterIP Service, never exposed through Ingress. The F-111 CronJob is the intended caller. P3-T4 (F-111).",
+        "operationId": "post_api__internal_snapshot_trigger",
+        "parameters": [
+          {
+            "description": "Marker kind: periodic (CronJob) or manual (operator). Defaults to manual.",
+            "in": "query",
+            "name": "trigger",
+            "required": false,
+            "schema": {
+              "enum": [
+                "periodic",
+                "manual"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotTriggerResponse"
+                }
+              }
+            },
+            "description": "Snapshot marker recorded"
+          }
+        },
+        "summary": "Record a full-sync snapshot marker"
+      }
+    },
     "/api/v1alpha1/blast-radius/{namespace}/{kind}/{name}": {
       "get": {
         "description": "Returns every resource reachable by walking incoming edges from the target — i.e. everything that would be impacted if this resource were deleted or broken. Use the underscore '_' as namespace for cluster-scoped resources. P2-T15 (F-110).",
@@ -673,6 +994,72 @@
         "summary": "Strongly connected components of size \u003e= 2"
       }
     },
+    "/api/v1alpha1/export": {
+      "get": {
+        "description": "Server-side renders the dependency graph to SVG or PNG via Graphviz. Optional `namespace` narrows the view; the whole-cluster render is refused past 1000 nodes (413). Concurrency-limited (429 when busy); 503 when the renderer is unavailable. P3-T14 (F-115).",
+        "operationId": "get_api_v1alpha1_export",
+        "parameters": [
+          {
+            "description": "Image format; defaults to svg",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "enum": [
+                "svg",
+                "png"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Restrict the render to one namespace; empty = whole cluster",
+            "in": "query",
+            "name": "namespace",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rendered SVG or PNG image"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Render a cluster or namespace view as an image"
+      }
+    },
     "/api/v1alpha1/graph": {
       "get": {
         "description": "Returns an aggregated View at one of four levels: cluster, namespace, workload, resource. Workload and resource scopes require namespace+kind+name; namespace requires namespace.",
@@ -764,6 +1151,191 @@
           }
         },
         "summary": "Graph at a given level"
+      }
+    },
+    "/api/v1alpha1/labels": {
+      "get": {
+        "description": "Returns every label key present on any resource, how many resources carry it, and its most common values (capped per key). Powers the 'group by label' picker. P3-T9 (F-114).",
+        "operationId": "get_api_v1alpha1_labels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsResponse"
+                }
+              }
+            },
+            "description": "Label key statistics"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Label keys and their value distribution"
+      }
+    },
+    "/api/v1alpha1/networkpolicy/{namespace}/{name}/allow-graph": {
+      "get": {
+        "description": "Returns the ALLOWS_FROM (spec.ingress[].from[]) and ALLOWS_TO (spec.egress[].to[]) targets — Pods, workloads, and Namespaces the policy declares as permitted peers. Declarative topology only; reflects the spec, not CNI enforcement. P3-T1 (F-109).",
+        "operationId": "get_api_v1alpha1_networkpolicy_namespace_name_allow-graph",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "NetworkPolicy name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkPolicyAllowGraphResponse"
+                }
+              }
+            },
+            "description": "Allow-from / allow-to subgraph"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Declared ingress sources and egress destinations of a NetworkPolicy"
+      }
+    },
+    "/api/v1alpha1/networkpolicy/{namespace}/{name}/selected": {
+      "get": {
+        "description": "Returns every Pod (and Pod-template-carrying workload) in the policy's namespace that spec.podSelector matches, resolved from the SELECTS_NP edges. P3-T1 (F-109).",
+        "operationId": "get_api_v1alpha1_networkpolicy_namespace_name_selected",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "namespace",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "NetworkPolicy name",
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkPolicySelectedResponse"
+                }
+              }
+            },
+            "description": "Selected pods"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Pods a NetworkPolicy's podSelector selects"
       }
     },
     "/api/v1alpha1/openapi.json": {
@@ -1298,11 +1870,11 @@
     },
     "/api/v1alpha1/search": {
       "get": {
-        "description": "Linear case-insensitive scan over kind / name / namespace / labels. Phase 2 (v1.0) replaces this with an inverted index.",
+        "description": "Ranked full-text search over name / kind / namespace / label values. On Tier 2 it runs as one GIN-indexed tsvector match; on Tier 1 it is a linear scan and the response carries a warning. P3-T8 (F-113).",
         "operationId": "get_api_v1alpha1_search",
         "parameters": [
           {
-            "description": "Search term (case-insensitive)",
+            "description": "Free-text terms plus optional kind:/namespace: filter tokens, e.g. 'customers kind:Pod'",
             "in": "query",
             "name": "q",
             "required": true,
@@ -1362,7 +1934,134 @@
             "description": "Internal server error"
           }
         },
-        "summary": "Substring search across resources"
+        "summary": "Full-text search across resources"
+      }
+    },
+    "/api/v1alpha1/snapshots": {
+      "get": {
+        "description": "Returns every snapshot_meta marker, most-recent first. Tier 2 only — a Tier 1 install (or snapshots.enabled=false) returns 503. P3-T5 (F-111).",
+        "operationId": "get_api_v1alpha1_snapshots",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotListResponse"
+                }
+              }
+            },
+            "description": "Snapshot markers"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "List recorded full-sync snapshot markers"
+      }
+    },
+    "/api/v1alpha1/snapshots/diff": {
+      "get": {
+        "description": "Returns resources added / removed / modified between `from` and `to`. Times accept 'now', a duration ('5m'/'1h'/'7d', read as ago), or RFC3339. The window may not exceed the retention limit. Tier 2 only — Tier 1 returns 503. P3-T5 (F-111).",
+        "operationId": "get_api_v1alpha1_snapshots_diff",
+        "parameters": [
+          {
+            "description": "Window start: 'now', a duration ('5m'), or RFC3339",
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Window end; defaults to 'now'",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Restrict the diff to one namespace; empty = whole cluster",
+            "in": "query",
+            "name": "namespace",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiffResult"
+                }
+              }
+            },
+            "description": "Diff result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request (missing or malformed parameters)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Resource changes across a time window"
       }
     },
     "/api/v1alpha1/watch": {
