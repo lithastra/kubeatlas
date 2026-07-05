@@ -56,11 +56,13 @@ jobs:
 
       - name: Build kubeatlas binary (CGO_ENABLED=0)
         run: |
-          mkdir -p web/dist
+          mkdir -p cmd/kubeatlas/web/dist
           # Empty index.html keeps the embed_web build tag happy on
           # this Tier 2 verifier path; the e2e-kind PR-gating job
-          # already exercises the real Web UI bundle.
-          echo '<html><body>tier2 placeholder</body></html>' > web/dist/index.html
+          # already exercises the real Web UI bundle. The //go:embed
+          # directive is package-relative, so the placeholder must live
+          # under cmd/kubeatlas/web/dist (not the repo root).
+          echo '<html><body>tier2 placeholder</body></html>' > cmd/kubeatlas/web/dist/index.html
           CGO_ENABLED=0 go build \
             -tags embed_web \
             -o bin/kubeatlas ./cmd/kubeatlas
