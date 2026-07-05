@@ -110,8 +110,8 @@ jobs:
       - name: Build kubeatlas binary (CGO_ENABLED=0)
         if: steps.check-secret.outputs.skip != 'true'
         run: |
-          mkdir -p web/dist
-          echo '<html><body>crc placeholder</body></html>' > web/dist/index.html
+          mkdir -p cmd/kubeatlas/web/dist
+          echo '<html><body>crc placeholder</body></html>' > cmd/kubeatlas/web/dist/index.html
           CGO_ENABLED=0 go build \
             -tags embed_web \
             -o bin/kubeatlas ./cmd/kubeatlas
