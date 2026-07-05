@@ -15,7 +15,10 @@
 -- on the timestamps, GREATEST on call_count). The row set is bounded by
 -- the number of distinct resource pairs, so the retention DELETE is
 -- unbounded (unlike the batched otel_spans sweep).
-CREATE TABLE otel_runtime_edges (
+-- unqualified CREATE TABLE would land in ag_catalog instead of public
+-- under the AGE search_path (see 009); qualify + IF NOT EXISTS so the
+-- migration is idempotent on re-apply (TestMigrate_FromVersionZero).
+CREATE TABLE IF NOT EXISTS public.otel_runtime_edges (
     from_id      TEXT NOT NULL,
     to_id        TEXT NOT NULL,
     from_service TEXT NOT NULL DEFAULT '',
@@ -28,6 +31,6 @@ CREATE TABLE otel_runtime_edges (
 );
 
 -- Overlay queries filter by namespace and a last_seen recency floor.
-CREATE INDEX idx_otel_runtime_edges_ns ON otel_runtime_edges (namespace, last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_otel_runtime_edges_ns ON public.otel_runtime_edges (namespace, last_seen DESC);
 -- Retention prunes on last_seen.
-CREATE INDEX idx_otel_runtime_edges_last_seen ON otel_runtime_edges (last_seen);
+CREATE INDEX IF NOT EXISTS idx_otel_runtime_edges_last_seen ON public.otel_runtime_edges (last_seen);
