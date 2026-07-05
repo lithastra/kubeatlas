@@ -78,7 +78,7 @@ func (s *Store) WriteSpans(ctx context.Context, spans []graph.Span) error {
 		)
 	}
 	br := s.pool.SendBatch(ctx, batch)
-	defer br.Close()
+	defer func() { _ = br.Close() }()
 	for i := 0; i < len(spans); i++ {
 		if _, err := br.Exec(); err != nil {
 			return fmt.Errorf("postgres.WriteSpans: insert span %s: %w", spans[i].SpanID, err)
@@ -205,7 +205,7 @@ func (s *Store) UpsertRuntimeEdges(ctx context.Context, edges []graph.RuntimeEdg
 		)
 	}
 	br := s.pool.SendBatch(ctx, batch)
-	defer br.Close()
+	defer func() { _ = br.Close() }()
 	for i := 0; i < len(edges); i++ {
 		if _, err := br.Exec(); err != nil {
 			return fmt.Errorf("postgres.UpsertRuntimeEdges: upsert %s->%s: %w", edges[i].FromID, edges[i].ToID, err)
