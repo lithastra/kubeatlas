@@ -52,8 +52,14 @@ jobs:
       - name: Install Traefik
         run: |
           helm repo add traefik https://traefik.github.io/charts
+          # Don't use helm --wait here: the Traefik chart's Service is
+          # type LoadBalancer, and in kind (no LB provider) it never gets
+          # an ingress IP, so --wait blocks the full timeout. Mirror the
+          # Envoy Gateway step above — install, then wait on the workload.
           helm install traefik traefik/traefik \
-            -n traefik --create-namespace --wait --timeout 5m
+            -n traefik --create-namespace
+          kubectl wait --for=condition=Available --timeout=300s \
+            -n traefik deploy/traefik
 
       - name: Apply PetClinic fixture
         run: bash test/petclinic/run.sh base
