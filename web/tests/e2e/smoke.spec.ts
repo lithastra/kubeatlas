@@ -73,17 +73,17 @@ test.describe('KubeAtlas smoke', () => {
     const grid = page.getByRole('grid');
     await expect(grid).toBeVisible();
 
-    // Bump the customers Deployment by one replica. The informer
-    // should fire a GraphUpdate; the resource table re-fetches and
-    // the DataGrid re-renders. We can't easily diff replica counts
-    // from the table (no replicas column in v0.1.0), so we assert
-    // the grid stays populated and the page hasn't errored — the
-    // real WS-vs-HTTP correctness test lives in
-    // pkg/api/websocket_test.go.
-    kubectl('-n', NAMESPACE, 'scale', 'deploy/customers', '--replicas=2');
+    // Bump the api Deployment (the one workload the petclinic base
+    // fixture ships) by one replica. The informer should fire a
+    // GraphUpdate; the resource table re-fetches and the DataGrid
+    // re-renders. We can't easily diff replica counts from the table
+    // (no replicas column in v0.1.0), so we assert the grid stays
+    // populated and the page hasn't errored — the real WS-vs-HTTP
+    // correctness test lives in pkg/api/websocket_test.go.
+    kubectl('-n', NAMESPACE, 'scale', 'deploy/api', '--replicas=2');
     await page.waitForTimeout(2000);
     await expect(grid).toBeVisible();
     await expect(page.getByText('failed', { exact: false })).toHaveCount(0);
-    kubectl('-n', NAMESPACE, 'scale', 'deploy/customers', '--replicas=1');
+    kubectl('-n', NAMESPACE, 'scale', 'deploy/api', '--replicas=1');
   });
 });
