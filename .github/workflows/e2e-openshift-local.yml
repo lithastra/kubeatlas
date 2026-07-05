@@ -120,9 +120,12 @@ jobs:
         if: steps.check-secret.outputs.skip != 'true'
         run: |
           eval "$(crc oc-env)"
-          mkdir -p .docker-context
+          # The Dockerfile COPYs linux/${TARGETARCH}/kubeatlas (the layout
+          # goreleaser stages), so place the binary under linux/amd64/ in
+          # the build context rather than at its root.
+          mkdir -p .docker-context/linux/amd64
           cp Dockerfile .docker-context/
-          cp bin/kubeatlas .docker-context/
+          cp bin/kubeatlas .docker-context/linux/amd64/kubeatlas
           oc registry login --insecure=true || true
           REGISTRY="$(oc registry info --internal)"
           IMAGE="${REGISTRY}/${KUBEATLAS_NAMESPACE}/kubeatlas:crc-test"
