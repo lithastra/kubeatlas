@@ -787,7 +787,8 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		dynMgr := discovery.NewDynamicInformerManager(
 			client.Dynamic(), discovery.WithDynamicMetrics(dynMetrics),
 		)
-		gkStarter = gatekeeper.New(client.Dynamic(), graphStore, extractor.Default(), dynMgr)
+		gkStarter = gatekeeper.New(client.Dynamic(), graphStore, extractor.Default(), dynMgr,
+			gatekeeper.WithDiscovery(discovery.NewDiscoveryFromClient(client)))
 	}
 	if mcMgr != nil {
 		// Re-bind srv with the cluster lister now that mcMgr exists.

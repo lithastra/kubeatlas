@@ -42,6 +42,16 @@ v2.0. Everything below is additive.
   (+ TraceTimeline); the Backstage plugin reaches Headlamp parity with
   an Admission-policies card (F-205) and a Runtime-calls card (F-204).
 
+### Fixed
+
+- Gatekeeper discovery no longer floods the logs on clusters without OPA
+  Gatekeeper installed. The `ConstraintTemplate` informer is now gated on
+  its CRD being served — re-checked each resync period, so a later
+  Gatekeeper install is still picked up — instead of spinning the
+  client-go reflector on "the server could not find the requested
+  resource". (Pre-existing v1.4 behaviour; no change where Gatekeeper is
+  present.)
+
 ### Notes
 
 - No breaking change; the only release point is minor v1.5.
