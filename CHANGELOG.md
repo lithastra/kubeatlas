@@ -5,7 +5,7 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
-## [Unreleased] — v1.5: OpenTelemetry overlay, multi-cluster RBAC, GraphStore v2
+## [v1.5.0] — OpenTelemetry overlay, multi-cluster RBAC, GraphStore v2
 
 v1.5 is a **non-breaking minor release**. The public HTTP API is only
 added to: `v1alpha1` stays byte-for-byte frozen (its `openapi-v1alpha1.json`
