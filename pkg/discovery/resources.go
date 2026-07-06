@@ -115,6 +115,15 @@ func FilterAvailableGVRs(ctx context.Context, dc discovery.DiscoveryInterface, w
 	return out, nil
 }
 
+// GroupVersionAvailable reports whether the apiserver serves gv. It is
+// the exported form of the internal probe FilterAvailableGVRs uses, for
+// optional components (e.g. gatekeeper.Discovery) that gate an informer
+// on its operator's CRD being installed — so a cluster without that
+// operator stays quiet instead of spinning a doomed watch.
+func GroupVersionAvailable(ctx context.Context, dc discovery.DiscoveryInterface, gv schema.GroupVersion) (bool, error) {
+	return groupVersionAvailable(ctx, dc, gv)
+}
+
 // groupVersionAvailable reports whether the apiserver advertises the
 // given GroupVersion. Uses ServerResourcesForGroupVersion which is the
 // cheapest path that distinguishes "absent" from "transient error".
