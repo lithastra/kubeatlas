@@ -264,10 +264,21 @@ heavy_checks() {
 
   step "[heavy] perf regression vs v1.5 baseline"
   if [[ -f "${REPO_ROOT}/test/verify/perf-baseline-v1.5.json" ]]; then
-    bash "${REPO_ROOT}/test/verify/perf-regression.sh" \
-      "${REPO_ROOT}/test/verify/perf-baseline-v1.5.json" \
-      || fail "perf regression gate failed"
-    pass "perf within v1.5 baseline"
+    # perf-regression.sh selects baselines via $BASELINES (names resolved
+    # relative to test/verify), not a positional arg. Its exit codes are
+    # 0 = within budget, 1 = nothing to compare (no captured current run —
+    # the normal state for a local gate run; the real 10k comparison runs
+    # in CI), 2 = a genuine regression. Map 1 to a skip so a bare local
+    # run passes, exactly as the chaos check above degrades.
+    local rc=0
+    BASELINES=perf-baseline-v1.5.json \
+      bash "${REPO_ROOT}/test/verify/perf-regression.sh" || rc=$?
+    case "${rc}" in
+      0) pass "perf within v1.5 baseline" ;;
+      1) skip "[heavy] perf: no current run to compare — capture one with test/perf/bench-v1.sh (KUBEATLAS_BASELINE_OUT=/tmp/perf-current-v1.5.json); the 10k gate runs in CI" ;;
+      2) fail "perf regression detected vs v1.5 baseline" ;;
+      *) fail "perf regression gate errored (rc=${rc})" ;;
+    esac
   else
     skip "[heavy] no perf-baseline-v1.5.json yet (P5-T9)"
   fi
