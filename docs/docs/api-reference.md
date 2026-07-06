@@ -60,6 +60,21 @@ Prometheus text exposition. Hand-rolled (no client_golang
 dependency); covers goroutine count, informer sync state, and
 request counts by method and status. `Content-Type: text/plain`.
 
+### `GET /api/v1/info`
+
+Server build metadata plus the internal GraphStore interface
+version. v1-only (not part of the frozen v1alpha1 surface).
+
+```json
+{ "version": "v1.5.0", "commit": "…", "build_date": "…", "graphstore_version": "v2" }
+```
+
+`graphstore_version` reports the internal GraphStore *engineering*
+interface version (currently `v2`) — deliberately distinct from the
+product/release version and from the HTTP API versions
+(`v1alpha1`/`v1`); bumping it carries no public-API or release
+meaning.
+
 ## Graph queries
 
 ### `GET /api/v1/graph`

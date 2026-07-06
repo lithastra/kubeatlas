@@ -29,6 +29,16 @@ the tools above instead of replacing them.
 
 ## Project status
 
+**v1.5.0.** A non-breaking minor: an opt-in OpenTelemetry runtime
+overlay (`GET /api/v1/otel/overlay`, Tier 2, observed
+`CALLS_AT_RUNTIME` edges layered over the declarative graph);
+read-side multi-cluster RBAC visibility (F-206) keyed on a hashed
+bearer token, open when unconfigured; and an internal GraphStore v2
+that surfaces `graphstore_version` on `GET /api/v1/info` while
+leaving the public HTTP API unchanged and `v1alpha1` frozen. A
+Headlamp **OTel Overlay** view and the Backstage plugin at Headlamp
+parity ship alongside.
+
 **v1.4.0.** A self-contained offline diagnostic
 report (`kubeatlas diagnose`, HTML/JSON, for air-gapped audits and
 CI), policy visibility (Gatekeeper Constraints and Kyverno policies

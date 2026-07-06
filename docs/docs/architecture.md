@@ -140,12 +140,12 @@ materialising the full graph in the browser.
 ### Graph analysis (`pkg/graph/analysis`)
 
 Three composed queries that share the `Direction` enum on the
-`GraphStore.Traverse` interface method:
+`GraphStore.ListReachable` interface method:
 
-- **Blast radius** — `Traverse(Direction=Incoming, MaxDepth=5)`
+- **Blast radius** — `ListReachable(Direction=Incoming, MaxDepth=5)`
   returns the transitive set of resources affected by a target.
   See [Blast radius](./concepts/blast-radius.md).
-- **Orphans** — `Snapshot` + per-resource `ListIncoming`, applying
+- **Orphans** — `Snapshot` + per-resource `ListEdges(…, DirectionIncoming)`, applying
   the top-level whitelist + standalone-Pod special case.
 - **Cycles** — Tarjan's SCC on the edges table; returns every SCC
   of size ≥ 2.
