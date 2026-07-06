@@ -27,10 +27,37 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**v1.4.0 is out.** Earlier releases shipped v1.1 (rule packs and
-plugins), v1.2 (offline rendering), and v1.3 (multi-cluster
-federation, platform identity, cartography Web UI). v1.4 adds offline
-diagnostics, admission-policy visibility, and opt-in telemetry.
+**v1.5.0 is out.** Earlier releases shipped v1.1 (rule packs and
+plugins), v1.2 (offline rendering), v1.3 (multi-cluster
+federation, platform identity, cartography Web UI), and v1.4
+(offline diagnostics, admission-policy visibility, opt-in
+telemetry). v1.5 is a non-breaking minor: an opt-in OpenTelemetry
+runtime overlay, read-side multi-cluster RBAC visibility, an
+internal GraphStore v2, and the Backstage plugin reaching GA at
+Headlamp parity.
+
+**v1.5.0 — runtime observability overlay, multi-cluster RBAC visibility, GraphStore v2**:
+
+- **OpenTelemetry runtime overlay** (F-204) — an opt-in `:4317`
+  OTLP/gRPC receiver ingests spans; the correlator infers
+  `CALLS_AT_RUNTIME` edges layered over the declarative graph.
+  `GET /api/v1/otel/overlay` (add `?compare=true` to diff observed
+  vs declared) and `GET /api/v1/otel/traces` back a Web UI toggle,
+  a Headlamp **OTel view** with a TraceTimeline, and a Backstage
+  runtime-calls card. New `kubeatlas_otel_*` metrics.
+- **Read-side multi-cluster RBAC visibility** (F-206) —
+  `multicluster.rbac.rules` scope which clusters a caller sees on
+  the federation surface, keyed on a hashed bearer token. An
+  unknown or absent token gets `401` / `403`; the surface stays
+  open when unconfigured.
+- **Internal GraphStore v2** — a purely internal store-interface
+  clean-up. `StoreVersion()` surfaces as `graphstore_version` on
+  `GET /api/v1/info`; the `v1alpha1` and `v1` HTTP surfaces stay
+  byte-identical to v1.4. It ships inside v1.5 — there is no v2.0.
+- **Ecosystem parity** — the Headlamp plugin (v1.2.0) adds the OTel
+  view; the Backstage plugin reaches v1.0.0 GA at Headlamp parity,
+  with an Admission-policies card (F-205) and a Runtime-calls card
+  (F-204).
 
 **v1.4.0 — offline diagnostics, policy visibility, telemetry**:
 
@@ -138,7 +165,7 @@ to a running UI):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.4.0 \
+  --version 1.5.0 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
@@ -149,7 +176,7 @@ Tier 2 + cert-manager TLS (production-shaped install):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.4.0 \
+  --version 1.5.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \
@@ -226,10 +253,11 @@ We welcome contributions. See [CONTRIBUTING.md](./CONTRIBUTING.md) and the
 [Code of Conduct](./CODE_OF_CONDUCT.md). Look for issues tagged
 [`good first issue`](https://github.com/lithastra/kubeatlas/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 
-More is planned — v1.5 adds a runtime observability overlay and v2.0
-retires the `v1alpha1` surface; cloud-resource integration and
-third-party platform deep-dives are on the list. Direction is
-tracked at [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
+More is planned — v1.5 shipped a runtime observability overlay;
+cloud-resource integration and third-party platform deep-dives are
+on the list. `v1alpha1` stays frozen, and any eventual retirement is
+a deferred, unscheduled decision — there is no committed v2.0.
+Direction is tracked at [the roadmap](https://docs.kubeatlas.lithastra.com/roadmap).
 
 ## Support the project
 
