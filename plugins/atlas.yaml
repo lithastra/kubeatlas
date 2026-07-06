@@ -12,7 +12,7 @@ kind: Plugin
 metadata:
   name: atlas
 spec:
-  version: v1.4.0
+  version: v1.5.0
   homepage: https://github.com/lithastra/kubeatlas
   shortDescription: Visualize Kubernetes resource dependencies
   description: |
@@ -45,31 +45,31 @@ spec:
   platforms:
     - selector:
         matchLabels: { os: linux, arch: amd64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.4.0/kubectl-atlas_1.4.0_linux_amd64.tar.gz
-      sha256: "4968767c96681d6e27965ed27ddac39f2ceb9e7102cd90b4b6e0153c6d77f740"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.5.0/kubectl-atlas_1.5.0_linux_amd64.tar.gz
+      sha256: "ca64adcf3d56d66ac0019bcb90ef291ba8109e7e21017ad2cdc6066855707df6"
       bin: kubectl-atlas
     - selector:
         matchLabels: { os: linux, arch: arm64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.4.0/kubectl-atlas_1.4.0_linux_arm64.tar.gz
-      sha256: "7b691b26afd4a31b9039f3666458b3e1d1da71009551dbfc916c5a3d2ef27f91"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.5.0/kubectl-atlas_1.5.0_linux_arm64.tar.gz
+      sha256: "0fe4b2b356f6601e1c4a7aa75505ac8f963be3f5ad69935e4bca4f6b14ecb230"
       bin: kubectl-atlas
     - selector:
         matchLabels: { os: darwin, arch: amd64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.4.0/kubectl-atlas_1.4.0_darwin_amd64.tar.gz
-      sha256: "2e688175cb56034b99a2d25c9cbb2db81e691eec406177c1df219d7035fa6fdb"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.5.0/kubectl-atlas_1.5.0_darwin_amd64.tar.gz
+      sha256: "5f5ff4218108ff5893410bbc162cf06aa924839bd14aa3aeda721bf2379b9a67"
       bin: kubectl-atlas
     - selector:
         matchLabels: { os: darwin, arch: arm64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.4.0/kubectl-atlas_1.4.0_darwin_arm64.tar.gz
-      sha256: "b06708cf1b649c6cb036aea2a4da2db8985c65234130aa8c40d1f1ff7d074d3f"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.5.0/kubectl-atlas_1.5.0_darwin_arm64.tar.gz
+      sha256: "19e6e10052f6120af2349b05f3c690058b5c616c74cba55c33403e3c1a0e7e0e"
       bin: kubectl-atlas
     - selector:
         matchLabels: { os: windows, arch: amd64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.4.0/kubectl-atlas_1.4.0_windows_amd64.tar.gz
-      sha256: "632274c656069a865c5e8276f19a7e0279f7d759125816b3cbd13c31bcc61e64"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.5.0/kubectl-atlas_1.5.0_windows_amd64.tar.gz
+      sha256: "2f04a168e6f2ac10ae11040b34bf77094f0f0b18ac2115645be419d955ae8f09"
       bin: kubectl-atlas.exe
     - selector:
         matchLabels: { os: windows, arch: arm64 }
-      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.4.0/kubectl-atlas_1.4.0_windows_arm64.tar.gz
-      sha256: "324e7d60323e024a75e62cc75b6d4beb2181ccd3d3fbb73fde0b2c574d6d8a80"
+      uri: https://github.com/lithastra/kubeatlas/releases/download/v1.5.0/kubectl-atlas_1.5.0_windows_arm64.tar.gz
+      sha256: "eb14824fabd9e1d643c374c9074b6f640287fdae25ce3fe11f41bd2281fe6429"
       bin: kubectl-atlas.exe
