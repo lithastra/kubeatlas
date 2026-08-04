@@ -165,7 +165,7 @@ to a running UI):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.0 \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
@@ -175,8 +175,15 @@ kubectl -n kubeatlas port-forward svc/kubeatlas 8080:80
 Tier 2 + cert-manager TLS (production-shaped install):
 
 ```bash
+helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+helm repo update
+helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
+  --version 0.22.1 \
+  --namespace cnpg-system --create-namespace \
+  --wait --timeout 5m
+
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.0 \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \

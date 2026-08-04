@@ -30,8 +30,9 @@ blast-radius mode directly inside Headlamp's cluster console:
 ## Can I run this in production today?
 
 Yes — for read-only introspection. From v1.0 the chart ships an
-opt-in Tier 2 backend (PostgreSQL + Apache AGE via the embedded
-CloudNativePG sub-chart) so restart preserves the graph. Single-
+opt-in Tier 2 backend (PostgreSQL + Apache AGE via a CNPG-managed
+`Cluster`; install the cluster-scoped operator first) so restart
+preserves the graph. Single-
 replica is still the deploy shape. Multi-cluster federation ships
 in v1.3.0: one KubeAtlas instance can
 attach to N kubeconfigs, the `/api/v1/federation/*` endpoints
@@ -56,7 +57,7 @@ SecurityContextConstraints), and the docs include a CRC and OCP
 
 Deeper platform integration (IRSA on EKS, Workload Identity on
 GKE, AAD on AKS) is on the
-[v2.0+ roadmap](./roadmap.md#phase-3--v20-sketch).
+[longer-term roadmap](./roadmap.md#deferred--future-human-decisions-not-commitments).
 
 ## How much memory does it use?
 

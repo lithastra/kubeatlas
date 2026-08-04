@@ -5,6 +5,31 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
+## [v1.5.1] — Tier 2 installation stabilization
+
+### Fixed
+
+- Embedded Tier 2 now treats CloudNativePG 0.22.1 as an explicit
+  cluster-scoped prerequisite instead of a KubeAtlas sub-chart.
+  Clean-cluster installs no longer render the PostgreSQL `Cluster`
+  before its CRD is discoverable.
+- The release pipeline now publishes the multi-architecture
+  `ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1` image before packaging the
+  chart; PR E2E builds and loads the same image locally.
+- The v1.5.0 to v1.5.1 chart path transfers CNPG CRD ownership to
+  the external operator and removes the obsolete bundled operator.
+- Embedded database state is retained on `helm uninstall` by
+  default. Set `persistence.embedded.retainOnDelete=false` only
+  when delete-on-uninstall is intentional.
+
+### Validation
+
+- Tier 2 Kind E2E now covers the released v1.5.0 to local v1.5.1
+  upgrade, CNPG Pod recovery, PVC identity, graph recovery, and
+  non-destructive uninstall.
+- Snapshot Kind E2E installs the external operator on a clean
+  cluster before installing KubeAtlas.
+
 ## [v1.5.0] — OpenTelemetry overlay, multi-cluster RBAC, GraphStore v2
 
 v1.5 is a **non-breaking minor release**. The public HTTP API is only
