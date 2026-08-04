@@ -72,10 +72,9 @@ KubeAtlas differs in three ways that matter:
 3. **KubeAtlas is small, compact, and easy to onboard and extend.**
    The default deploy is a single Pod with no external dependencies
    — no search backend, no message queue, no sidecars. Opt into
-   Tier 2 persistence (PostgreSQL + Apache AGE via a CNPG-managed
-   `Cluster`) when you're ready; its cluster-scoped operator is an
-   explicit prerequisite. Tier 1 onboarding is `helm install` plus
-   a port-forward. Extending the edge schema
+   Tier 2 persistence (PostgreSQL + Apache AGE via the embedded
+   CloudNativePG sub-chart) when you're ready. Onboarding is
+   `helm install` plus a port-forward. Extending the edge schema
    is either one Go file plus one test (see
    [Adding a new edge type](./developer-guide.md#adding-a-new-edge-type--a-worked-example))
    or a [Rego rule pack](./concepts/rego-rules.md) loaded at
@@ -150,7 +149,7 @@ Shipped scope:
 
 | Theme | What landed |
 |---|---|
-| **Persistence** | Tier 2 storage on PostgreSQL ≥ 14 with the [Apache AGE](https://age.apache.org/) extension. Opt-in via `persistence.enabled=true`; embedded mode (`persistence.embedded.enabled=true`) creates a `Cluster` managed by the separately installed [CloudNativePG](https://cloudnative-pg.io/) operator. Restart now preserves the graph; informer cold-start drops to ~4 s reading the persisted state. |
+| **Persistence** | Tier 2 storage on PostgreSQL ≥ 14 with the [Apache AGE](https://age.apache.org/) extension. Opt-in via `persistence.enabled=true`; the embedded mode (`persistence.embedded.enabled=true`) ships [CloudNativePG](https://cloudnative-pg.io/) as a sub-chart. Restart now preserves the graph; informer cold-start drops to ~4 s reading the persisted state. |
 | **Extensibility** | [Rego rule packs](./concepts/rego-rules.md) — declare CRD edges in Rego, no rebuild. Packs are OCI-distributed and signed. Embedded OpenShift pack auto-loads when `route.openshift.io` is detected; extras load via `rulePacks.extras`. Dynamic CRD discovery is built in — KubeAtlas walks the cluster's CRDs and registers per-CRD informers at runtime. |
 | **More edge kinds** | [RBAC graph](./api-reference.md) — `BINDS_SUBJECT` and `BINDS_ROLE` edges plus three new endpoints (`/api/v1/rbac/serviceaccount/<ns>/<name>/permissions`, `/api/v1/rbac/role/<ns>/<name>/subjects`, `/api/v1/rbac/clusterrole/<name>/subjects`). |
 | **Impact radius** | [Blast radius](./concepts/blast-radius.md) — `/api/v1/blast-radius/<ns>/<kind>/<name>` walks incoming edges and returns the affected set. Folded into the v1 resource-detail bundle as `blastRadiusCount`. |

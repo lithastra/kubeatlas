@@ -49,7 +49,7 @@ SecurityContextConstraints), and the docs include a CRC and OCP
 
 Deeper platform integration (IRSA on EKS, Workload Identity on
 GKE, AAD on AKS) is on the
-[v2.0+ roadmap](./roadmap.md#phase-3--v20-sketch).
+[longer-term roadmap](./roadmap.md#beyond-phase-3-sketch).
 
 ## How much memory does it use?
 

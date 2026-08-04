@@ -51,15 +51,8 @@ pull-secret from
 3. **Install KubeAtlas**:
 
    ```bash
-   helm repo add cloudnative-pg https://cloudnative-pg.io/charts
-   helm repo update
-   helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
-     --version 0.22.1 \
-     --namespace cnpg-system --create-namespace \
-     --wait --timeout 5m
-
    helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-     --version 1.5.1 \
+     --version 1.3.0 \
      --namespace kubeatlas --create-namespace \
      --set persistence.enabled=true \
      --set persistence.embedded.enabled=true \
@@ -102,7 +95,7 @@ sourcing. If your cluster pulls from a mirror, override
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.1 \
+  --version 1.3.0 \
   --namespace kubeatlas --create-namespace \
   --set image.repository=registry.example.com/mirror/lithastra/kubeatlas \
   --set image.tag=v1.0.0
