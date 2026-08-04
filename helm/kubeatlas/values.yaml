@@ -148,11 +148,12 @@ readinessProbe:
 #
 # Two production paths:
 #
-#   1. Embedded (one-line install): persistence.embedded.enabled=true
-#      pulls in the CloudNativePG sub-chart, provisions a single-
-#      replica PG cluster running lithastra/postgres-age, and wires
-#      KubeAtlas to it via Pod env. Best for evaluation and small
-#      single-cluster ops.
+#   1. Embedded: install the pinned CloudNativePG operator first,
+#      then set persistence.embedded.enabled=true. KubeAtlas creates
+#      a single-replica PG cluster running lithastra/postgres-age and
+#      wires itself to the operator-managed credentials. Keeping the
+#      cluster-scoped operator outside this application release makes
+#      CRD ownership and uninstall behaviour explicit.
 #   2. BYO Postgres: persistence.connection.* points at an existing
 #      AGE-capable Postgres. RDS / Cloud SQL are NOT supported —
 #      they reject shared_preload_libraries=age. Self-hosted PG +
@@ -161,11 +162,15 @@ persistence:
   enabled: false
 
   embedded:
-    # When true, the chart renders a CloudNativePG Cluster CRD plus
-    # the templates that wire KubeAtlas to it. Requires the cnpg
-    # sub-chart (declared in Chart.yaml under "condition" so it is
-    # only fetched when this flag is true).
+    # When true, the chart renders a CloudNativePG Cluster custom
+    # resource plus the templates that wire KubeAtlas to it. The
+    # CloudNativePG 0.22.1 operator is an external prerequisite; see
+    # docs/docs/installation/persistence.md.
     enabled: false
+    # Preserve the CNPG Cluster (and therefore its PVC) when the
+    # KubeAtlas Helm release is uninstalled. Deleting database state
+    # must be a separate, explicit kubectl operation.
+    retainOnDelete: true
     # Storage size for the embedded PG PVC. The Cluster CRD's
     # default StorageClass is used unless overridden.
     storageSize: 5Gi
@@ -180,13 +185,13 @@ persistence:
     # with a PG-version-shaped tag once the release pipeline lands.
     # Until then operators can re-tag locally:
     #
-    #   docker tag apache/age:release_PG16_1.6.0 local-postgres-age:16.6
-    #   helm install ... --set persistence.embedded.image=local-postgres-age:16.6
+    #   docker tag apache/age:release_PG16_1.6.0 local-postgres-age:16.6-age1.6.0-rc0.1
+    #   helm install ... --set persistence.embedded.image=local-postgres-age:16.6-age1.6.0-rc0.1
     #
     # The default below points at the lithastra/ image; flipping it
     # back to apache/age will trip the webhook unless the user
     # disables imageName validation (not recommended).
-    image: ghcr.io/lithastra/postgres-age:16.6
+    image: ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1
     # Cluster name suffix; final name is "<release>-<suffix>".
     clusterNameSuffix: pg
 

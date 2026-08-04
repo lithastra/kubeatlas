@@ -208,6 +208,7 @@
           "type": "object",
           "properties": {
             "enabled":          { "type": "boolean" },
+            "retainOnDelete":   { "type": "boolean" },
             "storageSize":      { "type": "string", "minLength": 1 },
             "storageClassName": { "type": "string" },
             "image":            { "type": "string", "minLength": 1 },

@@ -8,6 +8,26 @@ To open the UI without exposing the Service publicly:
 
 Then visit http://localhost:8080
 
+{{- if and .Values.persistence.enabled .Values.persistence.embedded.enabled }}
+
+Embedded Tier 2 is managed by the external CloudNativePG operator.
+The PostgreSQL Cluster is named
+"{{ include "kubeatlas.fullname" . }}-{{ .Values.persistence.embedded.clusterNameSuffix }}"
+in namespace "{{ $ns }}".
+
+{{- if .Values.persistence.embedded.retainOnDelete }}
+Data-retention protection is enabled. `helm uninstall` keeps the
+CNPG Cluster and PVC. Permanent deletion is a separate operation:
+
+  kubectl delete cluster.postgresql.cnpg.io \
+    {{ include "kubeatlas.fullname" . }}-{{ .Values.persistence.embedded.clusterNameSuffix }} \
+    -n {{ $ns }}
+{{- else }}
+WARNING: persistence.embedded.retainOnDelete=false. Uninstalling this
+Helm release also deletes the CNPG Cluster and its database storage.
+{{- end }}
+{{- end }}
+
 {{- if .Values.ingress.enabled }}
 
 WARNING: Ingress is enabled. KubeAtlas itself does not authenticate

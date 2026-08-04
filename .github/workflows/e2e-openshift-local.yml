@@ -103,9 +103,20 @@ jobs:
           kubectl get nodes
           helm version
 
-      - name: Helm dependency update
+      - name: Install CloudNativePG operator prerequisite
         if: steps.check-secret.outputs.skip != 'true'
-        run: helm dependency update helm/kubeatlas
+        run: |
+          helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+          helm repo update
+          helm upgrade --install cnpg \
+            cloudnative-pg/cloudnative-pg \
+            --version 0.22.1 \
+            --namespace cnpg-system --create-namespace \
+            --wait --timeout 5m
+          kubectl wait \
+            --for=condition=Established \
+            crd/clusters.postgresql.cnpg.io \
+            --timeout=2m
 
       - name: Build kubeatlas binary (CGO_ENABLED=0)
         if: steps.check-secret.outputs.skip != 'true'
@@ -130,9 +141,13 @@ jobs:
           REGISTRY="$(oc registry info --internal)"
           IMAGE="${REGISTRY}/${KUBEATLAS_NAMESPACE}/kubeatlas:crc-test"
           docker build -t "${IMAGE}" .docker-context
+          PG_IMAGE="${REGISTRY}/${KUBEATLAS_NAMESPACE}/postgres-age:16.6-age1.6.0-rc0.1"
+          docker build -t "${PG_IMAGE}" images/postgres-age
           oc create namespace "${KUBEATLAS_NAMESPACE}" --dry-run=client -o yaml | oc apply -f -
           docker push "${IMAGE}"
+          docker push "${PG_IMAGE}"
           echo "KUBEATLAS_IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+          echo "KUBEATLAS_PG_IMAGE=${PG_IMAGE}" >> "${GITHUB_ENV}"
 
       - name: Helm install kubeatlas (Tier 2, OpenShift auto-detect)
         if: steps.check-secret.outputs.skip != 'true'
@@ -146,6 +161,7 @@ jobs:
             --set image.tag="${TAG}" \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
+            --set persistence.embedded.image="${KUBEATLAS_PG_IMAGE}" \
             --set persistence.embedded.storageSize=4Gi \
             --set rulePacks.openshift=auto \
             --wait --timeout 10m
@@ -202,7 +218,7 @@ jobs:
         run: |
           kubectl port-forward -n "${KUBEATLAS_NAMESPACE}" deploy/kubeatlas 18081:8080 &
           PF=$!
-          trap "kill ${PF} || true" EXIT
+          trap 'kill "${PF}" 2>/dev/null || true' EXIT
           for _ in $(seq 1 30); do
             curl -fsS --max-time 1 "http://127.0.0.1:18081/healthz" >/dev/null && break
             sleep 1
