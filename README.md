@@ -27,7 +27,7 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**v1.5.1 is in development.** This patch release hardens the Tier 2
+**v1.5.1 hardens release reliability.** This patch release strengthens the Tier 2
 installation and release lifecycle without expanding the product
 surface: CloudNativePG 0.22.1 becomes an explicit cluster-scoped
 prerequisite, embedded database storage is retained on uninstall by

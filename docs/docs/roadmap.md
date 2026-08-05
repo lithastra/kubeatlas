@@ -13,8 +13,8 @@ For the current state, see [What is KubeAtlas](./).
 
 ## Where we are
 
-**v1.5.1 is in development.** It is a release-reliability patch:
-CloudNativePG 0.22.1 becomes an explicit cluster-scoped prerequisite,
+**v1.5.1 focuses on release reliability.** CloudNativePG 0.22.1
+becomes an explicit cluster-scoped prerequisite,
 embedded database storage is retained on uninstall by default, and CI
 verifies the v1.5.0 upgrade, database-recovery, uninstall-retention,
 and snapshot paths.
