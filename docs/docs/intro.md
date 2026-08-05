@@ -29,8 +29,8 @@ the tools above instead of replacing them.
 
 ## Project status
 
-**v1.5.1 (in development).** The v1.5.0 feature set is unchanged,
-but the Tier 2 installation and release lifecycle are being hardened:
+**v1.5.1.** The v1.5.0 feature set is unchanged, but the Tier 2
+installation and release lifecycle are hardened:
 CloudNativePG 0.22.1 is an explicit cluster-scoped prerequisite, the
 embedded PostgreSQL Cluster and its PVCs are retained on uninstall by
 default, and the release workflow publishes the pinned PostgreSQL +
