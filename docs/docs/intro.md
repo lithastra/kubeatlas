@@ -29,6 +29,14 @@ the tools above instead of replacing them.
 
 ## Project status
 
+**v1.5.1 (in development).** The v1.5.0 feature set is unchanged,
+but the Tier 2 installation and release lifecycle are being hardened:
+CloudNativePG 0.22.1 is an explicit cluster-scoped prerequisite, the
+embedded PostgreSQL Cluster and its PVCs are retained on uninstall by
+default, and the release workflow publishes the pinned PostgreSQL +
+Apache AGE image before the Helm chart. Upgrade, database-recovery,
+uninstall-retention, and snapshot paths are enforced in CI.
+
 **v1.5.0.** A non-breaking minor: an opt-in OpenTelemetry runtime
 overlay (`GET /api/v1/otel/overlay`, Tier 2, observed
 `CALLS_AT_RUNTIME` edges layered over the declarative graph);

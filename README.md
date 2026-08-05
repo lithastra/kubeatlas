@@ -27,6 +27,13 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
+**v1.5.1 is in development.** This patch release hardens the Tier 2
+installation and release lifecycle without expanding the product
+surface: CloudNativePG 0.22.1 becomes an explicit cluster-scoped
+prerequisite, embedded database storage is retained on uninstall by
+default, and CI verifies the v1.5.0 upgrade, recovery, retention, and
+snapshot paths.
+
 **v1.5.0 is out.** Earlier releases shipped v1.1 (rule packs and
 plugins), v1.2 (offline rendering), v1.3 (multi-cluster
 federation, platform identity, cartography Web UI), and v1.4
