@@ -27,6 +27,13 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
+**v1.5.1 hardens release reliability.** This patch release strengthens the Tier 2
+installation and release lifecycle without expanding the product
+surface: CloudNativePG 0.22.1 becomes an explicit cluster-scoped
+prerequisite, embedded database storage is retained on uninstall by
+default, and CI verifies the v1.5.0 upgrade, recovery, retention, and
+snapshot paths.
+
 **v1.5.0 is out.** Earlier releases shipped v1.1 (rule packs and
 plugins), v1.2 (offline rendering), v1.3 (multi-cluster
 federation, platform identity, cartography Web UI), and v1.4
@@ -165,7 +172,7 @@ to a running UI):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.0 \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
@@ -175,8 +182,15 @@ kubectl -n kubeatlas port-forward svc/kubeatlas 8080:80
 Tier 2 + cert-manager TLS (production-shaped install):
 
 ```bash
+helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+helm repo update
+helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
+  --version 0.22.1 \
+  --namespace cnpg-system --create-namespace \
+  --wait --timeout 5m
+
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.0 \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \

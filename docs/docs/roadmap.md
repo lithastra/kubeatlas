@@ -13,6 +13,12 @@ For the current state, see [What is KubeAtlas](./).
 
 ## Where we are
 
+**v1.5.1 focuses on release reliability.** CloudNativePG 0.22.1
+becomes an explicit cluster-scoped prerequisite,
+embedded database storage is retained on uninstall by default, and CI
+verifies the v1.5.0 upgrade, database-recovery, uninstall-retention,
+and snapshot paths.
+
 **v1.5.0 is out.** Earlier releases shipped v1.1 (rule packs and
 plugins), v1.2 (offline rendering), v1.3 (multi-cluster
 federation, platform-identity edges, cartography UI), and **v1.4**
@@ -23,7 +29,7 @@ minor: an opt-in OpenTelemetry runtime overlay (`CALLS_AT_RUNTIME`),
 read-side multi-cluster RBAC visibility (F-206), and an internal
 GraphStore v2 clean-up that surfaces `graphstore_version` on
 `/api/v1/info`. Install with
-`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.5.0`
+`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.5.1`
 — see the [Quick Start](./quick-start.md).
 
 | Milestone | Status | What it delivered |
@@ -33,6 +39,7 @@ GraphStore v2 clean-up that surfaces `graphstore_version` on
 | **v1.0** | ✅ Released | Tier 2 persistence (PostgreSQL + Apache AGE), Rego rule packs, RBAC graph, blast radius, orphan + cycle detection, `/api/v1/*` GA, cert-manager TLS, OpenShift detector + embedded pack, chaos test suite. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.0.0`. |
 | **v1.1 / v1.2 / v1.3** | ✅ Released | Cloud rule packs, snapshots, search, plugins (v1.1). Offline `kubectl atlas`, graph-image export (v1.2). Multi-cluster federation, platform-identity edges, HPA support, GitHub Action, cartography Web UI redesign (v1.3). |
 | **v1.4 / v1.5** | ✅ Released | Offline diagnostic report, Gatekeeper/Kyverno policy visibility, opt-in anonymous telemetry, v1alpha1 usage counters (v1.4). v1.5 (a non-breaking minor): OpenTelemetry runtime overlay (`CALLS_AT_RUNTIME`), read-side multi-cluster RBAC visibility (F-206), an internal GraphStore v2 clean-up, and the Backstage plugin reaching GA at Headlamp parity. `v1alpha1` stays frozen — there is no v2.0 on the committed roadmap. |
+| **v1.5.1** | 🚧 Stabilizing | Explicit CloudNativePG prerequisite, retained Tier 2 data by default, reproducible PostgreSQL + AGE image, and enforced upgrade, recovery, uninstall-retention, and snapshot release evidence. |
 | **Further out** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference; a possible future `v1alpha1` retirement (which would version a v2.0). |
 
 ## Related tools
@@ -72,9 +79,10 @@ KubeAtlas differs in three ways that matter:
 3. **KubeAtlas is small, compact, and easy to onboard and extend.**
    The default deploy is a single Pod with no external dependencies
    — no search backend, no message queue, no sidecars. Opt into
-   Tier 2 persistence (PostgreSQL + Apache AGE via the embedded
-   CloudNativePG sub-chart) when you're ready. Onboarding is
-   `helm install` plus a port-forward. Extending the edge schema
+   Tier 2 persistence (PostgreSQL + Apache AGE via a CNPG-managed
+   `Cluster`) when you're ready; its cluster-scoped operator is an
+   explicit prerequisite. Tier 1 onboarding is `helm install` plus
+   a port-forward. Extending the edge schema
    is either one Go file plus one test (see
    [Adding a new edge type](./developer-guide.md#adding-a-new-edge-type--a-worked-example))
    or a [Rego rule pack](./concepts/rego-rules.md) loaded at
@@ -149,7 +157,7 @@ Shipped scope:
 
 | Theme | What landed |
 |---|---|
-| **Persistence** | Tier 2 storage on PostgreSQL ≥ 14 with the [Apache AGE](https://age.apache.org/) extension. Opt-in via `persistence.enabled=true`; the embedded mode (`persistence.embedded.enabled=true`) ships [CloudNativePG](https://cloudnative-pg.io/) as a sub-chart. Restart now preserves the graph; informer cold-start drops to ~4 s reading the persisted state. |
+| **Persistence** | Tier 2 storage on PostgreSQL ≥ 14 with the [Apache AGE](https://age.apache.org/) extension. Opt-in via `persistence.enabled=true`; embedded mode (`persistence.embedded.enabled=true`) creates a `Cluster` managed by the separately installed [CloudNativePG](https://cloudnative-pg.io/) operator. Restart now preserves the graph; informer cold-start drops to ~4 s reading the persisted state. |
 | **Extensibility** | [Rego rule packs](./concepts/rego-rules.md) — declare CRD edges in Rego, no rebuild. Packs are OCI-distributed and signed. Embedded OpenShift pack auto-loads when `route.openshift.io` is detected; extras load via `rulePacks.extras`. Dynamic CRD discovery is built in — KubeAtlas walks the cluster's CRDs and registers per-CRD informers at runtime. |
 | **More edge kinds** | [RBAC graph](./api-reference.md) — `BINDS_SUBJECT` and `BINDS_ROLE` edges plus three new endpoints (`/api/v1/rbac/serviceaccount/<ns>/<name>/permissions`, `/api/v1/rbac/role/<ns>/<name>/subjects`, `/api/v1/rbac/clusterrole/<name>/subjects`). |
 | **Impact radius** | [Blast radius](./concepts/blast-radius.md) — `/api/v1/blast-radius/<ns>/<kind>/<name>` walks incoming edges and returns the affected set. Folded into the v1 resource-detail bundle as `blastRadiusCount`. |

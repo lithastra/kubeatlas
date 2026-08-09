@@ -61,8 +61,15 @@ exist:
    graph survives Pod restarts and you get [snapshots](../concepts/snapshots.md):
 
    ```bash
+   helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+   helm repo update
+   helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
+     --version 0.22.1 \
+     --namespace cnpg-system --create-namespace \
+     --wait --timeout 5m
+
    helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-     --version 1.4.0 \
+     --version 1.5.1 \
      --namespace kubeatlas --create-namespace \
      --set persistence.enabled=true \
      --set persistence.embedded.enabled=true \
@@ -100,10 +107,10 @@ exist:
 
 KubeAtlas runs on Fargate-only EKS clusters without changes. The
 chart's Pod requests fit a `0.5 vCPU / 1 GB` Fargate profile for
-Tier 1; Tier 2 with the embedded CloudNativePG sub-chart needs a
-profile that admits the database Pod's larger request — size it
-from `persistence.embedded.storageSize` and the CNPG resource
-defaults.
+Tier 1; Tier 2 with the external CloudNativePG operator needs
+profiles that admit both the operator and database Pods. Size the
+database profile from `persistence.embedded.storageSize` and the
+CNPG resource defaults.
 
 ## Troubleshooting
 

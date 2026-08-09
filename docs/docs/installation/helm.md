@@ -9,7 +9,7 @@ The chart is published as an OCI artifact:
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.4.0 \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace
 ```
 
@@ -99,7 +99,13 @@ limit if your fleet is significantly larger.
 
 | Key | Default | Notes |
 |---|---|---|
-| `persistence.enabled` | `false` | Tier 1 is in-memory only. PostgreSQL + Apache AGE is Tier 2 / v1.0 — see [roadmap](../roadmap.md). |
+| `persistence.enabled` | `false` | Tier 1 is in-memory only. Set `true` for PostgreSQL + Apache AGE Tier 2. |
+| `persistence.embedded.enabled` | `false` | Create a CNPG-managed PostgreSQL `Cluster`; requires the external CloudNativePG 0.22.1 operator first. |
+| `persistence.embedded.retainOnDelete` | `true` | Keep the CNPG `Cluster` and PVC on KubeAtlas uninstall. |
+| `persistence.embedded.storageSize` | `5Gi` | Requested PVC size; cannot be shrunk in place. |
+
+See [Persistence (Tier 2)](./persistence.md) for the prerequisite,
+v1.5.0 upgrade, failure-recovery, and deletion procedures.
 
 ### Probes and scheduling
 
@@ -131,7 +137,9 @@ for the rationale.
 
 ```bash
 helm uninstall kubeatlas -n kubeatlas
-kubectl delete namespace kubeatlas
 ```
 
-The in-memory graph disappears with the Pod; nothing persists.
+For Tier 1, the in-memory graph disappears with the Pod. For
+embedded Tier 2, the database and PVC are retained by default. Do
+not delete the namespace until you have followed the explicit
+[Tier 2 data-deletion procedure](./persistence.md#uninstall-and-data-retention).

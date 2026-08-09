@@ -5,11 +5,12 @@ title: Architecture
 
 # Architecture
 
-This page summarises the design as it stands at v1.3.0. The
-Headlamp plugin shipped in v1.1; multi-cluster federation,
-platform-identity edges, HorizontalPodAutoscaler support, and the
-cartography Web UI redesign all ship in v1.3.0. Anything flagged
-"deferred" inline below is called out at the place it matters.
+This page summarises the design as it stands in the v1.5 release
+line. v1.4 added offline diagnostics, admission-policy visibility,
+and opt-in anonymous telemetry. v1.5 added the opt-in OpenTelemetry
+runtime overlay, read-side multi-cluster visibility controls, and
+the internal GraphStore v2 contract. The public `v1alpha1` surface
+remains frozen and `/api/v1` changes remain additive.
 
 ## Six design principles
 
@@ -17,14 +18,16 @@ cartography Web UI redesign all ship in v1.3.0. Anything flagged
    create, update, patch, or delete in the RBAC manifest, ever. The
    moment that promise stops being true, the threat model changes
    completely.
-2. **Offline-friendly.** The graph is built from data the cluster
-   already exposes; no external services are contacted at runtime, no
-   telemetry is reported, no API keys are needed.
+2. **Offline-friendly by default.** The graph is built from data the
+   cluster already exposes; the default runtime needs no external
+   service, telemetry, or API key. Anonymous usage telemetry and OCI
+   rule-pack downloads are explicit opt-ins with separately documented
+   network and trust boundaries.
 3. **Zero-config by default, persistent on demand.** Tier 1 storage
    is in-memory and remains the default for first-install simplicity.
    Tier 2 (PostgreSQL + Apache AGE) is opt-in via one Helm flag and
-   uses the embedded CloudNativePG sub-chart for a single-command
-   install.
+   uses a namespaced `Cluster` reconciled by the separately installed,
+   cluster-scoped CloudNativePG operator.
 4. **CRD-friendly.** The discovery layer is GVR-driven, with dynamic
    CRD discovery from v1.0 — new CRDs become per-CRD informers at
    runtime, and a [Rego rule pack](./concepts/rego-rules.md) can
@@ -52,7 +55,7 @@ cartography Web UI redesign all ship in v1.3.0. Anything flagged
                            ▼                     ▼
               ┌──────────────────────┐  ┌──────────────────────┐
               │  pkg/extractor       │  │  pkg/graph           │
-              │  (8 edge types)      │──▶  GraphStore (Tier 1) │
+              │  (built-in + Rego)   │──▶  GraphStore (Tier 1) │
               └──────────────────────┘  └──────────┬───────────┘
                                                    │ snapshot
                                                    ▼
@@ -100,7 +103,8 @@ backend that passes it is a drop-in replacement.
 
 ### Edge extraction (`pkg/extractor` + `pkg/extractor/rego`)
 
-Ten built-in edge types cover the core Kubernetes resources:
+Sixteen declarative edge types cover core Kubernetes resources and
+the policy/platform relationships discovered by the built-in engine:
 
 | Type | Source field |
 |---|---|
@@ -114,6 +118,12 @@ Ten built-in edge types cover the core Kubernetes resources:
 | `ATTACHED_TO` | `HTTPRoute.spec.parentRefs[].name` |
 | `BINDS_SUBJECT` | `RoleBinding`/`ClusterRoleBinding` → subject (ServiceAccount, User, Group) |
 | `BINDS_ROLE` | `RoleBinding`/`ClusterRoleBinding` → bound `Role`/`ClusterRole` |
+| `SELECTS_NP` | `NetworkPolicy.spec.podSelector` → selected Pod/workload |
+| `ALLOWS_FROM` | `NetworkPolicy.spec.ingress[].from[]` → declared source |
+| `ALLOWS_TO` | `NetworkPolicy.spec.egress[].to[]` → declared destination |
+| `BINDS_PLATFORM_IDENTITY` | ServiceAccount → cloud workload identity |
+| `SCALES` | `HorizontalPodAutoscaler.spec.scaleTargetRef` → workload |
+| `ENFORCES` | Gatekeeper/Kyverno policy → affected resource |
 
 Built-in extractors are stateless and never call back into the
 store — the informer is responsible for writing what they return.
@@ -150,18 +160,20 @@ Three composed queries that share the `Direction` enum on the
 - **Cycles** — Tarjan's SCC on the edges table; returns every SCC
   of size ≥ 2.
 
-## What v1.0 ships on top of the engine
+## What v1.5 ships on top of the engine
 
 - **`pkg/api`** — REST endpoints for graph queries (`GET
   /api/v1/graph` at four levels), single-resource detail with v1
   enrichment fields, search, RBAC graph, blast-radius, orphans,
-  cycles, health / readiness / metrics, WebSocket watch. The
+  cycles, snapshots, diagnostics, admission policies, federation,
+  the OTel runtime overlay, health / readiness / metrics, and
+  WebSocket watch. The
   frozen `/api/v1alpha1/*` surface is served from the same
   handlers — see [API versioning](./concepts/api-versioning.md).
 - **`pkg/store/postgres`** — Tier 2 backend on PostgreSQL ≥ 14
   with the Apache AGE extension. Migration framework, double-
-  write Upsert, recursive-CTE traversal. Embedded mode uses the
-  CloudNativePG sub-chart with auto-provisioned credentials.
+  write Upsert, recursive-CTE traversal. Embedded mode uses an
+  external CloudNativePG operator with auto-provisioned credentials.
 - **`pkg/extractor/rego`** — OPA SDK v1 (`v1/rego` import path)
   with module loading, GVK routing, an `(UID, ResourceVersion,
   RuleHash)`-keyed LRU cache, and the `evaluateWithGuards`
@@ -169,7 +181,7 @@ Three composed queries that share the `Direction` enum on the
   from local directories or signed OCI artifacts.
 - **`pkg/crd`** — dynamic CRD discovery + OpenShift detector +
   embedded openshift rule pack.
-- **`web/`** — React 19 + TypeScript + MUI v5 Web UI. v1.3 ships
+- **`web/`** — React 19 + TypeScript + MUI v5 Web UI. v1.3 introduced
   the cartography redesign: a single full-bleed Cytoscape canvas
   with one persistent shell (`AtlasShell`) rather than per-route
   pages. Five runtime-switchable themes (Parchment / Survey /
@@ -184,7 +196,9 @@ Three composed queries that share the `Direction` enum on the
   a zoom-scale widget mapping cytoscape zoom × → L1–L4 bands, and
   a left cluster strip wired to `/api/v1/federation/clusters`.
   The resource-detail page still renders the v1 enrichment fields
-  as badges and the Mermaid neighbour view stays alongside.
+  as badges and the Mermaid neighbour view stays alongside. v1.4
+  adds the policy view; v1.5 adds the opt-in OTel overlay and trace
+  timeline.
 - **`helm/`** — installable chart with secure defaults baked in:
   ClusterIP-only Service, Ingress disabled by default, a Helm
   `values.schema.json` gate that requires explicit
@@ -195,12 +209,15 @@ Three composed queries that share the `Direction` enum on the
 - **Distribution** — multi-arch container image on
   `ghcr.io/lithastra/kubeatlas`, four-platform binaries, Helm Chart
   published as an OCI artifact at
-  `oci://ghcr.io/lithastra/charts/kubeatlas`, cosign-signed,
-  SBOM-attached.
+  `oci://ghcr.io/lithastra/charts/kubeatlas`. Release-specific
+  signatures, SBOMs, and provenance are claimed only where the
+  corresponding release workflow and public artifact provide
+  verifiable evidence.
 
-For where KubeAtlas is going next — federation graph wiring in
-the Web UI, FLIP zoom transitions, and cloud-resource integration
-in upcoming releases — see the [Roadmap](./roadmap.md).
+The next release line focuses on operability: Tier 2 backup/restore
+and upgrade drills, scheduled clean-cluster E2E, performance gates,
+and generated clients that keep the Web, Headlamp, and Backstage API
+types aligned. See the [Roadmap](./roadmap.md).
 
 The v0.1.0 API surface and the `graph.Resource`/`graph.Edge`
 shapes stay frozen across v1.x: only additive changes. CI's

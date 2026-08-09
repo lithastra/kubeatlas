@@ -27,16 +27,32 @@ A bare `helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas` keeps y
                        ┌──────────┴──────────┐
                        yes                   no
                        │                     │
-              CNPG sub-chart           BYO Postgres
-              one-line install        (connection.host …)
+          CNPG-managed Cluster         BYO Postgres
+          (operator installed first)  (connection.host …)
 ```
 
-## Path A: Embedded CloudNativePG (one-line install)
+## Path A: Embedded CloudNativePG
 
-The chart ships an optional dependency on [CloudNativePG](https://cloudnative-pg.io/) that is only fetched when `persistence.embedded.enabled=true`. The cnpg operator provisions a single-replica `Cluster` that runs `lithastra/postgres-age:16-1.6.0` (PostgreSQL 16 + Apache AGE 1.6.0).
+Install the [CloudNativePG](https://cloudnative-pg.io/) 0.22.1
+operator once per cluster, then enable embedded persistence in the
+KubeAtlas chart. Keeping the cluster-scoped operator in its own Helm
+release prevents one KubeAtlas uninstall from removing control-plane
+resources shared by other databases.
 
 ```bash
+helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+helm repo update
+helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
+  --version 0.22.1 \
+  --namespace cnpg-system --create-namespace \
+  --wait --timeout 5m
+
+kubectl wait --for=condition=Established \
+  crd/clusters.postgresql.cnpg.io \
+  --timeout=2m
+
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true
@@ -44,19 +60,55 @@ helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
 
 What this does:
 
-1. Installs the cnpg operator into your cluster.
-2. Renders a `Cluster` CRD called `<release>-pg`. The operator reconciles it into a StatefulSet, PVC, Services, and a `<release>-pg-app` Secret.
-3. Configures the cluster with `shared_preload_libraries=age` and a `postInitApplicationSQL` step that runs `CREATE EXTENSION IF NOT EXISTS age` against the bootstrapped database.
-4. Wires the kubeatlas Pod to point at the `<release>-pg-rw` Service. The Pod's `wait-for-pg` init container blocks startup until `pg_isready` succeeds, so the main container never sees a half-up Postgres.
+1. Installs one cluster-scoped CNPG operator in `cnpg-system`.
+2. KubeAtlas renders a namespaced `Cluster` custom resource called
+   `<release>-pg`. The operator reconciles it into a PostgreSQL Pod,
+   PVC, Services, and a `<release>-pg-app` Secret.
+3. The cluster uses `ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1`
+   (PostgreSQL 16 + Apache AGE 1.6.0), loads AGE at server start, and
+   runs `CREATE EXTENSION IF NOT EXISTS age` during bootstrap.
+4. The KubeAtlas Pod points at the `<release>-pg-rw` Service. Its
+   `wait-for-pg` init container blocks startup until `pg_isready`
+   succeeds.
 
 ### Tunable values
 
 | Value | Default | Notes |
 |---|---|---|
-| `persistence.embedded.image` | `ghcr.io/lithastra/postgres-age:16-1.6.0` | Multi-arch image (amd64 + arm64). Pin to a specific tag in production; never use `:latest`. |
+| `persistence.embedded.image` | `ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1` | Multi-arch image (amd64 + arm64). The tag records PostgreSQL 16.6, the only upstream PG16 AGE 1.6.0 candidate, and KubeAtlas image revision 1; never use `:latest`. |
 | `persistence.embedded.storageSize` | `5Gi` | PVC size. CNPG cannot shrink this in place; size for projected graph growth. |
 | `persistence.embedded.storageClassName` | _(empty → cluster default)_ | Set to a fast SSD class for production. |
 | `persistence.embedded.clusterNameSuffix` | `pg` | Final cluster name is `<release>-<suffix>`. |
+| `persistence.embedded.retainOnDelete` | `true` | Keep the CNPG `Cluster` and PVC when the KubeAtlas Helm release is uninstalled. |
+
+### Upgrade from v1.5.0
+
+v1.5.0 bundled the operator inside the KubeAtlas release. Install
+the external operator first and let Helm transfer ownership of the
+CNPG CRDs, then upgrade KubeAtlas:
+
+```bash
+# Helm 3.20+ is required for --take-ownership.
+helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+helm repo update
+helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
+  --version 0.22.1 \
+  --namespace cnpg-system --create-namespace \
+  --take-ownership \
+  --wait --timeout 5m
+
+helm upgrade kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version 1.5.1 \
+  --namespace kubeatlas \
+  --reuse-values \
+  --set persistence.embedded.retainOnDelete=true \
+  --wait --timeout 8m
+```
+
+The database Pod and PVC stay in place during this transition. After
+the upgrade, `kubeatlas-cloudnative-pg` in the KubeAtlas namespace
+must be gone and `cnpg-cloudnative-pg` in `cnpg-system` must be
+Ready.
 
 ## Path B: BYO Postgres + AGE
 
@@ -106,6 +158,29 @@ Tier 2 survives Pod restarts. The graph reloads from PostgreSQL on next start, s
 
 - Cluster-level view populated within a few seconds (no informer re-scan needed for cached resources).
 - A short re-sync window where the informer reconciles any changes that happened during the restart, then the Pod marks itself ready.
+
+## Uninstall and data retention
+
+With the default `persistence.embedded.retainOnDelete=true`,
+uninstalling KubeAtlas removes the application but leaves the CNPG
+`Cluster` and PVC:
+
+```bash
+helm uninstall kubeatlas -n kubeatlas
+kubectl get cluster.postgresql.cnpg.io,pvc -n kubeatlas
+```
+
+Do not delete the namespace if you intend to retain that data. When
+permanent deletion is intentional, remove the CNPG `Cluster`
+explicitly and wait for its PVC cleanup:
+
+```bash
+# Destructive: permanently deletes the embedded database.
+kubectl delete cluster.postgresql.cnpg.io kubeatlas-pg -n kubeatlas
+```
+
+The `cnpg` operator release is cluster-scoped infrastructure. Remove
+it only after confirming no other CNPG clusters depend on it.
 
 ## Mutual exclusion
 
