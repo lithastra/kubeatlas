@@ -8,25 +8,10 @@ name: E2E Snapshots (kind)
 #
 # The workflow uses no untrusted GitHub event inputs in run: blocks;
 # the only env vars it sets are constants we control (KUBEATLAS_*).
-# Runs on PRs that touch the snapshot / NetworkPolicy subsystems.
+# Runs on every PR because snapshot behavior is a mandatory release
+# gate and must always produce a definitive required-check result.
 on:
   pull_request:
-    paths:
-      - 'cmd/**'
-      - 'pkg/snapshot/**'
-      - 'pkg/discovery/**'
-      - 'pkg/store/**'
-      - 'pkg/graph/store.go'
-      - 'pkg/graph/snapshot.go'
-      - 'pkg/graph/analysis/snapshot_diff.go'
-      - 'pkg/api/snapshot*.go'
-      - 'pkg/api/networkpolicy*.go'
-      - 'pkg/extractor/networkpolicy.go'
-      - 'helm/**'
-      - 'test/verify/phase3.sh'
-      - 'test/chaos/snapshot-write-storm.sh'
-      - 'test/petclinic/phase3-networkpolicy.yaml'
-      - '.github/workflows/e2e-kind-snapshots.yml'
   workflow_dispatch:
 
 jobs:
