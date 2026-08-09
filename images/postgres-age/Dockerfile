@@ -16,16 +16,17 @@
 #
 #   docker buildx build \
 #     --platform linux/amd64,linux/arm64 \
-#     -t ghcr.io/lithastra/postgres-age:16.6 \
+#     -t ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1 \
 #     --push \
 #     images/postgres-age
 #
 # Local one-shot for verify/phase2.sh (~5-10 min first time):
 #
-#   docker build -t local-postgres-age:16.6 images/postgres-age
+#   docker build -t local-postgres-age:16.6-age1.6.0-rc0.1 images/postgres-age
 
 ARG CNPG_IMAGE=ghcr.io/cloudnative-pg/postgresql:16.6
 ARG AGE_VERSION=PG16/v1.6.0-rc0
+ARG AGE_COMMIT=2db2f060c4c9265a14d40f007eb8c56febf31e4c
 
 # ---- stage 1: build AGE from source against CNPG's PG + glibc -----
 FROM ${CNPG_IMAGE} AS build
@@ -42,8 +43,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ARG AGE_VERSION
+ARG AGE_COMMIT
 RUN git clone --depth 1 --branch ${AGE_VERSION} https://github.com/apache/age.git /tmp/age \
     && cd /tmp/age \
+    && test "$(git rev-parse HEAD)" = "${AGE_COMMIT}" \
     && make PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config \
     && make install PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config
 

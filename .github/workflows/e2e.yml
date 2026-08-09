@@ -71,7 +71,7 @@ jobs:
         run: |
           ./bin/kubeatlas watch --port 8080 > kubeatlas.log 2>&1 &
           echo $! > kubeatlas.pid
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl -fsS http://localhost:8080/readyz >/dev/null 2>&1; then
               echo "API ready"
               break
@@ -99,7 +99,7 @@ jobs:
         run: |
           npm run dev > vite.log 2>&1 &
           echo $! > vite.pid
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             if curl -fsS http://localhost:5173 >/dev/null 2>&1; then
               echo "Vite ready"
               break
