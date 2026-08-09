@@ -6,11 +6,11 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# Two jobs: goreleaser builds the binaries + multi-arch images and
-# creates a draft GitHub Release; helm-push packages the chart and
-# pushes it to the OCI registry. Both run only on tag pushes (or
-# manual dispatch). The Release stays as a draft until a human
-# clicks Publish — see the project's release process.
+# Three jobs publish the PostgreSQL + AGE image, build the binaries
+# and application image, create a draft GitHub Release, and push the
+# Helm chart. A manual dispatch is accepted only when its selected
+# ref is a v* tag; dispatching from a branch safely skips every job.
+# The Release stays a draft until a human clicks Publish.
 #
 # The workflow assumes the repo's "Read and write permissions" for
 # GITHUB_TOKEN is enabled in Settings → Actions → General.
@@ -22,8 +22,40 @@ permissions:
   contents: read
 
 jobs:
+  postgres-age-push:
+    name: Push PostgreSQL + AGE image
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push multi-arch PostgreSQL + AGE
+        uses: docker/build-push-action@v6
+        with:
+          context: images/postgres-age
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1
+          provenance: true
+          sbom: true
+
   goreleaser:
     name: goreleaser (binaries + images + draft release)
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write    # create the GitHub Release
@@ -108,8 +140,11 @@ jobs:
 
   helm-push:
     name: Push Helm Chart to ghcr.io OCI
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: goreleaser
+    needs:
+      - goreleaser
+      - postgres-age-push
     permissions:
       contents: read
       packages: write
@@ -126,15 +161,6 @@ jobs:
           GHCR_USER: ${{ github.actor }}
         run: |
           echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GHCR_USER" --password-stdin
-
-      - name: Build chart dependencies
-        # helm/*/charts/ is gitignored, so a fresh checkout carries
-        # only Chart.lock and not the cloudnative-pg subchart. Fetch
-        # the pinned version into charts/ before packaging — helm
-        # package aborts on a declared-but-absent dependency.
-        run: |
-          helm repo add cloudnative-pg https://cloudnative-pg.io/charts
-          helm dependency build helm/kubeatlas
 
       - name: Package and push chart
         env:

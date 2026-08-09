@@ -33,10 +33,14 @@ jobs:
   e2e-kind-snapshots:
     name: kind + CNPG + kubeatlas snapshots
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.20.0
 
       - uses: actions/setup-go@v5
         with:
@@ -51,8 +55,33 @@ jobs:
           cluster_name: kubeatlas-snapshots
           wait: 120s
 
-      - name: Resolve Helm sub-chart deps (CNPG)
-        run: helm dependency update helm/kubeatlas
+      - name: Install Gateway API CRDs required by the fixture
+        run: |
+          kubectl apply --server-side \
+            -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/standard-install.yaml
+          kubectl wait \
+            --for=condition=Established \
+            crd/gateways.gateway.networking.k8s.io \
+            crd/httproutes.gateway.networking.k8s.io \
+            --timeout=2m
+
+      - name: Install CloudNativePG operator prerequisite
+        run: |
+          helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+          helm repo update
+          helm upgrade --install cnpg \
+            cloudnative-pg/cloudnative-pg \
+            --version 0.22.1 \
+            --namespace cnpg-system --create-namespace \
+            --wait --timeout 5m
+          kubectl wait \
+            --for=condition=Established \
+            crd/clusters.postgresql.cnpg.io \
+            --timeout=2m
+          kubectl rollout status \
+            deployment/cnpg-cloudnative-pg \
+            --namespace cnpg-system \
+            --timeout=2m
 
       - name: Build kubeatlas binary (CGO_ENABLED=0)
         run: |
@@ -72,8 +101,15 @@ jobs:
           cp bin/kubeatlas .docker-context/linux/amd64/kubeatlas
           docker build -t kubeatlas:snapshots-test .docker-context
 
-      - name: Load image into kind
-        run: kind load docker-image kubeatlas:snapshots-test --name kubeatlas-snapshots
+      - name: Build CloudNativePG-compatible PostgreSQL + AGE image
+        run: docker build -t local-postgres-age:16.6-age1.6.0-rc0.1 images/postgres-age
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image kubeatlas:snapshots-test \
+            --name kubeatlas-snapshots
+          kind load docker-image local-postgres-age:16.6-age1.6.0-rc0.1 \
+            --name kubeatlas-snapshots
 
       - name: Helm install kubeatlas with Tier 2 + snapshots enabled
         run: |
@@ -84,6 +120,7 @@ jobs:
             --set image.pullPolicy=Never \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
+            --set persistence.embedded.image=local-postgres-age:16.6-age1.6.0-rc0.1 \
             --set persistence.embedded.storageSize=2Gi \
             --set snapshots.enabled=true \
             --set snapshots.retention=7d \
@@ -93,8 +130,11 @@ jobs:
         if: failure()
         run: |
           kubectl get pods -A
+          kubectl get clusters.postgresql.cnpg.io -A
+          kubectl get pvc -A
           kubectl describe pod -n kubeatlas -l app.kubernetes.io/name=kubeatlas || true
           kubectl logs -n kubeatlas deploy/kubeatlas --tail=200 || true
+          kubectl logs -n cnpg-system deploy/cnpg-cloudnative-pg --tail=200 || true
 
       - name: Run verify/phase3.sh part 1 + snapshot-write-storm chaos
         env:

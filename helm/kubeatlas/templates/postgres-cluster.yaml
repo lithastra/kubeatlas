@@ -1,9 +1,9 @@
 {{- if and .Values.persistence.enabled .Values.persistence.embedded.enabled }}
 {{- $clusterName := printf "%s-%s" (include "kubeatlas.fullname" .) .Values.persistence.embedded.clusterNameSuffix -}}
 # CloudNativePG Cluster CRD provisioned by the kubeatlas chart when
-# persistence.embedded.enabled=true. The cnpg sub-chart (declared in
-# Chart.yaml under "condition") installs the operator that
-# reconciles this resource into a real Postgres StatefulSet.
+# persistence.embedded.enabled=true. The separately installed,
+# cluster-scoped CloudNativePG operator reconciles this resource
+# into a real Postgres StatefulSet.
 #
 # shared_preload_libraries=age is mandatory: AGE's LOAD 'age' fails
 # unless the library is loaded at server start, and CNPG resets
@@ -21,6 +21,13 @@ kind: Cluster
 metadata:
   name: {{ $clusterName }}
   namespace: {{ .Release.Namespace }}
+  {{- if .Values.persistence.embedded.retainOnDelete }}
+  annotations:
+    # Database deletion is deliberately separate from application
+    # uninstall. The CNPG Cluster and its PVC survive `helm uninstall`
+    # until an operator explicitly deletes the Cluster resource.
+    helm.sh/resource-policy: keep
+  {{- end }}
   labels:
     {{- include "kubeatlas.labels" . | nindent 4 }}
 spec:
