@@ -96,12 +96,19 @@ triggers on the tag push and runs:
    — pulls the matching CHANGELOG section.
 2. `goreleaser release --clean --release-notes=/tmp/release-notes.md`
    — multi-platform binaries (`kubeatlas`, `kubectl-atlas`),
-   checksums, SBOMs, cosign signatures, and a draft GitHub Release
-   whose body is the extracted CHANGELOG section.
-3. `docker buildx build --push` — multi-arch container image to
-   `ghcr.io/lithastra/kubeatlas:X.Y.Z`, cosign-signed.
-4. `helm package` + `helm push` — chart to
-   `oci://ghcr.io/lithastra/charts/kubeatlas:X.Y.Z`, cosign-signed.
+   checksums, the multi-architecture application image, and a draft
+   GitHub Release whose body is the extracted CHANGELOG section.
+3. `docker buildx build --push` publishes the multi-architecture
+   PostgreSQL + AGE image with BuildKit SBOM and provenance
+   attestations.
+4. `helm package` + `helm push` publishes the chart to
+   `oci://ghcr.io/lithastra/charts/kubeatlas:X.Y.Z` after both image
+   jobs succeed.
+
+The workflow does not currently create cosign signatures for the
+application image, Helm chart, or binary archives. Do not describe
+those artifacts as signed until a signing job and public verification
+evidence are present.
 
 Watch + verify:
 
