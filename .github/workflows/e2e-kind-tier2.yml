@@ -6,23 +6,10 @@ name: E2E Tier 2 (kind)
 #
 # The workflow uses no untrusted GitHub event inputs in run: blocks;
 # the only env vars it sets are constants we control (KUBEATLAS_*).
-# Runs on demand and on every PR that touches the wired-together
-# subsystems. Skips paths-untouched PRs because the workflow is slow
-# (~10 min) compared to the rest of CI.
+# Runs on demand and on every PR. This is a mandatory release gate,
+# so every pull request must produce a definitive Tier 2 result.
 on:
   pull_request:
-    paths:
-      - 'cmd/**'
-      - 'pkg/crd/**'
-      - 'pkg/extractor/rego/**'
-      - 'pkg/store/postgres/**'
-      - 'pkg/api/metrics.go'
-      - 'pkg/api/server.go'
-      - 'pkg/api/handlers.go'
-      - 'helm/**'
-      - 'test/verify/phase2.sh'
-      - 'images/postgres-age/**'
-      - '.github/workflows/e2e-kind-tier2.yml'
   workflow_dispatch:
 
 jobs:
