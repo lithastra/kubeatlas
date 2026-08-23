@@ -59,6 +59,30 @@ rules:
       - clusterroles
       - clusterrolebindings
     verbs: ["get", "list", "watch"]
+  # Optional cert-manager resources. Secret objects containing issued key
+  # material remain outside this grant and are never discovered.
+  - apiGroups: ["cert-manager.io"]
+    resources:
+      - certificates
+      - certificaterequests
+      - issuers
+      - clusterissuers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["acme.cert-manager.io"]
+    resources:
+      - orders
+      - challenges
+    verbs: ["get", "list", "watch"]
+  # Optional CloudNativePG resources used by the Tier 2 integration.
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources:
+      - clusters
+      - backups
+      - scheduledbackups
+      - poolers
+      - imagecatalogs
+      - clusterimagecatalogs
+    verbs: ["get", "list", "watch"]
   # Optional Kyverno policy and report CRDs.
   - apiGroups: ["kyverno.io"]
     resources:

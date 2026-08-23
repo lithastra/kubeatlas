@@ -31,8 +31,10 @@ remains frozen and `/api/v1` changes remain additive.
 4. **CRD-friendly without cross-API wildcard access.** The discovery layer is
    GVR-driven and watches CRD definitions at runtime. A CRD becomes readable
    only when the ServiceAccount has an explicit read-only grant for that
-   non-core API group; a [Rego rule pack](./concepts/rego-rules.md) can then
-   teach the graph its edges without a rebuild.
+   non-core API group. The chart supplies exact grants for its cert-manager,
+   CloudNativePG, Kyverno, and Gatekeeper integrations; a
+   [Rego rule pack](./concepts/rego-rules.md) can then teach the graph its edges
+   without a rebuild.
 5. **Two form factors, one engine.** The same Go binary serves the
    CLI (`-once` mode, `export` subcommand) and a long-running server
    with REST + WebSocket endpoints. The Web UI consumes those
