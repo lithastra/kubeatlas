@@ -118,24 +118,21 @@ multiple disjoint cycles each get their own object.
 
 ### Cycle categories
 
-Real K8s clusters carry a handful of cycles that are
-operationally benign — most commonly a webhook controller that
-owns its own TLS Secret AND consumes the same Secret to terminate
-TLS on its webhook. Tarjan sees these as cycles (because they
-are), but treating them as actionable would spam every
-dashboard. v1.0.1 onwards each cycle is tagged with a
-`category` field so verifiers and CI gates can branch:
+The API retains the cycle-category enum introduced in v1.0.1 so existing
+clients remain compatible. Beginning with v1.5.2, KubeAtlas no longer reads
+Secret owner references: Secret nodes are derived from references only. As a
+result, the former webhook certificate ownership cycle is no longer observable
+and new results should normally be `intentional` or `unknown`:
 
 | Category | Meaning | Action |
 |---|---|---|
-| `bootstrap-cert` | 2-member cycle where one member is a `Secret` owned (via `ownerReferences`) by the other. Pattern shipped by cert-manager / CNPG / kyverno / kubeatlas itself. | Treat as benign. Exclude from "real cycle" counters. |
+| `bootstrap-cert` | Legacy category for a 2-member Secret ownership cycle. Retained for wire compatibility; reference-only Secret nodes produced by v1.5.2 cannot carry the owner metadata needed to create it. | Accept when reading historical or external data; do not expect new KubeAtlas results. |
 | `intentional` | Any member carries `metadata.annotations["kubeatlas.io/intentional-cycle"] = "true"`. The operator has declared the cycle is deliberate. One annotated member is enough — useful in multi-team setups. | Treat as benign. Audit the annotation if it shows up unexpectedly. |
 | `unknown` | Every other cycle. | **Actionable**: investigate. Usually means a recent extractor or operator change introduced a real dependency loop. |
 
-Precedence: `bootstrap-cert` > `intentional` > `unknown`. A
-Secret in a 2-cycle that *also* carries the
-`intentional-cycle` annotation is reported as `bootstrap-cert`
-because the structural match is more specific.
+Legacy classifier precedence remains `bootstrap-cert` > `intentional` >
+`unknown`, but source annotations and owner references from Kubernetes Secret
+objects are no longer collected.
 
 Clients should treat any future / unrecognised category value as
 `unknown` — the enum is append-only and adding categories

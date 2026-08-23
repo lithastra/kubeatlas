@@ -57,6 +57,54 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
+	t.Run("Secret payload is reduced to a reference-only node", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		secret := graph.Resource{
+			Kind: "Secret", Namespace: "demo", Name: "database",
+			Labels:      map[string]string{"sensitive": "true"},
+			Annotations: map[string]string{"kubectl.kubernetes.io/last-applied-configuration": `{"data":{"password":"canary"}}`},
+			Raw: map[string]any{
+				"kind":       "Secret",
+				"data":       map[string]any{"password": "canary"},
+				"stringData": map[string]any{"token": "canary"},
+			},
+		}
+		if err := s.UpsertResource(ctx, secret); err != nil {
+			t.Fatalf("UpsertResource: %v", err)
+		}
+		got, err := s.GetResource(ctx, secret.ID())
+		if err != nil {
+			t.Fatalf("GetResource: %v", err)
+		}
+		if got.Raw != nil || got.Labels != nil || got.OwnerReferences != nil || got.UID != "" || got.ResourceVersion != "" {
+			t.Errorf("stored Secret retained discovered metadata or payload: %+v", got)
+		}
+		if got.Annotations[graph.ReferenceOnlyAnnotation] != "true" || len(got.Annotations) != 1 {
+			t.Errorf("Secret annotations = %v, want only the generated reference-only marker", got.Annotations)
+		}
+	})
+
+	t.Run("USES_SECRET edge materializes a reference-only endpoint", func(t *testing.T) {
+		s := factory(t)
+		ctx := context.Background()
+		workload := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "api"}
+		if err := s.UpsertResource(ctx, workload); err != nil {
+			t.Fatalf("UpsertResource: %v", err)
+		}
+		edge := graph.Edge{From: workload.ID(), To: "demo/Secret/database", Type: graph.EdgeTypeUsesSecret}
+		if err := s.UpsertEdge(ctx, edge); err != nil {
+			t.Fatalf("UpsertEdge: %v", err)
+		}
+		got, err := s.GetResource(ctx, edge.To)
+		if err != nil {
+			t.Fatalf("GetResource referenced Secret: %v", err)
+		}
+		if got.Annotations[graph.ReferenceOnlyAnnotation] != "true" || got.Raw != nil {
+			t.Errorf("referenced Secret = %+v, want reference-only endpoint", got)
+		}
+	})
+
 	t.Run("upsert is idempotent and overwrites", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()
@@ -663,9 +711,9 @@ func Run(t *testing.T, factory Factory) {
 		if g.ID == 0 {
 			t.Error("store must assign a non-zero event ID")
 		}
-		// Data is a JSONB round-trip; the value must survive.
-		if g.Data["replicas"] != float64(3) {
-			t.Errorf("Data not preserved: %+v", g.Data)
+		// Snapshot history is metadata-only for every resource kind.
+		if g.Data != nil {
+			t.Errorf("Data = %+v, want nil metadata-only event", g.Data)
 		}
 	})
 

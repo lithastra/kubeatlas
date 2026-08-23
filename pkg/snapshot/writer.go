@@ -5,7 +5,6 @@ package snapshot
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -29,19 +28,7 @@ const (
 	// retryBaseDelay is the first backoff sleep; each subsequent
 	// attempt doubles it (50ms, 100ms, 200ms, 400ms, 800ms).
 	retryBaseDelay = 50 * time.Millisecond
-
-	// rawDataMaxBytes caps how big a single event's Data payload may
-	// be before the writer replaces it with a truncation marker.
-	// Stops one oversized Secret/ConfigMap from bloating the
-	// resource_events table (F-109 anti-pattern: events table must
-	// not grow without bound).
-	rawDataMaxBytes = 10 * 1024
 )
-
-// truncatedMarker replaces an event's Data when the original
-// exceeds rawDataMaxBytes. Consumers that need the full object
-// re-fetch it from the K8s API rather than from the event stream.
-var truncatedMarker = map[string]any{"kubeatlas.io/truncated": true}
 
 // EventSink is the store-side seam the Writer needs. graph.GraphStore
 // satisfies it; depending on the one method keeps the snapshot
@@ -128,9 +115,10 @@ func (w *Writer) Enqueue(e graph.ResourceEvent) {
 		w.metrics.incQueueDropped()
 		return
 	}
-	// Note: data-size capping happens worker-side (capEventData in
-	// worker), NOT here — Enqueue runs on the informer's hot path
-	// and must stay allocation-light.
+	// Clear the payload before it can enter the queue. This is a scalar map
+	// assignment, not a deep copy or marshal, so the informer hot path stays
+	// allocation-light while the queue never retains resource content.
+	e = graph.MetadataOnlyEvent(e)
 
 	select {
 	case w.queue <- e:
@@ -178,7 +166,7 @@ func (w *Writer) Metrics() *Metrics { return w.metrics }
 func (w *Writer) worker(ctx context.Context) {
 	defer w.wg.Done()
 	for e := range w.queue {
-		w.writeWithRetry(ctx, capEventData(e))
+		w.writeWithRetry(ctx, e)
 	}
 }
 
@@ -209,29 +197,4 @@ func (w *Writer) writeWithRetry(ctx context.Context, e graph.ResourceEvent) {
 		}
 		delay *= 2
 	}
-}
-
-// capEventData replaces an oversized Data payload with a truncation
-// marker. The store's JSONB column can hold large blobs, but the
-// event stream is history, not a resource cache — a 1 MB Secret
-// should not be copied into resource_events on every update.
-//
-// Size is measured by marshalling to JSON, which is what the store
-// does on insert anyway; doing it worker-side keeps that cost off
-// the informer hot path.
-func capEventData(e graph.ResourceEvent) graph.ResourceEvent {
-	if e.Data == nil {
-		return e
-	}
-	b, err := json.Marshal(e.Data)
-	if err != nil {
-		// Unmarshalable Data can't be stored as JSONB anyway —
-		// replace it with the marker rather than fail the event.
-		e.Data = truncatedMarker
-		return e
-	}
-	if len(b) > rawDataMaxBytes {
-		e.Data = truncatedMarker
-	}
-	return e
 }

@@ -28,14 +28,7 @@ import (
 // — the snapshot writer backfilling a burst may want to preserve
 // the informer's observation time rather than the insert time.
 func (s *Store) AppendEvent(ctx context.Context, e graph.ResourceEvent) error {
-	var data []byte
-	if e.Data != nil {
-		var err error
-		data, err = json.Marshal(e.Data)
-		if err != nil {
-			return fmt.Errorf("postgres.AppendEvent: marshal data for %s/%s: %w", e.Namespace, e.Name, err)
-		}
-	}
+	e = graph.MetadataOnlyEvent(e)
 	// Two INSERT shapes: one lets ts default to now(), the other
 	// pins the caller's Timestamp. Branching keeps the common
 	// (zero-Timestamp) path on the table's own DEFAULT.
@@ -47,7 +40,7 @@ func (s *Store) AppendEvent(ctx context.Context, e graph.ResourceEvent) error {
 		`
 		if _, err := s.pool.Exec(ctx, sql,
 			e.ClusterID, e.Namespace, e.Kind, e.UID, e.Name,
-			string(e.EventType), e.ResourceVersion, data,
+			string(e.EventType), e.ResourceVersion, nil,
 		); err != nil {
 			return fmt.Errorf("postgres.AppendEvent: insert %s/%s: %w", e.Namespace, e.Name, err)
 		}
@@ -60,7 +53,7 @@ func (s *Store) AppendEvent(ctx context.Context, e graph.ResourceEvent) error {
 	`
 	if _, err := s.pool.Exec(ctx, sql,
 		e.Timestamp, e.ClusterID, e.Namespace, e.Kind, e.UID, e.Name,
-		string(e.EventType), e.ResourceVersion, data,
+		string(e.EventType), e.ResourceVersion, nil,
 	); err != nil {
 		return fmt.Errorf("postgres.AppendEvent: insert %s/%s: %w", e.Namespace, e.Name, err)
 	}
