@@ -191,17 +191,17 @@ func TestWriter_StopIsIdempotent(t *testing.T) {
 	w.Stop() // must not panic / double-close
 }
 
-// TestWriter_CapsOversizedData confirms an event whose Data exceeds
-// rawDataMaxBytes is stored with the truncation marker instead — the
-// resource_events table must not balloon on large Secrets/ConfigMaps.
-func TestWriter_CapsOversizedData(t *testing.T) {
+// TestWriter_StripsAllEventData confirms snapshot history is metadata-only
+// for every kind. Resource payloads belong in the current-state graph store,
+// never in the append-only resource_events stream.
+func TestWriter_StripsAllEventData(t *testing.T) {
 	sink := &fakeSink{}
 	w := New(sink, Config{Workers: 1}, NewMetrics())
 	w.Start(context.Background())
 
 	big := graph.ResourceEvent{
 		Namespace: "demo", Kind: "Secret", Name: "huge", EventType: graph.EventTypeUpdate,
-		Data: map[string]any{"blob": strings.Repeat("x", rawDataMaxBytes+1)},
+		Data: map[string]any{"data": map[string]any{"token": strings.Repeat("x", 1024)}},
 	}
 	small := graph.ResourceEvent{
 		Namespace: "demo", Kind: "ConfigMap", Name: "tiny", EventType: graph.EventTypeAdd,
@@ -215,15 +215,10 @@ func TestWriter_CapsOversizedData(t *testing.T) {
 	if len(stored) != 2 {
 		t.Fatalf("stored %d events, want 2", len(stored))
 	}
-	byName := map[string]graph.ResourceEvent{}
 	for _, e := range stored {
-		byName[e.Name] = e
-	}
-	if v, ok := byName["huge"].Data["kubeatlas.io/truncated"]; !ok || v != true {
-		t.Errorf("oversized event Data = %v, want truncation marker", byName["huge"].Data)
-	}
-	if byName["tiny"].Data["k"] != "v" {
-		t.Errorf("small event Data was altered: %v", byName["tiny"].Data)
+		if e.Data != nil {
+			t.Errorf("event %s Data = %v, want nil metadata-only history", e.Name, e.Data)
+		}
 	}
 }
 

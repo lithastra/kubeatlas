@@ -10,9 +10,17 @@ KubeAtlas v1.0 ships with two storage tiers:
 | Tier | Backend | Default? | Restart safe? | Use when |
 |---|---|---|---|---|
 | Tier 1 | In-memory | Yes | No | Evaluating, dev clusters, "I just want to look at the graph" |
-| Tier 2 | PostgreSQL + Apache AGE | No | Yes | Production, multi-replica, surviving Pod restarts |
+| Tier 2 | PostgreSQL + Apache AGE | No | Yes | Persistent single-replica deployment, surviving Pod restarts |
 
 A bare `helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas` keeps you on Tier 1. Tier 2 is opt-in via `--set persistence.enabled=true` plus exactly one of `embedded` or `connection`. The schema rejects half-configured installs at `helm install` time so you cannot accidentally end up with Tier 2 enabled and no database to talk to.
+
+KubeAtlas currently supports one application replica. The chart rejects
+`replicaCount>1`: without leader election, multiple pods would duplicate
+informer events and migration work. Tier 2 upgrades use `Recreate`, so expect a
+brief application outage while the old pod stops, migrations run, and the new
+informer completes its initial sync. PostgreSQL itself may use a separate
+high-availability topology, but that does not make the KubeAtlas API
+zero-downtime.
 
 ## Decision tree
 
@@ -109,6 +117,41 @@ The database Pod and PVC stay in place during this transition. After
 the upgrade, `kubeatlas-cloudnative-pg` in the KubeAtlas namespace
 must be gone and `cnpg-cloudnative-pg` in `cnpg-system` must be
 Ready.
+
+### Security upgrade to v1.5.2
+
+Tier 2 schema v11 permanently removes previously stored Kubernetes Secret
+payloads, replaces Secret rows with reference-only placeholders, clears all
+snapshot payloads, and removes stale graph edges incident to Secrets. The
+application remains unready until this transaction succeeds; the initial
+informer sync then recreates current incoming Secret-reference edges.
+
+Stop treating a database migrated to schema v11 as compatible with v1.5.1:
+older binaries fail closed on the newer schema and rollback is unsupported.
+Take a recovery backup before the upgrade, protect it as sensitive data, and
+delete it according to your retention policy after the recovery window. The
+migration cannot scrub external backups, snapshots, replicas, exports, or log
+archives that were created before v1.5.2.
+
+The first upgrade from v1.5.1 (or older) changes the application Deployment
+from Kubernetes' default rolling strategy to `Recreate`. Helm 3 applies the
+required field removal with its normal client-side patch. Helm 4 defaults to
+server-side apply, which cannot atomically remove the old defaulted
+`rollingUpdate` field while changing the strategy type. On Helm 4, run this
+first security upgrade with `--server-side=false`:
+
+```bash
+helm upgrade kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version 1.5.2 \
+  --namespace kubeatlas \
+  --reuse-values \
+  --server-side=false \
+  --wait --timeout 8m
+```
+
+This flag changes only how Helm patches the manifests; it does not weaken the
+KubeAtlas runtime security boundary. Subsequent upgrades start from a
+`Recreate` Deployment and do not need this one-time transition workaround.
 
 ## Path B: BYO Postgres + AGE
 

@@ -99,12 +99,12 @@ func TestCoreGVRs_HasExpectedShape(t *testing.T) {
 	// policy GVRs (optional, filtered when Kyverno is absent). The
 	// exact list shifts with cluster API availability at runtime, but
 	// the registry itself is stable.
-	if len(kdiscovery.CoreGVRs) != 26 {
-		t.Errorf("CoreGVRs length = %d, want 26", len(kdiscovery.CoreGVRs))
+	if len(kdiscovery.CoreGVRs) != 25 {
+		t.Errorf("CoreGVRs length = %d, want 25", len(kdiscovery.CoreGVRs))
 	}
 	required := map[string]bool{
 		"namespaces": true, "pods": true, "services": true,
-		"configmaps": true, "secrets": true, "persistentvolumeclaims": true,
+		"configmaps": true, "persistentvolumeclaims": true,
 		"serviceaccounts": true, // explicit per spec
 		"deployments":     true,
 		"replicasets":     true,
@@ -133,5 +133,8 @@ func TestCoreGVRs_HasExpectedShape(t *testing.T) {
 		if !seen[r] {
 			t.Errorf("CoreGVRs missing %q", r)
 		}
+	}
+	if seen["secrets"] {
+		t.Error("CoreGVRs must not watch Secrets; Kubernetes RBAC cannot return metadata-only Secret objects")
 	}
 }

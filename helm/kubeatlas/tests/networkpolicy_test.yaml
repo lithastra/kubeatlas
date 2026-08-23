@@ -1,0 +1,60 @@
+suite: network policy secure paths
+templates:
+  - networkpolicy.yaml
+  - snapshot-cronjob.yaml
+tests:
+  - it: denies every inbound source by default
+    template: networkpolicy.yaml
+    asserts:
+      - equal:
+          path: spec.ingress
+          value: []
+
+  - it: snapshots allow only the labelled same-namespace trigger pod
+    template: networkpolicy.yaml
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 1
+      - equal:
+          path: spec.ingress[0].from[0].podSelector.matchLabels
+          value:
+            app.kubernetes.io/instance: RELEASE-NAME
+            app.kubernetes.io/component: snapshot-trigger
+      - equal:
+          path: spec.ingress[0].ports[0]
+          value:
+            port: http
+            protocol: TCP
+
+  - it: snapshot CronJob carries the exact NetworkPolicy source label
+    template: snapshot-cronjob.yaml
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+    asserts:
+      - equal:
+          path: spec.jobTemplate.spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: snapshot-trigger
+      - notExists:
+          path: spec.jobTemplate.spec.template.metadata.labels["app.kubernetes.io/name"]
+
+  - it: external ingress namespace is additive to the snapshot trigger
+    template: networkpolicy.yaml
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+      networkPolicy.ingressNamespaceLabel: ingress-system
+    asserts:
+      - lengthEqual:
+          path: spec.ingress
+          count: 2
+      - equal:
+          path: spec.ingress[1].from[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"]
+          value: ingress-system

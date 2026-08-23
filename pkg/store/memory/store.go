@@ -65,6 +65,7 @@ func (s *Store) StoreVersion() string { return graph.StoreInterfaceVersion }
 
 // UpsertResource inserts or replaces the resource at r.ID().
 func (s *Store) UpsertResource(_ context.Context, r graph.Resource) error {
+	r = graph.SanitizeResource(r)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.resources[r.ID()] = r
@@ -97,6 +98,9 @@ func (s *Store) DeleteResource(_ context.Context, id string) error {
 func (s *Store) UpsertEdge(_ context.Context, e graph.Edge) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if ref, ok := graph.SecretReferenceFromEdge(e); ok {
+		s.resources[ref.ID()] = ref
+	}
 	if s.outgoing[e.From] == nil {
 		s.outgoing[e.From] = make(map[edgeKey]graph.Edge)
 	}
@@ -438,6 +442,7 @@ func (s *Store) ListLabelStats(_ context.Context) ([]graph.LabelStat, error) {
 // zero, a now() Timestamp. When the buffer is full the oldest event
 // is dropped — lossy by design (see maxMemoryEvents).
 func (s *Store) AppendEvent(_ context.Context, e graph.ResourceEvent) error {
+	e = graph.MetadataOnlyEvent(e)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.eventSeq++

@@ -40,9 +40,11 @@ informer event ──▶ Writer.Enqueue ──▶ bounded queue ──▶ worker
    (hot path)        (non-blocking)                       (N workers)    resource_events
 ```
 
-The snapshot writer subscribes to the same informer pipeline that
-feeds the live graph. The key property is that it **never blocks
-the informer**:
+The snapshot writer subscribes to the same informer pipeline that feeds the
+live graph. Beginning with v1.5.2, every event is metadata-only: resource
+payloads are cleared before entering the queue, and PostgreSQL enforces
+`resource_events.data IS NULL`. The key property is that it **never blocks the
+informer**:
 
 - `Enqueue` is non-blocking. It drops the event onto a bounded
   channel and returns immediately.
@@ -125,7 +127,7 @@ appears in it:
 to `now`. An optional `namespace` restricts the diff to one
 namespace; omit it for the whole cluster.
 
-The diff reports resource **identity and metadata** — kind,
+The diff and its backing event table contain resource **identity and metadata** — kind,
 namespace, name, UID — not full resource bodies. It tells you
 *what* changed and *when*; reach for `kubectl` or your audit log
 for the field-level *how*.

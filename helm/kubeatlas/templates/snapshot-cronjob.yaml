@@ -32,7 +32,11 @@ spec:
       template:
         metadata:
           labels:
-            {{- include "kubeatlas.selectorLabels" . | nindent 12 }}
+            # Do not reuse kubeatlas.selectorLabels here: the Service selects
+            # that complete set and would otherwise route API traffic to this
+            # short-lived Pod, which does not listen on the HTTP port.
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: snapshot-trigger
         spec:
           restartPolicy: Never
           # The Job only makes an in-cluster HTTP call — it needs no

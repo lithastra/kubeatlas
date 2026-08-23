@@ -47,10 +47,10 @@ const (
 // The stream is INSERT-only. A correction is a compensating event,
 // never an UPDATE of an existing row (anti-pattern guard in P3-T2).
 //
-// ID and Timestamp are assigned by the store on insert; callers
-// leave them zero. Data carries the full resource payload for add /
-// update events and is nil for delete events (the resource is gone;
-// only its identity is recorded).
+// ID and Timestamp are assigned by the store on insert; callers leave them
+// zero. Data is retained only for source compatibility with the original
+// v1.1 internal interface. Stores and the snapshot writer always clear it:
+// history is metadata-only for every resource kind.
 type ResourceEvent struct {
 	ID              int64          `json:"id"`
 	Timestamp       time.Time      `json:"ts"`

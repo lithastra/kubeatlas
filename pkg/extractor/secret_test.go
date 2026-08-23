@@ -140,3 +140,55 @@ func TestSecret_LiteralEnvVarIgnored(t *testing.T) {
 		t.Errorf("expected nil edges, got %v", got)
 	}
 }
+
+func TestSecret_ReferencesOutsideRegularContainers(t *testing.T) {
+	tests := []struct {
+		name string
+		r    graph.Resource
+		want string
+	}{
+		{
+			name: "init container",
+			r: graph.Resource{Kind: "Pod", Namespace: "demo", Name: "pod", Raw: map[string]any{
+				"spec": map[string]any{"initContainers": []any{map[string]any{
+					"envFrom": []any{map[string]any{"secretRef": map[string]any{"name": "bootstrap"}}},
+				}}},
+			}},
+			want: "demo/Secret/bootstrap",
+		},
+		{
+			name: "service account",
+			r: graph.Resource{Kind: "ServiceAccount", Namespace: "demo", Name: "builder", Raw: map[string]any{
+				"imagePullSecrets": []any{map[string]any{"name": "registry"}},
+			}},
+			want: "demo/Secret/registry",
+		},
+		{
+			name: "ingress TLS",
+			r: graph.Resource{Kind: "Ingress", Namespace: "demo", Name: "app", Raw: map[string]any{
+				"spec": map[string]any{"tls": []any{map[string]any{"secretName": "certificate"}}},
+			}},
+			want: "demo/Secret/certificate",
+		},
+		{
+			name: "gateway cross namespace certificate",
+			r: graph.Resource{Kind: "Gateway", Namespace: "gateway", Name: "public", Raw: map[string]any{
+				"spec": map[string]any{"listeners": []any{map[string]any{
+					"tls": map[string]any{"certificateRefs": []any{map[string]any{
+						"kind": "Secret", "name": "certificate", "namespace": "certs",
+					}}},
+				}}},
+			}},
+			want: "certs/Secret/certificate",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractEdges(t, SecretExtractor{}, tt.r, nil)
+			if len(got) != 1 || got[0].To != tt.want {
+				t.Fatalf("edges = %v, want one edge to %s", got, tt.want)
+			}
+		})
+	}
+}

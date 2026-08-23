@@ -7,6 +7,19 @@ metadata:
     {{- include "kubeatlas.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if .Values.persistence.enabled }}
+  # Stop the old binary before the v1.5.2 schema scrub starts. A rolling
+  # update could leave a v1.5.1 pod running long enough to write Secret
+  # payloads back after migration 011 cleaned the database.
+  strategy:
+    type: Recreate
+    # Existing Deployments have a defaulted rollingUpdate object; explicitly
+    # clear it for Helm's client-side patch. Helm 4 operators must use
+    # --server-side=false for the first <=1.5.1 -> 1.5.2 transition (documented
+    # in the persistence upgrade guide), because SSA cannot atomically change
+    # the strategy type and remove the old defaulted field.
+    rollingUpdate: null
+  {{- end }}
   selector:
     matchLabels:
       {{- include "kubeatlas.selectorLabels" . | nindent 6 }}

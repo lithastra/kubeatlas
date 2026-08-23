@@ -160,6 +160,12 @@ func (c *Client) CollectAll() ([]graph.Resource, error) {
 			if !hasVerb(r.Verbs, "list") {
 				continue
 			}
+			// Kubernetes RBAC cannot return metadata-only Secret objects.
+			// Never ask for the collection: referenced Secret names are
+			// derived from non-Secret workload objects instead.
+			if isCoreSecretGVR(gv.WithResource(r.Name)) {
+				continue
+			}
 			key := strings.TrimPrefix(gv.Group+"/"+gv.Version+"/"+r.Name, "/")
 			if skippedGVRs[key] {
 				continue
@@ -202,7 +208,7 @@ func toResource(u *unstructured.Unstructured, kind string) graph.Resource {
 			})
 		}
 	}
-	return r
+	return graph.SanitizeResource(r)
 }
 
 func hasVerb(verbs []string, target string) bool {

@@ -124,7 +124,7 @@ The fifteen built-in edge types are:
 |---|---|---|
 | `OWNS` | Owned resource → owner (Pod → ReplicaSet → Deployment) | v0.1.0 |
 | `USES_CONFIGMAP` | Workload → ConfigMap (envFrom, env.valueFrom, volumes) | v0.1.0 |
-| `USES_SECRET` | Workload → Secret (envFrom, env.valueFrom, volumes) | v0.1.0 |
+| `USES_SECRET` | Workload / ServiceAccount / Ingress / Gateway → reference-only Secret placeholder (env, volumes, pull secrets, TLS certificates) | v0.1.0 |
 | `MOUNTS_VOLUME` | Workload → PersistentVolumeClaim | v0.1.0 |
 | `SELECTS` | Service → Pod (via spec.selector) | v0.1.0 |
 | `USES_SERVICEACCOUNT` | Workload → ServiceAccount | v0.1.0 |

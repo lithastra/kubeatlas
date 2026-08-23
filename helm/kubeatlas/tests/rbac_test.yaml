@@ -4,14 +4,86 @@ templates:
   - clusterrolebinding.yaml
   - serviceaccount.yaml
 tests:
-  - it: every ClusterRole rule's verbs are exactly [get, list, watch]
+  - it: grants only the explicitly supported read-only resources
     template: clusterrole.yaml
     asserts:
       - isKind:
           of: ClusterRole
+      - lengthEqual:
+          path: rules
+          count: 15
+      - notContains:
+          path: rules[0].resources
+          content: secrets
+      # A wildcard API group would include core/v1 Secrets even if the
+      # reviewed resource lists stay narrow. Pin every rule to a named group.
+      - notContains:
+          path: rules[0].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[1].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[2].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[3].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[4].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[5].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[6].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[7].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[8].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[9].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[10].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[11].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[12].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[13].apiGroups
+          content: "*"
+      - notContains:
+          path: rules[14].apiGroups
+          content: "*"
+      # Optional integrations are exact grants, not a replacement wildcard.
+      - equal:
+          path: rules[7].apiGroups
+          value: ["cert-manager.io"]
+      - equal:
+          path: rules[7].resources
+          value: ["certificates", "certificaterequests", "issuers", "clusterissuers"]
+      - equal:
+          path: rules[8].apiGroups
+          value: ["acme.cert-manager.io"]
+      - equal:
+          path: rules[8].resources
+          value: ["orders", "challenges"]
+      - equal:
+          path: rules[9].apiGroups
+          value: ["postgresql.cnpg.io"]
+      - equal:
+          path: rules[9].resources
+          value: ["clusters", "backups", "scheduledbackups", "poolers", "imagecatalogs", "clusterimagecatalogs"]
       # Each rule's verbs slice must be exactly the read-only triple.
-      # Asserting `equal` on every rule's verbs catches any future
-      # write verb additions.
+      # Explicitly asserting every rule also catches a future broad
+      # wildcard rule appended after the reviewed list.
       - equal:
           path: rules[0].verbs
           value: ["get", "list", "watch"]
@@ -26,6 +98,36 @@ tests:
           value: ["get", "list", "watch"]
       - equal:
           path: rules[4].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[5].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[6].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[7].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[8].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[9].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[10].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[11].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[12].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[13].verbs
+          value: ["get", "list", "watch"]
+      - equal:
+          path: rules[14].verbs
           value: ["get", "list", "watch"]
 
   - it: ClusterRoleBinding points at the chart's ServiceAccount

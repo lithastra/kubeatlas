@@ -279,7 +279,7 @@ func yamlToResource(body []byte) (graph.Resource, error) {
 		uid = kind + "/" + ns + "/" + name
 	}
 
-	return graph.Resource{
+	return graph.SanitizeResource(graph.Resource{
 		Kind:         kind,
 		Name:         name,
 		Namespace:    ns,
@@ -287,5 +287,5 @@ func yamlToResource(body []byte) (graph.Resource, error) {
 		Labels:       labels,
 		GroupVersion: apiVersion,
 		Raw:          raw,
-	}, nil
+	}), nil
 }

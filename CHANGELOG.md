@@ -5,6 +5,44 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
+## [v1.5.2] — Secret data boundary
+
+### Security
+
+- KubeAtlas no longer lists or watches core Kubernetes `Secret` objects. The
+  Helm ClusterRole removes `secrets` and the previous cross-API wildcard rule;
+  `USES_SECRET` targets are now reference-only nodes derived from workloads,
+  ServiceAccounts, Ingresses, and Gateways.
+- Tier 1 and Tier 2 stores reduce any defensively supplied Secret resource to
+  `namespace`, `name`, cluster identity, and a generated reference-only marker
+  before storage or rule evaluation. Secret `data`, `stringData`, source
+  annotations, labels, owner references, UID, and resource version are not
+  retained.
+- PostgreSQL migration 011 transactionally scrubs existing Secret resource
+  rows, clears all historical `resource_events.data`, and installs constraints
+  that prevent either payload class from being reintroduced.
+- Snapshot history is metadata-only for every Kubernetes resource. Payloads
+  are cleared before entering the asynchronous queue and again at the store
+  boundary.
+- Tier 2 upgrades use the `Recreate` Deployment strategy so an older pod cannot
+  write unsafe rows after the new binary completes the scrub migration. The
+  application remains intentionally single-replica until leader election is
+  implemented. Helm 4 operators upgrading from v1.5.1 or older must use
+  `--server-side=false` for this one-time strategy transition; Helm 3's normal
+  client-side patch already handles it.
+
+### Changed
+
+- Dynamic CRD reads are no longer granted through an all-groups wildcard.
+  Built-in Kubernetes, Gateway API, RBAC, Kyverno, policy-report, and
+  Gatekeeper resources are enumerated. Other CRD rule packs require an
+  operator-managed, read-only role for their exact non-core API groups.
+- When snapshots are enabled, the default-deny NetworkPolicy now permits only
+  the same-namespace, specifically labelled snapshot-trigger Pod to call the
+  KubeAtlas HTTP Service. Periodic markers no longer time out under the secure
+  default policy, and snapshot Pods no longer share the server Service's full
+  selector labels.
+
 ## [v1.5.1] — Tier 2 installation stabilization
 
 ### Fixed

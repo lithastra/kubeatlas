@@ -113,6 +113,7 @@ type storageBlob struct {
 // kinds (CRDs not in migrate/001_initial.sql's allowlist) fall
 // through to PG-only — P2-T10 will register CRD labels at runtime.
 func (s *Store) UpsertResource(ctx context.Context, r graph.Resource) error {
+	r = graph.SanitizeResource(r)
 	body, err := json.Marshal(storageBlob{Resource: r, RawSpec: r.Raw})
 	if err != nil {
 		return fmt.Errorf("postgres.UpsertResource: marshal %s: %w", r.ID(), err)
@@ -159,6 +160,11 @@ func (s *Store) DeleteResource(ctx context.Context, id string) error {
 // silently no-ops while PG still records the row, and the cross-
 // store consistency check in cypher_test.go will catch it.
 func (s *Store) UpsertEdge(ctx context.Context, e graph.Edge) error {
+	if ref, ok := graph.SecretReferenceFromEdge(e); ok {
+		if err := s.UpsertResource(ctx, ref); err != nil {
+			return fmt.Errorf("postgres.UpsertEdge: materialize referenced Secret %s: %w", ref.ID(), err)
+		}
+	}
 	// DO UPDATE (not DO NOTHING) so a re-upsert refreshes the
 	// attributes bag — a Constraint's violation status changes over
 	// its lifetime, and the memory store already replaces on upsert,

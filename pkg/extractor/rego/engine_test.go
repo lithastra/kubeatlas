@@ -13,8 +13,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/open-policy-agent/opa/v1/rego"
 )
+
+func TestBuildEvalInput_StripsSecretPayload(t *testing.T) {
+	input := buildEvalInput(graph.Resource{
+		Kind: "Secret", Namespace: "demo", Name: "database",
+		Raw: map[string]any{
+			"kind":       "Secret",
+			"data":       map[string]any{"password": "rego-canary"},
+			"stringData": map[string]any{"token": "rego-canary"},
+		},
+	})
+	if _, ok := input["data"]; ok {
+		t.Fatalf("Secret data reached Rego input: %v", input)
+	}
+	if _, ok := input["stringData"]; ok {
+		t.Fatalf("Secret stringData reached Rego input: %v", input)
+	}
+	metadata, _ := input["metadata"].(map[string]any)
+	annotations, _ := metadata["annotations"].(map[string]string)
+	if annotations[graph.ReferenceOnlyAnnotation] != "true" {
+		t.Fatalf("Rego Secret input is not reference-only: %v", input)
+	}
+}
 
 // helloModule is the smallest possible Rego v1 module: returns true
 // when the input kind matches "Bad". Phase 2 uses Rego v1 syntax

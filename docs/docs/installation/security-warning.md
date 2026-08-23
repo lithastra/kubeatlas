@@ -14,9 +14,12 @@ defaults reflect this:
 - Flipping `ingress.enabled=true` is rejected by the values schema
   unless you also set `ingress.acknowledgeNoBuiltinAuth=true`.
 
-**This is on purpose.** KubeAtlas reads everything in your cluster:
-namespaces, ConfigMaps, Secrets (metadata, not contents), RBAC. An
-unauthenticated UI is a cluster-wide read leak.
+**This is on purpose.** KubeAtlas reads broad cluster topology including
+namespaces, ConfigMaps (including their values), workload specifications, and
+RBAC. It does **not** receive permission to list or watch Kubernetes Secrets.
+Secret nodes are unverified, reference-only placeholders derived from fields in
+non-Secret objects. An unauthenticated UI is still a cluster-wide information
+leak.
 
 If you set `ingress.enabled=true` you must front the Ingress with an
 authentication layer. Three options that work today:
@@ -77,3 +80,18 @@ and use `kubectl port-forward` for ad-hoc access.
 
 Treat KubeAtlas like an internal admin dashboard: anyone who can hit
 the URL can see every node and edge in the cluster.
+
+## Secret boundary
+
+Kubernetes RBAC cannot return Secret metadata without returning the complete
+Secret object. KubeAtlas therefore does not request `get`, `list`, or `watch`
+for core/v1 Secrets. A node marked
+`metadata.annotations["kubeatlas.io/reference-only"]="true"` means only that
+another observed resource names that Secret; it does not prove the Secret
+exists, and it carries no source labels, annotations, type, UID, owner
+references, or value fields.
+
+Database passwords and optional federation kubeconfigs may still be mounted as
+specific runtime credentials. KubeAtlas uses those credentials for their
+configured purpose but must not copy them into the graph, history, rules,
+diagnostics, exports, logs, or telemetry.

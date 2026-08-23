@@ -19,9 +19,9 @@ import (
 // file shipped in the same commit; ADRs guard breaking changes
 // (guide §2.1: GraphStore interface frozen).
 //
-// v10 adds otel_runtime_edges (F-204 part 2, P5-T5) — an additive
-// overlay table, no change to any v1alpha1/v1 column (invariant 2.2/2.3).
-const currentSchemaVersion = 10
+// v11 enforces the v1.5.2 Secret data boundary: Secret rows become
+// reference-only nodes and resource_events becomes metadata-only.
+const currentSchemaVersion = 11
 
 //go:embed migrate/*.sql
 var migrationFS embed.FS

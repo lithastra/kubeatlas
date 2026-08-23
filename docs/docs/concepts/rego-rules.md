@@ -31,25 +31,36 @@ Three pieces:
 
 1. **Loader** (`pkg/extractor/rego/loader.go`): reads `metadata.yaml` + every referenced `.rego` file from a directory or OCI artifact. Validates `rego_api: v1` and the `kubeatlas: ">= 1.0.0"` semver constraint at load time — packs that don't match are rejected with a typed sentinel and skipped (the engine keeps running).
 2. **Engine** (`engine.go` + `cache.go` + `router.go`): compiles each module via OPA's `PrepareForEval`, routes per-resource events through a `(Group, Kind)` table to the matching modules, and caches results keyed on `(UID, ResourceVersion, RuleHash)`.
-3. **CRD discovery** (`pkg/crd`): at startup AND at runtime, watches `apiextensions.k8s.io/v1/CustomResourceDefinition` and spins up one dynamic informer per CRD whose objects flow through the engine.
+3. **CRD discovery** (`pkg/crd`): at startup and runtime, watches
+   `apiextensions.k8s.io/v1/CustomResourceDefinition` and attempts to register
+   an informer for each discovered CRD. The API server permits list/watch and
+   delivers objects only when the KubeAtlas ServiceAccount has an explicit
+   read-only grant for that CR's non-core API group; the default Chart never
+   grants a wildcard across every API group because that would include core/v1
+   Secrets.
 
 ## CRDs come and go at runtime
 
-KubeAtlas does **not** require a restart when a CRD shows up. The CRD informer reacts to add/update events the moment the API server publishes a new CRD, registers the per-CRD informer, and starts feeding instances into the rego engine. A typical sequence:
+KubeAtlas does **not** require a restart when an authorised CRD shows up. The
+CRD informer reacts to add/update events, registers the per-CRD informer, and
+starts feeding instances into the Rego engine. Before installing a third-party
+pack, grant the KubeAtlas ServiceAccount `get`, `list`, and `watch` only on that
+pack's exact non-core API groups and resources. A typical sequence:
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas
 # kubeatlas Pod up, no cert-manager yet → 0 cert-manager rules touched
 
 helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace
+# install the pack's documented, narrowly scoped read-only RBAC grant
 # cert-manager installs its CRDs. KubeAtlas log within seconds:
 #   INFO Discovered CRD, registered informer gvr=cert-manager.io/v1/certificates kind=Certificate
 
 kubectl apply -f my-certificate.yaml
 # A few seconds later:
 #   GET /api/v1alpha1/resources/<ns>/Certificate/<name> returns the resource
-#   GET /api/v1alpha1/resources/<ns>/Secret/<linked-secret>/incoming includes
-#       the cert-manager STORES_IN edge (rego-derived).
+#   The graph includes a reference-only Secret target for supported
+#   certificate references; it never reads the Secret object.
 ```
 
 If the CRD is later deleted, KubeAtlas logs `INFO Deregistered CRD informer ...` and stops watching that resource. Existing graph entries are left in place — operators sometimes delete a CRD by accident and re-create it, and yanking the graph would mean losing diagnostic context.

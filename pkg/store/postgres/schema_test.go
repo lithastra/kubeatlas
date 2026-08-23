@@ -6,8 +6,11 @@ package postgres
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
 // expectedVertexLabels mirrors the AGE vertex labels created across
@@ -208,6 +211,165 @@ func TestMigrate_FromVersionZero(t *testing.T) {
 	}
 	if !slices.Equal(versions, want) {
 		t.Errorf("schema_migrations after upgrade: got %v, want %v", versions, want)
+	}
+}
+
+// TestMigrate_V11ScrubsExistingSecretAndEventPayloads simulates a v1.5.1
+// database at schema v10. The v11 migration must erase the canary before the
+// store becomes ready and install constraints that prevent reintroduction.
+func TestMigrate_V11ScrubsExistingSecretAndEventPayloads(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping testcontainers test in -short mode")
+	}
+
+	h := StartPostgresWithAGE(t)
+	ctx := context.Background()
+	s, err := New(ctx, Config{DSN: h.ConnStr})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(s.Close)
+
+	// Rewind only v11 and remove its constraints so we can seed the exact
+	// unsafe shape an older binary wrote.
+	if _, err := s.pool.Exec(ctx, `
+		ALTER TABLE public.resources DROP CONSTRAINT resources_secret_reference_only;
+		ALTER TABLE public.resource_events DROP CONSTRAINT resource_events_metadata_only;
+		DELETE FROM public.schema_migrations WHERE version = 11;
+	`); err != nil {
+		t.Fatalf("rewind v11: %v", err)
+	}
+	const canary = "kubeatlas-v151-secret-canary"
+	dep := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "api"}
+	secret := graph.SecretReferenceResource("demo", "database", "")
+	if err := s.UpsertResource(ctx, dep); err != nil {
+		t.Fatalf("seed Deployment: %v", err)
+	}
+	if err := s.UpsertResource(ctx, secret); err != nil {
+		t.Fatalf("seed Secret vertex: %v", err)
+	}
+	if err := s.UpsertEdge(ctx, graph.Edge{From: dep.ID(), To: secret.ID(), Type: graph.EdgeTypeUsesSecret}); err != nil {
+		t.Fatalf("seed incoming Secret edge: %v", err)
+	}
+	if err := s.UpsertEdge(ctx, graph.Edge{From: secret.ID(), To: dep.ID(), Type: graph.EdgeTypeOwns}); err != nil {
+		t.Fatalf("seed legacy outgoing Secret edge: %v", err)
+	}
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE public.resources SET data = jsonb_build_object(
+				'kind', 'Secret', 'name', 'database', 'namespace', 'demo',
+				'labels', jsonb_build_object('team', 'platform'),
+				'raw', jsonb_build_object(
+					'kind', 'Secret',
+					'data', jsonb_build_object('password', $1::text),
+					'stringData', jsonb_build_object('token', $1::text),
+					'metadata', jsonb_build_object('annotations', jsonb_build_object(
+						'kubectl.kubernetes.io/last-applied-configuration', $1::text
+					))
+				)
+			)
+		WHERE id = 'demo/Secret/database'
+	`, canary); err != nil {
+		t.Fatalf("seed v1.5.1 Secret: %v", err)
+	}
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO public.resource_events
+			(namespace, kind, name, event_type, data)
+		VALUES ('demo', 'Secret', 'database', 'update', jsonb_build_object('canary', $1::text))
+	`, canary); err != nil {
+		t.Fatalf("seed v1.5.1 event: %v", err)
+	}
+
+	if err := s.migrate(ctx); err != nil {
+		t.Fatalf("migrate v10 to v11: %v", err)
+	}
+
+	var secretText string
+	if err := s.pool.QueryRow(ctx,
+		`SELECT data::text FROM public.resources WHERE id = 'demo/Secret/database'`,
+	).Scan(&secretText); err != nil {
+		t.Fatalf("read migrated Secret: %v", err)
+	}
+	if strings.Contains(secretText, canary) {
+		t.Fatalf("migrated Secret still contains canary: %s", secretText)
+	}
+	if !strings.Contains(secretText, graph.ReferenceOnlyAnnotation) {
+		t.Fatalf("migrated Secret is not marked reference-only: %s", secretText)
+	}
+	var eventPayloads int
+	if err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM public.resource_events WHERE data IS NOT NULL`,
+	).Scan(&eventPayloads); err != nil {
+		t.Fatalf("count event payloads: %v", err)
+	}
+	if eventPayloads != 0 {
+		t.Fatalf("resource_events has %d non-null payloads after migration", eventPayloads)
+	}
+	var secretEdges int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM public.edges
+		WHERE from_id = 'demo/Secret/database' OR to_id = 'demo/Secret/database'
+	`).Scan(&secretEdges); err != nil {
+		t.Fatalf("count migrated Secret edges: %v", err)
+	}
+	if secretEdges != 0 {
+		t.Fatalf("migration retained %d Secret incident edges", secretEdges)
+	}
+	if edges, err := s.ListEdges(ctx, dep.ID(), graph.DirectionOutgoing); err != nil {
+		t.Fatalf("list AGE edges after migration: %v", err)
+	} else if len(edges) != 0 {
+		t.Fatalf("AGE retained Secret edges after migration: %v", edges)
+	}
+
+	// Initial informer resync recreates only the current incoming reference.
+	if err := s.UpsertEdge(ctx, graph.Edge{From: dep.ID(), To: secret.ID(), Type: graph.EdgeTypeUsesSecret}); err != nil {
+		t.Fatalf("recreate current Secret reference after migration: %v", err)
+	}
+	if edges, err := s.ListEdges(ctx, dep.ID(), graph.DirectionOutgoing); err != nil {
+		t.Fatalf("list AGE edges after resync: %v", err)
+	} else if len(edges) != 1 || edges[0].To != secret.ID() {
+		t.Fatalf("resync edges = %v, want current Secret reference", edges)
+	}
+
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO public.resource_events (namespace, kind, name, event_type, data)
+		VALUES ('demo', 'ConfigMap', 'unsafe', 'add', '{"canary":true}'::jsonb)
+	`); err == nil {
+		t.Fatal("metadata-only constraint accepted a new event payload")
+	}
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO public.resources (id, data) VALUES (
+			'demo/Secret/unsafe',
+			jsonb_build_object(
+				'kind', 'Secret', 'name', 'unsafe', 'namespace', 'demo',
+				'annotations', jsonb_build_object('kubeatlas.io/reference-only', 'true'),
+				'data', jsonb_build_object('password', 'constraint-canary')
+			)
+		)
+	`); err == nil {
+		t.Fatal("reference-only constraint accepted an extra Secret payload field")
+	}
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO public.resources (id, data) VALUES (
+			'demo/Secret/missing-kind',
+			jsonb_build_object(
+				'name', 'missing-kind', 'namespace', 'demo',
+				'annotations', jsonb_build_object('kubeatlas.io/reference-only', 'true'),
+				'raw', jsonb_build_object('data', jsonb_build_object('password', 'constraint-canary'))
+			)
+		)
+	`); err == nil {
+		t.Fatal("reference-only constraint accepted a Secret-shaped ID with an omitted kind")
+	}
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO public.resources (id, data) VALUES (
+			'demo/Secret/wrong-name',
+			jsonb_build_object(
+				'kind', 'Secret', 'name', 'different-name', 'namespace', 'demo',
+				'annotations', jsonb_build_object('kubeatlas.io/reference-only', 'true')
+			)
+		)
+	`); err == nil {
+		t.Fatal("reference-only constraint accepted identity fields that disagree with the row ID")
 	}
 }
 

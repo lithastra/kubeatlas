@@ -18,6 +18,19 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    {{- if .Values.snapshots.enabled }}
+    # The periodic trigger has no service-account token and may call only the
+    # HTTP Service. Permit that exact same-namespace Pod label so enabling the
+    # default-deny policy does not break snapshot markers.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: snapshot-trigger
+      ports:
+        - port: http
+          protocol: TCP
+    {{- end }}
     {{- if .Values.networkPolicy.ingressNamespaceLabel }}
     - from:
         - namespaceSelector:
@@ -26,7 +39,8 @@ spec:
       ports:
         - port: http
           protocol: TCP
-    {{- else }}
+    {{- end }}
+    {{- if and (not .Values.snapshots.enabled) (not .Values.networkPolicy.ingressNamespaceLabel) }}
     # No allowed source namespace configured; the policy denies all
     # inbound traffic. Override .Values.networkPolicy.ingressNamespaceLabel
     # to permit a specific Ingress controller namespace.
