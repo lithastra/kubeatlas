@@ -338,6 +338,7 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 // (engine unit tests, hand-built fixtures) fall back to the documented
 // minimal shape: kind / apiVersion / metadata / spec.
 func buildEvalInput(r graph.Resource) map[string]any {
+	r = graph.SanitizeResource(r)
 	if r.Raw != nil {
 		return r.Raw
 	}

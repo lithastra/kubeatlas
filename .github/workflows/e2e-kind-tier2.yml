@@ -1,8 +1,8 @@
 name: E2E Tier 2 (kind)
 
-# Phase 2 acceptance: stand up a kind cluster with CNPG, install
-# kubeatlas in Tier 2 mode (embedded Postgres + AGE) with the
-# OpenShift rule pack force-loaded, then run test/verify/phase2.sh.
+# Phase 2 and v1.5.2 security-upgrade acceptance: stand up a kind cluster with
+# CNPG, prove released v1.5.1 persisted a Secret canary, upgrade to the local
+# chart/image, prove schema 11 removed it, then run the wider Tier 2 verifier.
 #
 # The workflow uses no untrusted GitHub event inputs in run: blocks;
 # the only env vars it sets are constants we control (KUBEATLAS_*).
@@ -14,13 +14,17 @@ on:
     paths:
       - 'cmd/**'
       - 'pkg/crd/**'
-      - 'pkg/extractor/rego/**'
+      - 'pkg/discovery/**'
+      - 'pkg/extractor/**'
+      - 'pkg/graph/**'
+      - 'pkg/snapshot/**'
       - 'pkg/store/postgres/**'
       - 'pkg/api/metrics.go'
       - 'pkg/api/server.go'
       - 'pkg/api/handlers.go'
       - 'helm/**'
       - 'test/verify/phase2.sh'
+      - 'test/verify/v152-secret-boundary.sh'
       - 'images/postgres-age/**'
       - '.github/workflows/e2e-kind-tier2.yml'
   workflow_dispatch:
@@ -56,19 +60,16 @@ jobs:
           helm repo add cloudnative-pg https://cloudnative-pg.io/charts
           helm repo update
 
-      - name: Bootstrap CRDs required by the released v1.5.0 chart
-        # v1.5.0 bundled CNPG but its CRDs were ordinary templates,
-        # so Helm could not discover the Cluster kind on a clean
-        # cluster. Apply only those CRDs first to exercise the real
-        # v1.5.0 -> v1.5.1 migration path.
+      - name: Install the external CNPG operator
         run: |
-          helm template cnpg cloudnative-pg/cloudnative-pg \
+          helm upgrade --install cnpg \
+            cloudnative-pg/cloudnative-pg \
             --version 0.22.1 \
-            --show-only templates/crds/crds.yaml \
-            | kubectl apply --server-side -f -
-          kubectl wait \
-            --for=condition=Established \
-            crd/clusters.postgresql.cnpg.io \
+            --namespace cnpg-system --create-namespace \
+            --wait --timeout 5m
+          kubectl rollout status \
+            deployment/cnpg-cloudnative-pg \
+            --namespace cnpg-system \
             --timeout=2m
 
       - name: Build kubeatlas binary (CGO_ENABLED=0)
@@ -109,40 +110,45 @@ jobs:
           kind load docker-image local-postgres-age:16.6-age1.6.0-rc0.1 \
             --name kubeatlas-tier2
 
-      - name: Install released v1.5.0 baseline
+      - name: Create the Secret canary fixture before v1.5.1 starts
+        run: |
+          kubectl create namespace kubeatlas
+          kubectl create secret generic database-credentials \
+            --namespace kubeatlas \
+            --from-literal=password=kubeatlas-v152-upgrade-secret-canary \
+            --from-literal=token=kubeatlas-v152-upgrade-token-canary
+          kubectl create deployment secret-consumer \
+            --namespace kubeatlas \
+            --image=registry.k8s.io/pause:3.10
+          kubectl set env deployment/secret-consumer \
+            --namespace kubeatlas \
+            --from=secret/database-credentials
+
+      - name: Install released v1.5.1 Tier 2 baseline
         run: |
           helm install kubeatlas \
             oci://ghcr.io/lithastra/charts/kubeatlas \
-            --version 1.5.0 \
-            --namespace kubeatlas --create-namespace \
-            --take-ownership \
-            --set image.repository=kubeatlas \
-            --set image.tag=tier2-test \
-            --set image.pullPolicy=Never \
+            --version 1.5.1 \
+            --namespace kubeatlas \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
             --set persistence.embedded.image=local-postgres-age:16.6-age1.6.0-rc0.1 \
             --set persistence.embedded.storageSize=2Gi \
+            --set snapshots.enabled=true \
             --set rulePacks.openshift=true \
             --wait --timeout 8m
 
-      - name: Install the external CNPG operator and adopt its CRDs
-        run: |
-          helm upgrade --install cnpg \
-            cloudnative-pg/cloudnative-pg \
-            --version 0.22.1 \
-            --namespace cnpg-system --create-namespace \
-            --take-ownership \
-            --wait --timeout 5m
-          kubectl rollout status \
-            deployment/cnpg-cloudnative-pg \
-            --namespace cnpg-system \
-            --timeout=2m
+      - name: Prove v1.5.1 stored the Secret canary
+        env:
+          KUBEATLAS_NAMESPACE: kubeatlas
+          KUBEATLAS_RELEASE: kubeatlas
+        run: bash test/verify/v152-secret-boundary.sh baseline
 
-      - name: Upgrade v1.5.0 to the local v1.5.1 chart
+      - name: Upgrade v1.5.1 to the local v1.5.2 chart
         run: |
           helm upgrade kubeatlas helm/kubeatlas \
             --namespace kubeatlas \
+            --reuse-values \
             --set image.repository=kubeatlas \
             --set image.tag=tier2-test \
             --set image.pullPolicy=Never \
@@ -150,17 +156,15 @@ jobs:
             --set persistence.embedded.enabled=true \
             --set persistence.embedded.image=local-postgres-age:16.6-age1.6.0-rc0.1 \
             --set persistence.embedded.storageSize=2Gi \
+            --set snapshots.enabled=true \
             --set rulePacks.openshift=true \
             --wait --timeout 8m
-          if kubectl get deployment \
-            --namespace kubeatlas \
-            kubeatlas-cloudnative-pg >/dev/null 2>&1; then
-            echo "::error::the v1.5.0 bundled CNPG operator survived the upgrade"
-            exit 1
-          fi
-          kubectl get deployment \
-            --namespace cnpg-system \
-            cnpg-cloudnative-pg
+
+      - name: Verify the v1.5.2 Secret boundary and snapshot path
+        env:
+          KUBEATLAS_NAMESPACE: kubeatlas
+          KUBEATLAS_RELEASE: kubeatlas
+        run: bash test/verify/v152-secret-boundary.sh upgraded
 
       - name: Run verify/phase2.sh
         env:

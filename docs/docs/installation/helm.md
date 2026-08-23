@@ -65,9 +65,17 @@ Per-controller example values:
 | `serviceAccount.name` | `""` | Empty → derived from the release name. |
 | `serviceAccount.annotations` | `{}` | For IRSA / Workload Identity. |
 
-The ClusterRole's verbs are **hard-coded** to `[get, list, watch]`
-inside the template. There is no values toggle: the read-only
-invariant is a product promise, not a knob.
+The ClusterRole's verbs are **hard-coded** to `[get, list, watch]`, and its API
+groups/resources are explicitly enumerated. It does not grant any permission
+on core/v1 Secrets and does not use a wildcard across API groups. Kubernetes
+RBAC cannot return Secret metadata without returning the complete object, so
+granting Secret access out of band weakens KubeAtlas's supported security
+boundary.
+
+The chart enumerates the CRD API groups used by its built-in integrations.
+Another rule pack may require an operator-managed read-only ClusterRole for its
+exact non-core API group and resources; do not solve that requirement with
+`apiGroups: ["*"]` and `resources: ["*"]`.
 
 ### Security context
 

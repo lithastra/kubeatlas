@@ -8,7 +8,9 @@
   "properties": {
     "replicaCount": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 1,
+      "description": "KubeAtlas currently supports one application replica. Multiple replicas would duplicate watches, migrations, and snapshot writes until leader election is implemented."
     },
     "image": {
       "type": "object",

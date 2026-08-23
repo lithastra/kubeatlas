@@ -17,7 +17,6 @@ rules:
       - pods
       - services
       - configmaps
-      - secrets
       - persistentvolumeclaims
       - serviceaccounts
     verbs: ["get", "list", "watch"]
@@ -39,6 +38,12 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources:
       - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+  # autoscaling/v2
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
     verbs: ["get", "list", "watch"]
   # gateway.networking.k8s.io (optional — controller may not be installed)
   - apiGroups: ["gateway.networking.k8s.io"]
@@ -46,23 +51,42 @@ rules:
       - gateways
       - httproutes
     verbs: ["get", "list", "watch"]
+  # RBAC graph resources.
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs: ["get", "list", "watch"]
+  # Optional Kyverno policy and report CRDs.
+  - apiGroups: ["kyverno.io"]
+    resources:
+      - clusterpolicies
+      - policies
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["wgpolicyk8s.io"]
+    resources:
+      - policyreports
+      - clusterpolicyreports
+    verbs: ["get", "list", "watch"]
+  # Optional Gatekeeper templates and dynamically named constraints.
+  # A resource wildcard is safe inside the non-core constraints API group:
+  # it cannot match core/v1 Secrets.
+  - apiGroups: ["templates.gatekeeper.sh"]
+    resources:
+      - constrainttemplates
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["constraints.gatekeeper.sh"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
   # apiextensions.k8s.io — Phase 2 P2-T10 dynamic CRD discovery.
-  # Watching CRDs themselves lets pkg/crd.Discovery (un)register
-  # per-CRD informers as new operators land at runtime. We also need
-  # list/watch on every CRD-defined resource the chart targets, which
-  # we deliberately do NOT enumerate here: the dynamic informer needs
-  # cluster-wide read across user-installed CRDs (cert-manager,
-  # OpenShift, Argo, etc) and listing them upfront in the chart would
-  # mean a Helm upgrade for every new operator. The wildcard rule
-  # below stays read-only and matches the §2.3 invariant — verbs are
-  # still get/list/watch only.
+  # Watching CRDs themselves lets pkg/crd.Discovery register supported
+  # per-CRD informers as operators land at runtime. Access to the CRs is
+  # intentionally enumerated above. A wildcard across every API group would
+  # also grant full read access to core/v1 Secrets; Kubernetes RBAC has no
+  # metadata-only Secret permission, so that broad rule is prohibited.
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
-    verbs: ["get", "list", "watch"]
-  # Read-only access to every namespaced resource that lands as a CR.
-  # Required for pkg/crd.Discovery's per-CRD dynamic informers; safe
-  # because verbs are read-only.
-  - apiGroups: ["*"]
-    resources: ["*"]
     verbs: ["get", "list", "watch"]
 {{- end }}

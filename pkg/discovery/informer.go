@@ -29,7 +29,6 @@ const DefaultResyncPeriod = 10 * time.Minute
 var MinimalCoreGVRs = []schema.GroupVersionResource{
 	{Group: "", Version: "v1", Resource: "pods"},
 	{Group: "", Version: "v1", Resource: "configmaps"},
-	{Group: "", Version: "v1", Resource: "secrets"},
 	{Group: "apps", Version: "v1", Resource: "deployments"},
 }
 
@@ -93,8 +92,8 @@ func (noopSnapshotSink) Enqueue(_ graph.ResourceEvent) {}
 // configured GVRs and forwards K8s add/update/delete events into a
 // GraphStore via the configured ExtractorRegistry.
 type InformerManager struct {
-	factory     dynamicinformer.DynamicSharedInformerFactory
-	store       graph.GraphStore
+	factory      dynamicinformer.DynamicSharedInformerFactory
+	store        graph.GraphStore
 	extractor    ExtractorRegistry
 	broadcaster  Broadcaster
 	snapshotSink SnapshotSink
@@ -195,8 +194,8 @@ func factoryClient(f dynamicinformer.DynamicSharedInformerFactory) dynamic.Inter
 // client from c. Pass options to override defaults.
 func NewInformerManager(dyn dynamic.Interface, store graph.GraphStore, opts ...InformerOption) *InformerManager {
 	m := &InformerManager{
-		factory:     dynamicinformer.NewDynamicSharedInformerFactory(dyn, DefaultResyncPeriod),
-		store:       store,
+		factory:      dynamicinformer.NewDynamicSharedInformerFactory(dyn, DefaultResyncPeriod),
+		store:        store,
 		extractor:    noopRegistry{},
 		broadcaster:  noopBroadcaster,
 		snapshotSink: noopSnapshotSink{},
@@ -293,7 +292,6 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		Name:            r.Name,
 		EventType:       eventType,
 		ResourceVersion: r.ResourceVersion,
-		Data:            r.Raw,
 	})
 
 	// Edge re-derivation: ask the extractor for edges rooted at this
@@ -308,6 +306,14 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		// Best-effort: log and still upsert whatever edges the
 		// extractors did produce before the failure.
 		slog.Warn("edge extraction failed", "id", r.ID(), "err", err)
+	}
+	for _, e := range edges {
+		if ref, ok := graph.SecretReferenceFromEdge(e); ok {
+			if err := m.store.UpsertResource(ctx, ref); err != nil {
+				slog.Warn("upsert referenced Secret placeholder failed", "id", ref.ID(), "err", err)
+				continue
+			}
+		}
 	}
 	for _, e := range edges {
 		if err := m.store.UpsertEdge(ctx, e); err != nil {
@@ -438,15 +444,21 @@ func UnstructuredToResource(u *unstructured.Unstructured, kind string) graph.Res
 			})
 		}
 	}
-	return r
+	return graph.SanitizeResource(r)
 }
 
-// isSkipped reports whether the given GVR is on the PoC-era blacklist
-// of resources that have no architectural intent. The check is
-// preserved from the PoC even though the informer is GVR-driven — it
-// exists so a future caller cannot accidentally start watching events
-// or leases by adding them to the registry.
+// isSkipped reports whether the given GVR is forbidden from the graph. In
+// addition to the PoC-era resources without architectural intent, core/v1
+// Secrets are always rejected here so an internal WithGVRs caller cannot
+// bypass the no-Secret-read boundary.
 func isSkipped(gvr schema.GroupVersionResource) bool {
+	if isCoreSecretGVR(gvr) {
+		return true
+	}
 	key := strings.TrimPrefix(gvr.Group+"/"+gvr.Version+"/"+gvr.Resource, "/")
 	return skippedGVRs[key]
+}
+
+func isCoreSecretGVR(gvr schema.GroupVersionResource) bool {
+	return gvr.Group == "" && gvr.Resource == "secrets"
 }

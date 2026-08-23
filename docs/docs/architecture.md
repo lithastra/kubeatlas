@@ -28,10 +28,11 @@ remains frozen and `/api/v1` changes remain additive.
    Tier 2 (PostgreSQL + Apache AGE) is opt-in via one Helm flag and
    uses a namespaced `Cluster` reconciled by the separately installed,
    cluster-scoped CloudNativePG operator.
-4. **CRD-friendly.** The discovery layer is GVR-driven, with dynamic
-   CRD discovery from v1.0 — new CRDs become per-CRD informers at
-   runtime, and a [Rego rule pack](./concepts/rego-rules.md) can
-   teach the graph their edges without a rebuild.
+4. **CRD-friendly without cross-API wildcard access.** The discovery layer is
+   GVR-driven and watches CRD definitions at runtime. A CRD becomes readable
+   only when the ServiceAccount has an explicit read-only grant for that
+   non-core API group; a [Rego rule pack](./concepts/rego-rules.md) can then
+   teach the graph its edges without a rebuild.
 5. **Two form factors, one engine.** The same Go binary serves the
    CLI (`-once` mode, `export` subcommand) and a long-running server
    with REST + WebSocket endpoints. The Web UI consumes those
@@ -51,7 +52,7 @@ remains frozen and `/api/v1` changes remain additive.
               ┌───────────────────────────────────────────┐
               │  pkg/discovery (informer + GVR registry)  │
               └────────────┬─────────────────────┬────────┘
-                           │ resources           │ raw events
+                           │ resources           │ metadata events
                            ▼                     ▼
               ┌──────────────────────┐  ┌──────────────────────┐
               │  pkg/extractor       │  │  pkg/graph           │
@@ -76,10 +77,12 @@ backed by PostgreSQL + Apache AGE in `pkg/store/postgres`. Reads
 that need graph traversal (blast-radius, orphan/cycle detection)
 go through a recursive CTE on the `edges` table; vertex + edge
 writes are double-written to both the SQL tables and the AGE
-graph so future graph-pattern queries can use the latter. CRD
-discovery is dynamic — `pkg/crd` walks the cluster's CRD list,
-registers per-CRD informers at runtime, and routes their events
-through the Rego rule pack engine in `pkg/extractor/rego`.
+graph so future graph-pattern queries can use the latter. CRD discovery is
+dynamic — `pkg/crd` walks the cluster's CRD list and attempts to register
+per-CRD informers. The Kubernetes API server delivers objects only when the
+KubeAtlas ServiceAccount has an explicit read-only grant for the CR's API
+group; otherwise that informer remains unauthorised. Events that are delivered
+flow through the Rego rule pack engine in `pkg/extractor/rego`.
 
 ### Data acquisition (`pkg/discovery`)
 
@@ -88,6 +91,12 @@ A `dynamicinformer.SharedInformerFactory` watches the resources in
 filtered out at startup so KubeAtlas runs cleanly on clusters where
 Gateway API is not installed. Add/update/delete events are translated
 into typed `graph.Resource` values and forwarded to the store.
+
+Core/v1 Secrets are deliberately absent from `CoreGVRs` and the Helm
+ClusterRole. Kubernetes RBAC cannot return metadata-only Secret objects.
+Instead, extractors derive Secret names from non-Secret references and create
+nodes marked `kubeatlas.io/reference-only=true`. Those nodes prove only that a
+reference was observed; KubeAtlas cannot confirm that the Secret exists.
 
 ### Graph engine (`pkg/graph` + `pkg/store/memory`)
 
@@ -110,7 +119,7 @@ the policy/platform relationships discovered by the built-in engine:
 |---|---|
 | `OWNS` | `metadata.ownerReferences` |
 | `USES_CONFIGMAP` | `envFrom.configMapRef`, `valueFrom.configMapKeyRef`, `volumes[].configMap` |
-| `USES_SECRET` | `envFrom.secretRef`, `valueFrom.secretKeyRef`, `volumes[].secret` |
+| `USES_SECRET` | Workload env/volume/image-pull refs, ServiceAccount refs, Ingress TLS, Gateway certificate refs |
 | `MOUNTS_VOLUME` | `volumes[].persistentVolumeClaim.claimName` |
 | `SELECTS` | `Service.spec.selector` matched against Pod labels |
 | `USES_SERVICEACCOUNT` | `spec.template.spec.serviceAccountName` (or implicit `default`) |

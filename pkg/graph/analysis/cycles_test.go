@@ -170,16 +170,15 @@ func TestDetectCycles_TriangleHasUnknownCategory(t *testing.T) {
 	}
 }
 
-// TestDetectCycles_BootstrapCertCategorized verifies the
-// "controller owns its own cert Secret AND consumes it" 2-cycle
-// is recognised — this is the shape the Phase 2 verifier (and
-// every cert-manager / CNPG / kyverno install) emits.
-func TestDetectCycles_BootstrapCertCategorized(t *testing.T) {
+// TestDetectCycles_SecretReferenceHasNoOwnershipMetadata verifies the v1.5.2
+// Secret boundary removes the owner-reference half of the historical webhook
+// certificate cycle. KubeAtlas sees only the workload's reference to the
+// synthetic Secret node, so there is no cycle to classify.
+func TestDetectCycles_SecretReferenceHasNoOwnershipMetadata(t *testing.T) {
 	s := memory.New()
 	ctx := context.Background()
-	// Webhook Deployment owns a TLS Secret (via OwnerReferences)
-	// AND consumes the same Secret (USES_SECRET edge). Tarjan sees
-	// a 2-cycle; the classifier should see "bootstrap-cert".
+	// The input attempts to supply the old Secret owner metadata; the store
+	// must reduce it to a reference-only node before analysis.
 	dep := graph.Resource{Kind: "Deployment", Namespace: "cnpg-system", Name: "cnpg-controller"}
 	sec := graph.Resource{
 		Kind: "Secret", Namespace: "cnpg-system", Name: "cnpg-webhook-cert",
@@ -189,17 +188,13 @@ func TestDetectCycles_BootstrapCertCategorized(t *testing.T) {
 		_ = s.UpsertResource(ctx, r)
 	}
 	_ = s.UpsertEdge(ctx, graph.Edge{From: dep.ID(), To: sec.ID(), Type: graph.EdgeTypeUsesSecret})
-	_ = s.UpsertEdge(ctx, graph.Edge{From: sec.ID(), To: dep.ID(), Type: graph.EdgeTypeOwns})
 
 	got, err := analysis.DetectCycles(ctx, s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("expected 1 cycle, got %d: %+v", len(got), got)
-	}
-	if got[0].Category != analysis.CycleCategoryBootstrapCert {
-		t.Errorf("expected category=bootstrap-cert, got %q", got[0].Category)
+	if len(got) != 0 {
+		t.Fatalf("reference-only Secret must not create an ownership cycle, got %+v", got)
 	}
 }
 
@@ -268,14 +263,10 @@ func TestDetectCycles_IntentionalCategorized(t *testing.T) {
 	}
 }
 
-// TestDetectCycles_BootstrapCertWinsOverIntentional verifies
-// classifier precedence: bootstrap-cert takes priority over
-// intentional even if the Secret happens to carry the annotation.
-// Rationale: bootstrap-cert is structurally certain (it can only
-// be what the name implies); intentional is a more generic opt-out.
-// Reporting the structural category gives the operator more useful
-// information.
-func TestDetectCycles_BootstrapCertWinsOverIntentional(t *testing.T) {
+// TestDetectCycles_SecretSourceAnnotationsAreDiscarded confirms an annotation
+// supplied on a Secret object cannot influence analysis after it is reduced to
+// a reference-only node.
+func TestDetectCycles_SecretSourceAnnotationsAreDiscarded(t *testing.T) {
 	s := memory.New()
 	ctx := context.Background()
 	dep := graph.Resource{Kind: "Deployment", Namespace: "demo", Name: "ctrl"}
@@ -294,8 +285,8 @@ func TestDetectCycles_BootstrapCertWinsOverIntentional(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[0].Category != analysis.CycleCategoryBootstrapCert {
-		t.Errorf("precedence: expected bootstrap-cert (structural), got %q", got[0].Category)
+	if got[0].Category != analysis.CycleCategoryUnknown {
+		t.Errorf("Secret source annotation influenced classification: got %q", got[0].Category)
 	}
 }
 
