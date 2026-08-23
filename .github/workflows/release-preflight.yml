@@ -1,0 +1,135 @@
+name: Release preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional vX.Y.Z override; defaults to the Helm Chart version
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-preflight.yml'
+      - '.goreleaser.yml'
+      - 'Dockerfile'
+      - 'CHANGELOG.md'
+      - 'images/postgres-age/**'
+      - 'helm/kubeatlas/**'
+      - 'test/verify/release-contract.sh'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-preflight.yml'
+      - '.goreleaser.yml'
+      - 'Dockerfile'
+      - 'CHANGELOG.md'
+      - 'images/postgres-age/**'
+      - 'helm/kubeatlas/**'
+      - 'test/verify/release-contract.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Build release artifacts without publishing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.20.0
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          install-only: true
+
+      - name: Resolve release version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="$REQUESTED_VERSION"
+          if [[ -z "$version" ]]; then
+            version="v$(awk '$1 == "version:" { print $2; exit }' helm/kubeatlas/Chart.yaml)"
+          fi
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error::Expected a version such as v1.5.2 or v1.6.0-rc.1."
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "RELEASE_NOTES=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_ENV"
+
+      - name: Verify release contract
+        run: bash test/verify/release-contract.sh "$RELEASE_VERSION" "$RELEASE_NOTES"
+
+      - name: Verify Go modules
+        run: go mod verify
+
+      - name: Build web bundle
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Check GoReleaser configuration
+        run: goreleaser check
+
+      - name: Build snapshot binaries, archives, checksums, and images
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ env.RELEASE_VERSION }}
+        run: goreleaser release --snapshot --clean --release-notes="$RELEASE_NOTES"
+
+      - name: Lint and package Helm chart
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/helm"
+          helm lint helm/kubeatlas
+          helm package helm/kubeatlas \
+            --destination "$RUNNER_TEMP/helm" \
+            --version "${RELEASE_VERSION#v}" \
+            --app-version "${RELEASE_VERSION#v}"
+
+      - name: Verify release build did not modify tracked files
+        run: |
+          git diff --exit-code
+          test -z "$(git status --short --untracked-files=no)"
+
+      - name: Upload preflight artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-preflight-${{ env.RELEASE_VERSION }}
+          path: |
+            dist/
+            ${{ runner.temp }}/helm/
+            ${{ env.RELEASE_NOTES }}
+          retention-days: 7

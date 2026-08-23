@@ -13,6 +13,13 @@ For the current state, see [What is KubeAtlas](./).
 
 ## Where we are
 
+**v1.5.2 is a release candidate.** It closes the Secret data boundary:
+KubeAtlas retains reference-only dependency nodes without collecting Secret
+objects or persisting their values and identifying metadata. Existing Tier 2
+rows and event payloads are scrubbed during migration. Release publication is
+blocked on the exact-main release preflight and the protected-branch Tier 2 and
+snapshot gates.
+
 **v1.5.1 focuses on release reliability.** CloudNativePG 0.22.1
 becomes an explicit cluster-scoped prerequisite,
 embedded database storage is retained on uninstall by default, and CI
@@ -39,7 +46,8 @@ GraphStore v2 clean-up that surfaces `graphstore_version` on
 | **v1.0** | ✅ Released | Tier 2 persistence (PostgreSQL + Apache AGE), Rego rule packs, RBAC graph, blast radius, orphan + cycle detection, `/api/v1/*` GA, cert-manager TLS, OpenShift detector + embedded pack, chaos test suite. Available as `oci://ghcr.io/lithastra/charts/kubeatlas:1.0.0`. |
 | **v1.1 / v1.2 / v1.3** | ✅ Released | Cloud rule packs, snapshots, search, plugins (v1.1). Offline `kubectl atlas`, graph-image export (v1.2). Multi-cluster federation, platform-identity edges, HPA support, GitHub Action, cartography Web UI redesign (v1.3). |
 | **v1.4 / v1.5** | ✅ Released | Offline diagnostic report, Gatekeeper/Kyverno policy visibility, opt-in anonymous telemetry, v1alpha1 usage counters (v1.4). v1.5 (a non-breaking minor): OpenTelemetry runtime overlay (`CALLS_AT_RUNTIME`), read-side multi-cluster RBAC visibility (F-206), an internal GraphStore v2 clean-up, and the Backstage plugin reaching GA at Headlamp parity. `v1alpha1` stays frozen — there is no v2.0 on the committed roadmap. |
-| **v1.5.1** | 🚧 Stabilizing | Explicit CloudNativePG prerequisite, retained Tier 2 data by default, reproducible PostgreSQL + AGE image, and enforced upgrade, recovery, uninstall-retention, and snapshot release evidence. |
+| **v1.5.1** | ✅ Released | Explicit CloudNativePG prerequisite, retained Tier 2 data by default, reproducible PostgreSQL + AGE image, and enforced upgrade, recovery, uninstall-retention, and snapshot release evidence. |
+| **v1.5.2** | 🚧 Release candidate | Secret relationships remain reference-only while Secret objects, values, identifying metadata, and historical event payloads are excluded or scrubbed. |
 | **Further out** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference; a possible future `v1alpha1` retirement (which would version a v2.0). |
 
 ## Related tools
