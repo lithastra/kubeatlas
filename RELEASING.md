@@ -14,7 +14,7 @@ used for every subsequent release.
 Run from the repo root.
 
 ```bash
-cd /home/nick/kubeatlas
+cd "$(git rev-parse --show-toplevel)"
 
 # 0.1 Working tree clean, on main, in sync with origin
 git fetch origin
@@ -37,23 +37,27 @@ grep -E "^(version|appVersion)" helm/kubeatlas/Chart.yaml
 #     it via `make changelog-extract VERSION=vX.Y.Z`)
 make changelog-extract VERSION=vX.Y.Z && head -5 /tmp/release-notes.md
 
-# 0.6 README + roadmap reflect vX.Y.Z as released
+# 0.6 README + current docs describe vX.Y.Z truthfully as a candidate;
+#     installation examples remain on the last publicly verified version.
 grep -n "vX.Y.Z" README.md docs/docs/intro.md docs/docs/roadmap.md | head
 
-# 0.7 Versioned docs snapshot exists
-test -d docs/versioned_docs/version-X.Y.Z && echo "snapshot OK"
+# 0.7 Current documentation builds. Patch releases keep one maintained
+#     current-docs line; do not create another historical snapshot here.
+( cd docs && npm ci && npm run build )
+
+# 0.8 The no-publish release rehearsal succeeds on this exact main SHA.
+#     This uses Go 1.26, Node 20, Helm 3.20, GoReleaser v2, and Docker
+#     Buildx in GitHub Actions; it does not log in to a registry.
+gh workflow run release-preflight.yml --ref main -f version=vX.Y.Z
+gh run watch --exit-status
 ```
 
 Any failure → fix in `main` first; do not proceed. The release
 workflow runs its own gates but does not undo a bad tag.
 
-If 0.7 reports the snapshot is missing, cut it:
-
-```bash
-( cd docs && npx docusaurus docs:version X.Y.Z )
-git add docs/versioned_docs docs/versioned_sidebars docs/versions.json
-git commit -s -m "docs: snapshot vX.Y.Z"
-```
+Historical version snapshots are not a patch-release gate. KubeAtlas maintains
+the latest documentation line; existing snapshots remain historical evidence,
+not copies that must be regenerated for every patch.
 
 ---
 
@@ -98,17 +102,27 @@ triggers on the tag push and runs:
    — multi-platform binaries (`kubeatlas`, `kubectl-atlas`),
    checksums, the multi-architecture application image, and a draft
    GitHub Release whose body is the extracted CHANGELOG section.
-3. `docker buildx build --push` publishes the multi-architecture
-   PostgreSQL + AGE image with BuildKit SBOM and provenance
-   attestations.
+3. The PostgreSQL + AGE job checks its recipe-version image tag. An
+   existing tag is verified and reused without a push; a missing tag
+   is published once with BuildKit SBOM and provenance attestations.
+   Registry errors fail closed, and changing the Dockerfile without
+   changing the image tag fails the release contract.
 4. `helm package` + `helm push` publishes the chart to
    `oci://ghcr.io/lithastra/charts/kubeatlas:X.Y.Z` after both image
    jobs succeed.
 
-The workflow does not currently create cosign signatures for the
-application image, Helm chart, or binary archives. Do not describe
-those artifacts as signed until a signing job and public verification
-evidence are present.
+The workflow does not currently create Cosign signatures for the
+application image, Helm chart, or binary archives. It also does not
+make an explicit, release-audited SBOM/provenance guarantee for the
+application image or binaries. Do not describe those artifacts as
+signed, SBOM-attached, or provenance-attested until matching jobs and
+public verification evidence are present. This limitation is separate
+from the signed OCI Rego rule-pack pipeline.
+
+The GitHub Release remains a draft, but the tag-triggered workflow has
+already published the application image, updated its moving `latest`
+tag, and pushed the Helm chart. Treat `git push origin vX.Y.Z` as the
+production publication decision, not as a reversible preview.
 
 Watch + verify:
 
@@ -232,11 +246,12 @@ git commit -s -m "chore(krew): bump atlas plugin manifest to vX.Y.Z"
 git push origin main
 
 # 6.5 Open the upstream krew-index PR
+KUBEATLAS_ROOT=$(git rev-parse --show-toplevel)
 mkdir -p /tmp/krew-work && cd /tmp/krew-work
 git clone https://github.com/kubernetes-sigs/krew-index || (cd krew-index && git pull)
 cd krew-index
 git checkout -b atlas-vX.Y.Z
-cp /home/nick/kubeatlas/plugins/atlas.yaml plugins/atlas.yaml
+cp "$KUBEATLAS_ROOT/plugins/atlas.yaml" plugins/atlas.yaml
 git add plugins/atlas.yaml
 git commit -s -m "atlas: upgrade to vX.Y.Z" \
   -m "Bumps URIs and sha256 across all six platforms." \
@@ -244,7 +259,7 @@ git commit -s -m "atlas: upgrade to vX.Y.Z" \
 gh repo set-default kubernetes-sigs/krew-index
 gh pr create --title "atlas: upgrade to vX.Y.Z" \
   --body "Upgrades the atlas plugin to vX.Y.Z. SHAs verified locally with kubectl krew install --manifest."
-cd /home/nick/kubeatlas
+cd "$KUBEATLAS_ROOT"
 ```
 
 Krew-index PRs merge on the maintainers' cadence (often days);
@@ -256,16 +271,20 @@ the GitHub release is already public so users can still
 ## 7. Publish the docs site
 
 ```bash
-cd /home/nick/kubeatlas/docs
-npm install
+cd "$(git rev-parse --show-toplevel)/docs"
+npm ci
 npm run build
-ls build/versions/             # confirm X.Y.Z is there
+
+# After every vX.Y.Z artifact and install command resolves publicly, update the
+# current documentation label and version-pinned examples to X.Y.Z, rebuild,
+# review the diff, and publish. Do not create a patch-version snapshot.
+grep -R "X.Y.Z" docusaurus.config.ts docs | head
 
 # Push to your hosting (pick the matching path):
 #   GitHub Pages via a workflow:  on tag push the docs workflow
 #     deploys; just verify https://docs.kubeatlas.lithastra.com.
 #   Manual / Cloudflare Pages:    wrangler pages deploy build
-cd /home/nick/kubeatlas
+cd "$(git rev-parse --show-toplevel)"
 ```
 
 ---

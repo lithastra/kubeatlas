@@ -175,15 +175,16 @@ persistence:
     # default StorageClass is used unless overridden.
     storageSize: 5Gi
     storageClassName: ""
-    # Image pin matches images/postgres-age/Dockerfile and the test
-    # bootstrap; bumping AGE / PG means changing all three together.
+    # Image pin matches images/postgres-age/image.env, Dockerfile, and the test
+    # bootstrap. The release workflow treats this recipe-version tag as
+    # immutable: changing AGE, PostgreSQL, or the Dockerfile requires a new tag
+    # and coordinated updates to these references.
     #
     # CNPG's spec.imageName webhook validates that the tag parses as
     # a Postgres version (e.g. "16" / "16.6"). Apache AGE publishes
     # tags as "release_PG16_1.6.0" which the webhook rejects, so the
-    # canonical path is to publish ghcr.io/lithastra/postgres-age
-    # with a PG-version-shaped tag once the release pipeline lands.
-    # Until then operators can re-tag locally:
+    # canonical path is ghcr.io/lithastra/postgres-age with a
+    # PG-version-shaped tag. Operators building the image locally can re-tag it:
     #
     #   docker tag apache/age:release_PG16_1.6.0 local-postgres-age:16.6-age1.6.0-rc0.1
     #   helm install ... --set persistence.embedded.image=local-postgres-age:16.6-age1.6.0-rc0.1

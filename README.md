@@ -27,6 +27,15 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
+**v1.5.2 is being prepared as a security patch.** KubeAtlas no longer lists or
+watches Kubernetes Secret objects. Secret relationships remain visible as
+reference-only graph nodes, while Secret values and identifying metadata are
+rejected at collection and scrubbed at both storage boundaries. Snapshot event
+payloads are metadata-only for every resource. See the
+[v1.5.2 changelog](./CHANGELOG.md#v152--secret-data-boundary) for the complete
+upgrade and validation boundary. Continue installing v1.5.1 until the v1.5.2
+chart and release artifacts are publicly verified.
+
 **v1.5.1 hardens release reliability.** This patch release strengthens the Tier 2
 installation and release lifecycle without expanding the product
 surface: CloudNativePG 0.22.1 becomes an explicit cluster-scoped
