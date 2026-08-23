@@ -16,9 +16,11 @@
 # design — it expects the binary to be in the build context already.
 # To produce a Docker image locally, run:
 #
-#   goreleaser release --snapshot --clean --skip=publish
+#   goreleaser release --snapshot --clean
 #
-# which performs the native build + docker build in one shot.
+# which performs the native build + local snapshot image builds in one shot.
+# Do not add --skip=publish here: dockers_v2 builds images in GoReleaser's
+# publish phase, and snapshot mode is what makes that phase local-only.
 
 FROM debian:bookworm-slim
 
