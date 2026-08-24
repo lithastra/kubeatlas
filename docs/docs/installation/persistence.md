@@ -207,6 +207,175 @@ release gate. If the existing cluster is already outside these supported
 intersections, stop and plan recovery from a verified backup instead of
 improvising an unsupported in-place leap.
 
+### Upgrade v1.5.2 to v1.6 and recover embedded Tier 2
+
+This is the single supported v1.6 recovery mechanism for embedded Tier 2: a
+PostgreSQL custom-format logical backup restored into a fresh CNPG `Cluster`.
+It is deliberately portable across vanilla Kubernetes storage providers. CNPG
+physical backups remain valid operator choices, but KubeAtlas does not ship an
+object-store or CSI-specific backup integration in v1.6.
+
+The commands below describe the planned v1.6 contract on repository `main`.
+Do not run them with `TARGET_VERSION=1.6.0` until that signed chart has been
+published. Before the maintenance window, require all of the following:
+
+- KubeAtlas is already on v1.5.2/schema v11 and the staged CNPG prerequisite
+  upgrade above is complete.
+- Kubernetes, CNPG, and PostgreSQL are inside the published v1.6 support
+  matrix. The database major remains PostgreSQL 16.
+- A complete, reviewed Helm values file reproduces every intentional release
+  override, including the same database name and owner role. The defaults are
+  both `kubeatlas`. Do not rely on forgotten one-off `--set` flags.
+- The backup destination is encrypted or otherwise access-controlled, is not
+  on the CNPG PVC, and will survive deletion of the KubeAtlas namespace.
+- The maintenance window allows one application replica to be stopped. v1.6
+  does not promise zero-downtime restore or high-availability coordination.
+
+Set explicit names, lock down newly created files, and inspect the current
+database before taking the backup:
+
+```bash
+set -euo pipefail
+umask 077
+
+NAMESPACE=kubeatlas
+RELEASE=kubeatlas
+PG_CLUSTER="${RELEASE}-pg"
+VALUES_FILE=./kubeatlas-production-values.yaml
+BACKUP_FILE=./kubeatlas-v152-$(date -u +%Y%m%dT%H%M%SZ).dump
+
+kubectl scale deployment -n "${NAMESPACE}" "${RELEASE}" --replicas=0
+kubectl rollout status deployment -n "${NAMESPACE}" "${RELEASE}" \
+  --timeout=2m
+
+PG_POD=$(kubectl get pods -n "${NAMESPACE}" \
+  -l "cnpg.io/cluster=${PG_CLUSTER},cnpg.io/instanceRole=primary" \
+  -o jsonpath='{.items[0].metadata.name}')
+
+kubectl exec -n "${NAMESPACE}" "${PG_POD}" -c postgres -- \
+  psql -v ON_ERROR_STOP=1 -U postgres -d kubeatlas -Atc \
+  'SELECT max(version) FROM public.schema_migrations'
+# Expected: 11
+
+kubectl exec -n "${NAMESPACE}" "${PG_POD}" -c postgres -- \
+  pg_dump -Fc -U postgres -d kubeatlas >"${BACKUP_FILE}"
+
+shasum -a 256 "${BACKUP_FILE}" >"${BACKUP_FILE}.sha256"
+kubectl exec -i -n "${NAMESPACE}" "${PG_POD}" -c postgres -- \
+  pg_restore --list <"${BACKUP_FILE}" >/dev/null
+```
+
+Keep the application stopped until the dump and checksum have been copied to
+the protected destination and independently read back. A v1.5.2/schema-v11
+dump must not contain Kubernetes Secret payloads or database credentials, but
+it does contain cluster metadata, workload specifications, ConfigMap values,
+RBAC names, graph topology, and retained history. Treat the archive as
+sensitive even after checking that known Secret sentinels are absent.
+
+Upgrade the database recipe and application together using the same reviewed
+values. The chart's `Recreate` strategy provides a bounded outage while the
+PostgreSQL image advances within major 16 and the application verifies schema
+v11:
+
+```bash
+TARGET_VERSION=1.6.0
+
+helm upgrade "${RELEASE}" oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version "${TARGET_VERSION}" \
+  --namespace "${NAMESPACE}" \
+  --reset-values \
+  -f "${VALUES_FILE}" \
+  --wait --timeout 10m
+
+kubectl rollout status deployment -n "${NAMESPACE}" "${RELEASE}" \
+  --timeout=2m
+kubectl wait -n "${NAMESPACE}" --for=condition=Available \
+  deployment/"${RELEASE}" --timeout=2m
+```
+
+Do not test recovery against the only surviving database. The following
+procedure is intentionally destructive and is for an actual loss or an
+isolated recovery drill. It deletes the named embedded `Cluster` and its PVC,
+creates a fresh target from the exact release values, then restores the
+protected archive:
+
+```bash
+kubectl scale deployment -n "${NAMESPACE}" "${RELEASE}" --replicas=0
+kubectl rollout status deployment -n "${NAMESPACE}" "${RELEASE}" \
+  --timeout=2m
+
+# Destructive: verify NAMESPACE and PG_CLUSTER before continuing.
+kubectl delete cluster.postgresql.cnpg.io "${PG_CLUSTER}" \
+  -n "${NAMESPACE}" --wait=true --timeout=5m
+kubectl wait -n "${NAMESPACE}" --for=delete pvc \
+  -l "cnpg.io/cluster=${PG_CLUSTER}" --timeout=5m
+
+helm template "${RELEASE}" oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version "${TARGET_VERSION}" \
+  --namespace "${NAMESPACE}" \
+  -f "${VALUES_FILE}" \
+  --show-only templates/postgres-cluster.yaml \
+  | kubectl apply -f -
+
+kubectl wait -n "${NAMESPACE}" --for=condition=Ready \
+  "cluster.postgresql.cnpg.io/${PG_CLUSTER}" --timeout=5m
+PG_POD=$(kubectl get pods -n "${NAMESPACE}" \
+  -l "cnpg.io/cluster=${PG_CLUSTER},cnpg.io/instanceRole=primary" \
+  -o jsonpath='{.items[0].metadata.name}')
+
+kubectl exec -i -n "${NAMESPACE}" "${PG_POD}" -c postgres -- \
+  pg_restore --clean --if-exists --exit-on-error \
+  -U postgres -d kubeatlas <"${BACKUP_FILE}"
+
+kubectl scale deployment -n "${NAMESPACE}" "${RELEASE}" --replicas=1
+kubectl rollout status deployment -n "${NAMESPACE}" "${RELEASE}" \
+  --timeout=120s
+kubectl wait -n "${NAMESPACE}" --for=condition=Available \
+  deployment/"${RELEASE}" --timeout=120s
+```
+
+The Deployment becomes Available only after its `/readyz` probe succeeds. For
+an explicit API check, port-forward `service/${RELEASE}` and request `/readyz`
+from the operator workstation; the application image intentionally does not
+bundle an interactive `curl` client.
+
+The fresh target's bootstrap must create the same database and owner role
+before `pg_restore` runs. Preserve archive ownership and grants: do not add
+`--no-owner` or `--no-acl`. The embedded chart also pre-creates the AGE
+extension and `ag_catalog`; `--clean --if-exists` is required so the archived
+extension, graph objects, owners, and grants can be restored consistently.
+
+Verify more than readiness after a restore:
+
+| Data | Recovery contract |
+|---|---|
+| `resources`, `edges`, and the AGE current graph | The backup preserves dump-time state; the informer then rebuilds it from current Kubernetes state. |
+| `resource_events` and `snapshot_meta` | Preserved only through the dump time. Kubernetes cannot recreate this history. |
+| `otel_spans` and `otel_runtime_edges` | Preserved through the dump time and limited by configured retention. Re-emission by an external collector is not guaranteed. |
+| `schema_migrations`, table owners, and grants | Restore control state. Schema must remain v11 and the application role must be able to read, write, and execute AGE queries. |
+| Kubernetes Secret values and CNPG credentials | Must not exist in the database or archive. The fresh CNPG target rotates its generated credentials. Secret names and incoming references are intentionally retained. |
+| Other Kubernetes data | ConfigMap values, workload specifications, RBAC names, annotations, and topology may be stored and displayed; this is why the archive remains sensitive. |
+
+Record the old and new CNPG `Cluster` and PVC UIDs during a drill to prove the
+target was actually recreated. Confirm retained event/snapshot counts, execute
+an AGE query as the application owner, and create a Kubernetes object after
+the dump but before restore to prove it appears again through informer re-sync
+within the 120-second readiness budget.
+
+Database downgrade is unsupported. If an application upgrade fails after a
+migration, do not attach an older KubeAtlas binary to the migrated database.
+Restore the protected pre-upgrade archive into a fresh compatible target and
+return to the matching application release.
+
+For BYO PostgreSQL, the same logical data and validation contract applies, but
+the database operator owns backup scheduling, retention, encryption, target
+creation, and the destructive-restore procedure. The target must provide
+PostgreSQL 16, the compatible AGE 1.6 library,
+`shared_preload_libraries=age`, the `age` extension, the same database/owner
+role, and equivalent `ag_catalog` grants before restore. Validate schema v11,
+AGE access as the application role, readiness, history counts, and Secret-value
+absence. KubeAtlas v1.6 makes no provider-specific backup automation claim.
+
 ### Security upgrade to v1.5.2
 
 Tier 2 schema v11 permanently removes previously stored Kubernetes Secret
