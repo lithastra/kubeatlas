@@ -9,6 +9,7 @@ name: E2E Tier 2 (kind)
 # Runs on demand and on every PR. This is a mandatory release gate,
 # so every pull request must produce a definitive Tier 2 result.
 on:
+  workflow_call:
   pull_request:
   workflow_dispatch:
 
