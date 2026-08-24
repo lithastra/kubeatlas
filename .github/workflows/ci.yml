@@ -116,6 +116,9 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - working-directory: web
         run: npm ci
+      - name: Audit web dependencies
+        working-directory: web
+        run: npm audit --audit-level=low
       - working-directory: web
         run: npm run lint
 
