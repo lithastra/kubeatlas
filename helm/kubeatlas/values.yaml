@@ -164,7 +164,7 @@ persistence:
   embedded:
     # When true, the chart renders a CloudNativePG Cluster custom
     # resource plus the templates that wire KubeAtlas to it. The
-    # CloudNativePG 0.22.1 operator is an external prerequisite; see
+    # CloudNativePG 0.29.0 (operator 1.30.0) is an external prerequisite; see
     # docs/docs/installation/persistence.md.
     enabled: false
     # Preserve the CNPG Cluster (and therefore its PVC) when the
@@ -186,13 +186,13 @@ persistence:
     # canonical path is ghcr.io/lithastra/postgres-age with a
     # PG-version-shaped tag. Operators building the image locally can re-tag it:
     #
-    #   docker tag apache/age:release_PG16_1.6.0 local-postgres-age:16.6-age1.6.0-rc0.1
-    #   helm install ... --set persistence.embedded.image=local-postgres-age:16.6-age1.6.0-rc0.1
+    #   docker tag apache/age:release_PG16_1.6.0 local-postgres-age:16.15-age1.6.0-rc0.2
+    #   helm install ... --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2
     #
     # The default below points at the lithastra/ image; flipping it
     # back to apache/age will trip the webhook unless the user
     # disables imageName validation (not recommended).
-    image: ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1
+    image: ghcr.io/lithastra/postgres-age:16.15-age1.6.0-rc0.2
     # Cluster name suffix; final name is "<release>-<suffix>".
     clusterNameSuffix: pg
 

@@ -146,6 +146,8 @@ jobs:
         run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v0.5.2
       - name: helm lint
         run: helm lint helm/kubeatlas
+      - name: Verify the v1.6 platform baseline
+        run: bash test/verify/platform-baseline.sh
       - name: helm unittest
         run: helm unittest helm/kubeatlas
 

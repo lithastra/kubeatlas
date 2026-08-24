@@ -2,29 +2,29 @@
 #
 # lithastra/postgres-age — KubeAtlas Tier 2 Postgres image.
 #
-# Layered on top of the CloudNativePG operator's Postgres image so
-# CNPG's bootstrap tooling (barman, pgaudit) is intact, with Apache
-# AGE compiled FROM SOURCE against this image's PG headers + glibc.
+# Layered on top of CloudNativePG's supported standard Postgres image
+# so its operand contract and pgaudit packaging remain intact, with
+# Apache AGE compiled FROM SOURCE against the same PG headers + glibc.
 #
-# Why source build vs COPY of upstream apache/age binaries: the
-# upstream image runs Debian Trixie (glibc 2.38), CNPG's image runs
-# Bullseye (glibc 2.31), so .so symbols don't resolve at runtime
-# ("libc.so.6: version `GLIBC_2.38' not found"). Recompiling against
-# 2.31 produces a binary CNPG can actually load.
+# Why source build vs COPY of upstream apache/age binaries: PostgreSQL
+# extensions are native libraries and must match the target image's
+# PostgreSQL headers, compiler ABI, and C library. Building AGE inside
+# the exact digest-pinned CNPG base makes that compatibility explicit
+# and keeps build tooling out of the final image.
 #
 # Build (multi-arch via buildx at release time):
 #
 #   docker buildx build \
 #     --platform linux/amd64,linux/arm64 \
-#     -t ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1 \
+#     -t ghcr.io/lithastra/postgres-age:16.15-age1.6.0-rc0.2 \
 #     --push \
 #     images/postgres-age
 #
 # Local one-shot for verify/phase2.sh (~5-10 min first time):
 #
-#   docker build -t local-postgres-age:16.6-age1.6.0-rc0.1 images/postgres-age
+#   docker build -t local-postgres-age:16.15-age1.6.0-rc0.2 images/postgres-age
 
-ARG CNPG_IMAGE=ghcr.io/cloudnative-pg/postgresql:16.6
+ARG CNPG_IMAGE=ghcr.io/cloudnative-pg/postgresql:16.15-standard-trixie@sha256:777ad6774e00fff6514c7e9bd6e892fe148c5db2845532a8f456e42317bfc2d2
 ARG AGE_VERSION=PG16/v1.6.0-rc0
 ARG AGE_COMMIT=2db2f060c4c9265a14d40f007eb8c56febf31e4c
 

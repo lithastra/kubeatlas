@@ -137,13 +137,13 @@ the full request and response shapes.
 
 ## Enabling snapshots
 
-Install CloudNativePG chart 0.29.0 (operator 1.30.0) first as described in
+Install CloudNativePG 0.22.1 first as described in
 [Persistence (Tier 2)](../installation/persistence.md#path-a-embedded-cloudnativepg),
 then enable both persistence and snapshots:
 
 ```bash
 helm upgrade --install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.2 \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \

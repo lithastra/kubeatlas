@@ -41,22 +41,17 @@ zero-downtime.
 
 ## Path A: Embedded CloudNativePG
 
-Install the [CloudNativePG](https://cloudnative-pg.io/) chart 0.29.0
-(operator 1.30.0) once per cluster, then enable embedded persistence in the
-KubeAtlas chart. Keeping the cluster-scoped operator in its own Helm release
-prevents one KubeAtlas uninstall from removing control-plane resources shared
-by other databases.
-
-The command below deliberately installs the published KubeAtlas v1.5.2 chart.
-It is also the fresh-install starting point while v1.6 remains under
-development. Do not install the old CloudNativePG 0.22.1 prerequisite for a
-new cluster: its operator is end-of-life.
+Install the [CloudNativePG](https://cloudnative-pg.io/) 0.22.1
+operator once per cluster, then enable embedded persistence in the
+KubeAtlas chart. Keeping the cluster-scoped operator in its own Helm
+release prevents one KubeAtlas uninstall from removing control-plane
+resources shared by other databases.
 
 ```bash
 helm repo add cloudnative-pg https://cloudnative-pg.io/charts
 helm repo update
 helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
-  --version 0.29.0 \
+  --version 0.22.1 \
   --namespace cnpg-system --create-namespace \
   --wait --timeout 5m
 
@@ -65,7 +60,7 @@ kubectl wait --for=condition=Established \
   --timeout=2m
 
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.2 \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true
@@ -77,36 +72,18 @@ What this does:
 2. KubeAtlas renders a namespaced `Cluster` custom resource called
    `<release>-pg`. The operator reconciles it into a PostgreSQL Pod,
    PVC, Services, and a `<release>-pg-app` Secret.
-3. The published v1.5.2 chart uses
-   `ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1`. Current `main`, for
-   the planned v1.6 baseline, uses
-   `ghcr.io/lithastra/postgres-age:16.15-age1.6.0-rc0.2`. Both keep PostgreSQL
-   major 16 and the same pinned Apache AGE PG16 1.6.0 release commit, load AGE
-   at server start, and run `CREATE EXTENSION IF NOT EXISTS age` during
-   bootstrap.
+3. The cluster uses `ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1`
+   (PostgreSQL 16 + Apache AGE 1.6.0), loads AGE at server start, and
+   runs `CREATE EXTENSION IF NOT EXISTS age` during bootstrap.
 4. The KubeAtlas Pod points at the `<release>-pg-rw` Service. Its
    `wait-for-pg` init container blocks startup until `pg_isready`
    succeeds.
-
-### Published release versus current main
-
-The documentation site follows repository `main`, while the public OCI chart
-remains v1.5.2 until v1.6 is released. Keep those two facts separate:
-
-| Artifact | Kubernetes contract | CNPG prerequisite | Default PostgreSQL + AGE image |
-|---|---|---|---|
-| Published KubeAtlas v1.5.2 chart | Chart metadata allows Kubernetes 1.26 and newer; it predates the bounded v1.6 production matrix. | Use chart 0.29.0 / operator 1.30.0 for a fresh cluster. Existing 0.22.1 installations must follow the staged upgrade below. | `16.6-age1.6.0-rc0.1` |
-| Current `main` / planned v1.6 | Vanilla Kubernetes 1.34, 1.35, and 1.36 only. | Chart 0.29.0 / operator 1.30.0. | `16.15-age1.6.0-rc0.2` |
-
-The `main` row is an implementation baseline, not a claim that v1.6 has been
-released. Its production contract becomes effective only after the v1.6
-release gates pass and the signed artifacts are published.
 
 ### Tunable values
 
 | Value | Default | Notes |
 |---|---|---|
-| `persistence.embedded.image` | Release-dependent; see the table above. | Multi-arch image (amd64 + arm64). The tag records the PostgreSQL 16 patch, the pinned upstream PG16 AGE 1.6.0 candidate, and the KubeAtlas image recipe revision; never use `:latest`. |
+| `persistence.embedded.image` | `ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1` | Multi-arch image (amd64 + arm64). The tag records PostgreSQL 16.6, the only upstream PG16 AGE 1.6.0 candidate, and KubeAtlas image revision 1; never use `:latest`. |
 | `persistence.embedded.storageSize` | `5Gi` | PVC size. CNPG cannot shrink this in place; size for projected graph growth. |
 | `persistence.embedded.storageClassName` | _(empty → cluster default)_ | Set to a fast SSD class for production. |
 | `persistence.embedded.clusterNameSuffix` | `pg` | Final cluster name is `<release>-<suffix>`. |
@@ -129,10 +106,9 @@ helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
   --wait --timeout 5m
 
 helm upgrade kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.2 \
+  --version 1.5.1 \
   --namespace kubeatlas \
   --reuse-values \
-  --server-side=false \
   --set persistence.embedded.retainOnDelete=true \
   --wait --timeout 8m
 ```
@@ -141,71 +117,6 @@ The database Pod and PVC stay in place during this transition. After
 the upgrade, `kubeatlas-cloudnative-pg` in the KubeAtlas namespace
 must be gone and `cnpg-cloudnative-pg` in `cnpg-system` must be
 Ready.
-
-### Advance the v1.5.2 CloudNativePG prerequisite
-
-CloudNativePG 1.24 and 1.30 have no common supported Kubernetes version, so
-upgrading chart 0.22.1 directly to 0.29.0 on one unchanged cluster is not the
-documented production path. Take and verify a protected database backup first,
-read the CloudNativePG release notes for every intervening operator minor, and
-keep the operator in its separate `cnpg` Helm release.
-
-Use these supported overlap points:
-
-1. On Kubernetes 1.31, upgrade the operator from 1.24 through 1.27:
-
-   ```bash
-   for chart_version in 0.23.2 0.25.0 0.26.1; do
-     helm upgrade cnpg cloudnative-pg/cloudnative-pg \
-       --version "${chart_version}" \
-       --namespace cnpg-system \
-       --wait --timeout 5m
-     kubectl rollout status deployment/cnpg-cloudnative-pg \
-       --namespace cnpg-system --timeout=2m
-   done
-   ```
-
-2. Following your Kubernetes provider's control-plane procedure, move one
-   minor at a time from Kubernetes 1.31 to 1.33 while operator 1.27 is running.
-   Both ends of that Kubernetes transition are in the operator 1.27 support
-   window.
-
-3. On Kubernetes 1.33, upgrade through operators 1.28 and 1.29:
-
-   ```bash
-   for chart_version in 0.27.1 0.28.3; do
-     helm upgrade cnpg cloudnative-pg/cloudnative-pg \
-       --version "${chart_version}" \
-       --namespace cnpg-system \
-       --wait --timeout 5m
-     kubectl rollout status deployment/cnpg-cloudnative-pg \
-       --namespace cnpg-system --timeout=2m
-   done
-   ```
-
-4. Move Kubernetes one minor from 1.33 to 1.34 while operator 1.29 is running,
-   then install operator 1.30:
-
-   ```bash
-   helm upgrade cnpg cloudnative-pg/cloudnative-pg \
-     --version 0.29.0 \
-     --namespace cnpg-system \
-     --wait --timeout 5m
-   kubectl rollout status deployment/cnpg-cloudnative-pg \
-     --namespace cnpg-system --timeout=2m
-   ```
-
-Chart versions do not equal operator versions. The tested mapping is
-0.22.1→1.24.1, 0.23.2→1.25.1, 0.25.0→1.26.1, 0.26.1→1.27.1,
-0.27.1→1.28.1, 0.28.3→1.29.1, and 0.29.0→1.30.0.
-
-CI proves each operator transition inside the three overlapping Kubernetes
-support windows. It does not pretend that `kind` performs an in-place
-production control-plane upgrade. The full public v1.5.2 application upgrade,
-backup, destructive restore, and data-continuity exercise is a separate v1.6
-release gate. If the existing cluster is already outside these supported
-intersections, stop and plan recovery from a verified backup instead of
-improvising an unsupported in-place leap.
 
 ### Security upgrade to v1.5.2
 

@@ -14,12 +14,10 @@ section in the Developer Guide.
 
 ## Prerequisites
 
-- **Kubernetes 1.34–1.36** — the three upstream-maintained minor
-  branches frozen for the planned v1.6 production baseline. Vanilla
-  Kubernetes, Docker Desktop, and `kind` are the release-gating
-  environments; provider-specific distributions are not part of the
-  v1.6 gate. If you do not have a cluster, [`kind`](https://kind.sigs.k8s.io/)
-  v0.32 on Docker is the fastest local path.
+- **Kubernetes 1.26+** — any cluster you control. EKS, AKS, GKE,
+  OpenShift, k3s, microk8s, Docker Desktop, and `kind` all work. If
+  you don't have one, [`kind`](https://kind.sigs.k8s.io/) v0.22+ on
+  Docker is the fastest local path.
 - [`kubectl`](https://kubernetes.io/docs/tasks/tools/) at the same
   minor version as your cluster.
 - [`helm`](https://helm.sh/) v3.
@@ -29,14 +27,9 @@ section in the Developer Guide.
 The chart is published as an OCI artifact on GHCR. No `helm repo add`
 needed.
 
-The public command below still installs the latest released v1.5.2 artifact.
-The stricter Kubernetes 1.34–1.36 range is the supported production baseline
-for current development and v1.6; the roadmap distinguishes planned evidence
-from released behavior.
-
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.2 \
+  --version 1.5.1 \
   --namespace kubeatlas --create-namespace
 ```
 
