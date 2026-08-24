@@ -148,6 +148,8 @@ jobs:
         run: helm lint helm/kubeatlas
       - name: Verify the v1.6 platform baseline
         run: bash test/verify/platform-baseline.sh
+      - name: Verify the v1.6 operability contract
+        run: bash test/verify/operability-contract.sh
       - name: helm unittest
         run: helm unittest helm/kubeatlas
 

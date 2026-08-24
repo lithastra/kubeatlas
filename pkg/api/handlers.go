@@ -315,7 +315,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 		telMetrics = s.telemetry.Metrics()
 	}
 	writePrometheus(w, s.readiness, s.metrics, s.regoMetrics, s.regoModuleCount,
-		s.snapshotMetrics, s.snapshotQueueDepth, s.dynamicMetrics, s.versionMetrics, telMetrics, s.otelMetrics)
+		s.snapshotMetrics, s.snapshotQueueDepth, s.dynamicMetrics, s.versionMetrics, telMetrics,
+		s.otelMetrics, s.operationalStatus)
 }
 
 // pathParts pulls (namespace, kind, name) out of r.PathValue calls. The

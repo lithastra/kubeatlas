@@ -201,6 +201,48 @@
     "resources": { "type": "object" },
     "livenessProbe": { "type": "object" },
     "readinessProbe": { "type": "object" },
+    "operations": {
+      "type": "object",
+      "description": "Continuous read-only Kubernetes API and storage probes plus an optional operator-maintained backup timestamp marker.",
+      "properties": {
+        "probeInterval": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        "probeTimeout": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        "staleAfter": {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        "backupStatus": {
+          "type": "object",
+          "properties": {
+            "configMapRef": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[A-Za-z0-9]([-._A-Za-z0-9]*[A-Za-z0-9])?$"
+                }
+              },
+              "required": ["name", "key"]
+            }
+          },
+          "required": ["configMapRef"]
+        }
+      },
+      "required": ["probeInterval", "probeTimeout", "staleAfter", "backupStatus"]
+    },
     "persistence": {
       "type": "object",
       "description": "Persistence (Tier 2 / PostgreSQL + Apache AGE). Default-off so zero-config installs stay on Tier 1. When enabled, exactly one of {embedded.enabled=true, connection.host non-empty} must be set: schema rejects both unset (half-configured) and both set (ambiguous wiring).",

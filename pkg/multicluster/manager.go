@@ -11,6 +11,8 @@ import (
 	"sort"
 	"sync"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -75,10 +77,11 @@ func defaultDialer(kubeconfig []byte) (dynamic.Interface, error) {
 
 // clusterEntry tracks one running member cluster.
 type clusterEntry struct {
-	name   string
-	cancel context.CancelFunc
-	done   chan struct{} // closed when the informer's goroutine returns
-	err    error         // last error from Start (set after done closes)
+	name    string
+	dynamic dynamic.Interface
+	cancel  context.CancelFunc
+	done    chan struct{} // closed when the informer's goroutine returns
+	err     error         // last error from Start (set after done closes)
 }
 
 // Option configures a Manager at construction time.
@@ -147,7 +150,7 @@ func (m *Manager) AddCluster(ctx context.Context, name string, kubeconfig []byte
 	starter := m.factory(name, dyn, m.store)
 
 	cctx, cancel := context.WithCancel(ctx)
-	entry := &clusterEntry{name: name, cancel: cancel, done: make(chan struct{})}
+	entry := &clusterEntry{name: name, dynamic: dyn, cancel: cancel, done: make(chan struct{})}
 
 	m.mu.Lock()
 	// Re-check after the dial — concurrent AddCluster for the same
@@ -231,6 +234,34 @@ func (m *Manager) Errors() map[string]error {
 		}
 	}
 	return out
+}
+
+// Probe performs one bounded, read-only request against every attached member
+// cluster. It succeeds only when all members are reachable, so the shared graph
+// cannot be reported as synced while one member is serving stale data. The
+// Namespace list uses the same read-only permissions as the member informers
+// and never requests Secret objects.
+func (m *Manager) Probe(ctx context.Context) error {
+	m.mu.Lock()
+	clients := make(map[string]dynamic.Interface, len(m.clusters))
+	for name, entry := range m.clusters {
+		clients[name] = entry.dynamic
+	}
+	m.mu.Unlock()
+	if len(clients) == 0 {
+		return errors.New("multicluster probe: no member clusters are attached")
+	}
+
+	namespaceGVR := schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}
+	for name, client := range clients {
+		if client == nil {
+			return fmt.Errorf("multicluster probe %q: dynamic client is not configured", name)
+		}
+		if _, err := client.Resource(namespaceGVR).List(ctx, metav1.ListOptions{Limit: 1}); err != nil {
+			return fmt.Errorf("multicluster probe %q: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // Stop cancels every attached cluster and waits for all of them to

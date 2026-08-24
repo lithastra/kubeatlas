@@ -10,6 +10,14 @@ A core Git tag is therefore the start of a release, not proof that the
 whole release is usable. The release owner closes the matrix below with
 public-download evidence before announcing the version.
 
+For the planned v1.6 release, the manual `Release preflight` has two required
+parts: build all candidate artifacts without publishing, and run the exact
+candidate across the frozen vanilla Kubernetes 1.34, 1.35, and 1.36 Tier 2
+matrix. A build-only result is not a release result. After publication, the
+weekly public clean-cluster workflow anonymously verifies the current GitHub
+binary/checksum, public OCI Chart, versioned documentation, and clean Tier 1
+and Tier 2 installs. See [Signals, alerts, and recovery](./operations/runbooks.md).
+
 ## v1.5.2 release matrix
 
 | Component | Required version | Distribution | Required evidence |

@@ -13,7 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	clienttesting "k8s.io/client-go/testing"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/store/memory"
@@ -220,6 +224,49 @@ func TestManager_Errors_ReportsTerminatedInformers(t *testing.T) {
 	// 'ok' is still running; Errors should be empty.
 	if got := m.Errors(); len(got) != 0 {
 		t.Errorf("Errors with no terminated clusters = %v", got)
+	}
+}
+
+func TestManagerProbeRequiresMembersAndChecksEveryCluster(t *testing.T) {
+	store := memory.New()
+	namespaceGVR := schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}
+	newDynamic := func(fail bool) dynamic.Interface {
+		dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(
+			runtime.NewScheme(), map[schema.GroupVersionResource]string{namespaceGVR: "NamespaceList"},
+		)
+		if fail {
+			dyn.PrependReactor("list", "namespaces", func(clienttesting.Action) (bool, runtime.Object, error) {
+				return true, nil, errors.New("API unavailable")
+			})
+		}
+		return dyn
+	}
+	clients := map[string]dynamic.Interface{
+		"prod":    newDynamic(false),
+		"staging": newDynamic(true),
+	}
+	m := New(store,
+		WithFactory(func(string, dynamic.Interface, graph.GraphStore) InformerStarter {
+			return &fakeStarter{}
+		}),
+		withDialer(func(data []byte) (dynamic.Interface, error) { return clients[string(data)], nil }),
+	)
+	defer m.Stop()
+
+	if err := m.Probe(context.Background()); err == nil {
+		t.Fatal("Probe() succeeded without attached members")
+	}
+	if err := m.AddCluster(context.Background(), "prod", []byte("prod")); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Probe(context.Background()); err != nil {
+		t.Fatalf("Probe() with reachable member: %v", err)
+	}
+	if err := m.AddCluster(context.Background(), "staging", []byte("staging")); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Probe(context.Background()); err == nil || !strings.Contains(err.Error(), "staging") {
+		t.Fatalf("Probe() with unreachable member = %v", err)
 	}
 }
 

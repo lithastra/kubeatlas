@@ -1,3 +1,13 @@
+{{- /*
+Old releases have no operations block in their stored Helm values. Helm
+--reuse-values intentionally does not merge newly added chart defaults, so use
+the same secure defaults here when upgrading from v1.5.x.
+*/ -}}
+{{- $operations := .Values.operations | default dict -}}
+{{- $backupStatus := get $operations "backupStatus" | default dict -}}
+{{- $backupRef := get $backupStatus "configMapRef" | default dict -}}
+{{- $backupName := get $backupRef "name" | default "" -}}
+{{- $backupKey := get $backupRef "key" | default "last-successful" -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -86,6 +96,19 @@ spec:
             # silently substitute "auto".
             - name: KUBEATLAS_RULEPACK_OPENSHIFT
               value: {{ printf "%v" .Values.rulePacks.openshift | quote }}
+            - name: KUBEATLAS_OPERATIONS_PROBE_INTERVAL
+              value: {{ get $operations "probeInterval" | default "15s" | quote }}
+            - name: KUBEATLAS_OPERATIONS_PROBE_TIMEOUT
+              value: {{ get $operations "probeTimeout" | default "5s" | quote }}
+            - name: KUBEATLAS_OPERATIONS_STALE_AFTER
+              value: {{ get $operations "staleAfter" | default "2m" | quote }}
+            {{- if $backupName }}
+            # The mounted ConfigMap contains a timestamp only. It is maintained
+            # by the operator's backup workflow and is never a credential or a
+            # substitute for restore testing.
+            - name: KUBEATLAS_BACKUP_TIMESTAMP_FILE
+              value: /var/run/kubeatlas/backup/last-successful
+            {{- end }}
             {{- with .Values.rulePacks.extras }}
             # rulePacks.extras → comma-separated env var the binary
             # reads in main.go's rulePackRefs(). Operators can also
@@ -192,6 +215,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if $backupName }}
+            - name: backup-status
+              mountPath: /var/run/kubeatlas/backup
+              readOnly: true
+            {{- end }}
             {{- if .Values.multicluster.enabled }}
             - name: multicluster-kubeconfigs
               mountPath: /etc/kubeatlas/multicluster
@@ -205,6 +233,14 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if $backupName }}
+        - name: backup-status
+          configMap:
+            name: {{ $backupName | quote }}
+            items:
+              - key: {{ $backupKey | quote }}
+                path: last-successful
+        {{- end }}
         {{- if .Values.multicluster.enabled }}
         - name: multicluster-kubeconfigs
           secret:
