@@ -27,7 +27,7 @@ AUDIT_SCRIPT=test/verify/core-artifact-audit.sh
 ATTESTATION_SCRIPT=test/verify/image-attestations.sh
 
 require_text .goreleaser.yml 'sbom: true'
-require_text .goreleaser.yml '"--provenance=true"'
+require_text .goreleaser.yml '"--provenance={{ if .IsSnapshot }}false{{ else }}true{{ end }}"'
 
 sign_calls=$(grep -Fc 'bash test/verify/sign-core-artifact.sh' "$RELEASE_WORKFLOW")
 [[ "$sign_calls" -eq 3 ]] || fail "release workflow must sign exactly three core OCI artifacts"

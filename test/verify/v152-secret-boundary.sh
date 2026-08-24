@@ -53,8 +53,11 @@ stop_port_forward() {
 }
 
 start_port_forward() {
-  kubectl port-forward --namespace "${NS}" "service/${RELEASE}" \
-    "${PF_PORT}:80" >/tmp/kubeatlas-v152-secret-boundary-pf.log 2>&1 &
+  # Target the Deployment explicitly. Snapshot Jobs intentionally share the
+  # app labels used by the Service selector but do not expose the HTTP port, so
+  # service port-forward can race and select a snapshot Pod.
+  kubectl port-forward --namespace "${NS}" "deployment/${RELEASE}" \
+    "${PF_PORT}:8080" >/tmp/kubeatlas-v152-secret-boundary-pf.log 2>&1 &
   PF_PID=$!
   trap stop_port_forward EXIT
   for _ in $(seq 1 60); do
