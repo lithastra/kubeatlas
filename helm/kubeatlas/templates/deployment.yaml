@@ -86,6 +86,19 @@ spec:
             # silently substitute "auto".
             - name: KUBEATLAS_RULEPACK_OPENSHIFT
               value: {{ printf "%v" .Values.rulePacks.openshift | quote }}
+            - name: KUBEATLAS_OPERATIONS_PROBE_INTERVAL
+              value: {{ .Values.operations.probeInterval | quote }}
+            - name: KUBEATLAS_OPERATIONS_PROBE_TIMEOUT
+              value: {{ .Values.operations.probeTimeout | quote }}
+            - name: KUBEATLAS_OPERATIONS_STALE_AFTER
+              value: {{ .Values.operations.staleAfter | quote }}
+            {{- if .Values.operations.backupStatus.configMapRef.name }}
+            # The mounted ConfigMap contains a timestamp only. It is maintained
+            # by the operator's backup workflow and is never a credential or a
+            # substitute for restore testing.
+            - name: KUBEATLAS_BACKUP_TIMESTAMP_FILE
+              value: /var/run/kubeatlas/backup/last-successful
+            {{- end }}
             {{- with .Values.rulePacks.extras }}
             # rulePacks.extras → comma-separated env var the binary
             # reads in main.go's rulePackRefs(). Operators can also
@@ -192,6 +205,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.operations.backupStatus.configMapRef.name }}
+            - name: backup-status
+              mountPath: /var/run/kubeatlas/backup
+              readOnly: true
+            {{- end }}
             {{- if .Values.multicluster.enabled }}
             - name: multicluster-kubeconfigs
               mountPath: /etc/kubeatlas/multicluster
@@ -205,6 +223,14 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if .Values.operations.backupStatus.configMapRef.name }}
+        - name: backup-status
+          configMap:
+            name: {{ .Values.operations.backupStatus.configMapRef.name | quote }}
+            items:
+              - key: {{ .Values.operations.backupStatus.configMapRef.key | quote }}
+                path: last-successful
+        {{- end }}
         {{- if .Values.multicluster.enabled }}
         - name: multicluster-kubeconfigs
           secret:

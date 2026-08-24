@@ -70,6 +70,74 @@ tests:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.path
           value: /readyz
 
+  - it: renders continuous operational probe defaults without a backup mount
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_OPERATIONS_PROBE_INTERVAL
+            value: 15s
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_OPERATIONS_PROBE_TIMEOUT
+            value: 5s
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_OPERATIONS_STALE_AFTER
+            value: 2m
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_BACKUP_TIMESTAMP_FILE
+          any: true
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: backup-status
+          any: true
+
+  - it: mounts an explicit backup timestamp ConfigMap read-only
+    set:
+      operations.backupStatus.configMapRef.name: kubeatlas-backup-status
+      operations.backupStatus.configMapRef.key: completed-at
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_BACKUP_TIMESTAMP_FILE
+            value: /var/run/kubeatlas/backup/last-successful
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: backup-status
+            mountPath: /var/run/kubeatlas/backup
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: backup-status
+            configMap:
+              name: kubeatlas-backup-status
+              items:
+                - key: completed-at
+                  path: last-successful
+
+  - it: rejects an invalid operational probe duration
+    set:
+      operations.probeInterval: eventually
+    asserts:
+      - failedTemplate:
+          errorPattern: "operations/probeInterval|pattern"
+
+  - it: rejects an invalid backup ConfigMap name
+    set:
+      operations.backupStatus.configMapRef.name: Not_A_ConfigMap
+    asserts:
+      - failedTemplate:
+          errorPattern: "configMapRef/name|pattern"
+
   - it: container exposes a writable /tmp emptyDir on the read-only rootfs
     asserts:
       - contains:
