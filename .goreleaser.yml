@@ -104,6 +104,11 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
+    # Keep both attestations explicit. The release audit verifies that every
+    # platform manifest is covered by SPDX SBOM and SLSA provenance predicates.
+    sbom: true
+    flags:
+      - "--provenance=true"
     labels:
       org.opencontainers.image.title: "{{ .ProjectName }}"
       org.opencontainers.image.version: "{{ .Version }}"
