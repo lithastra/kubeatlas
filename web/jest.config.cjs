@@ -30,6 +30,10 @@ const config = {
     '\\.svg(\\?(url|raw))?$': '<rootDir>/test-stubs/svg.js',
   },
 
+  // React Router 7 uses the standard encoding APIs during module load.
+  // Node provides them, but jsdom does not expose them by default.
+  setupFiles: ['<rootDir>/test-stubs/web-platform.cjs'],
+
   // jest-dom matchers (toBeInTheDocument, etc.) load globally.
   setupFilesAfterEnv: ['@testing-library/jest-dom'],
 

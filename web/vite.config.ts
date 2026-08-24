@@ -30,10 +30,23 @@ export default defineConfig({
         // pages that don't render them (e.g. /resources before P1-T13's
         // topology dependencies) don't pay the parse cost. Order
         // matters — the first matching pattern wins.
-        manualChunks: {
-          'cytoscape-vendor': ['cytoscape', 'cytoscape-dagre'],
-          'mui-grid': ['@mui/x-data-grid'],
-          'mermaid-vendor': ['mermaid'],
+        manualChunks(id) {
+          if (
+            id.includes('/node_modules/cytoscape/') ||
+            id.includes('/node_modules/cytoscape-dagre/')
+          ) {
+            return 'cytoscape-vendor';
+          }
+          if (id.includes('/node_modules/@mui/x-data-grid/')) {
+            return 'mui-grid';
+          }
+          // Keep Mermaid's lazily loaded diagram modules as separate chunks.
+          // Assigning the whole package here would pull every diagram into one
+          // multi-megabyte eager vendor chunk under Rolldown.
+          if (id.endsWith('/node_modules/mermaid/dist/mermaid.core.mjs')) {
+            return 'mermaid-vendor';
+          }
+          return undefined;
         },
       },
     },
