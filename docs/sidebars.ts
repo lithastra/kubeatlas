@@ -25,6 +25,14 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Operations',
+      collapsed: false,
+      items: [
+        'operations/runbooks',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Concepts',
       collapsed: false,
       items: [

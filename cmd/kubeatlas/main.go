@@ -30,6 +30,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/gatekeeper"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/multicluster"
+	"github.com/lithastra/kubeatlas/pkg/operations"
 	"github.com/lithastra/kubeatlas/pkg/otel"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 	"github.com/lithastra/kubeatlas/pkg/store"
@@ -554,6 +555,30 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		log.Fatalf("failed to construct graph store: %v", err)
 	}
 
+	// Continuous product-neutral dependency signals. These bounded probes run
+	// outside informer and request hot paths. Tier 1 memory storage is local to
+	// this process, so its reachability probe succeeds while durability remains
+	// explicitly false; Tier 2 uses pgx Ping against the configured pool.
+	operationsCfg, err := operations.LoadConfig()
+	if err != nil {
+		log.Fatalf("operations config: %v", err)
+	}
+	operationsCfg.StorageDurable = storeCfg.Backend == store.BackendPostgres
+	storageProbe := func(context.Context) error { return nil }
+	if operationsCfg.StorageDurable {
+		pgStore, ok := graphStore.(*postgres.Store)
+		if !ok {
+			log.Fatalf("operations: backend=postgres but store is %T, not *postgres.Store", graphStore)
+		}
+		storageProbe = pgStore.Ping
+	}
+	// The function variable switches to the federation-wide probe before the
+	// monitor goroutine starts when multi-cluster mode is configured.
+	kubernetesProbe := operations.Probe(client.Probe)
+	operationsMonitor := operations.New(operationsCfg, func(ctx context.Context) error {
+		return kubernetesProbe(ctx)
+	}, storageProbe)
+
 	// F-111 snapshot writer (P3-T3). Only started on Tier 2 with
 	// snapshots explicitly enabled. The values.schema.json gate
 	// rejects enabled-without-persistence, so reaching here with
@@ -685,6 +710,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		api.WithWebFS(webFS),
 		api.WithRegoMetrics(regoEngine.Metrics(), regoEngine.ModuleCount),
 		api.WithDynamicInformerMetrics(dynMetrics),
+		api.WithOperationalStatus(operationsMonitor),
 		api.WithTelemetry(telemetrySender),
 	}
 	if snapWriter != nil {
@@ -797,12 +823,18 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		// holds no reference to srv, so the swap is safe.
 		apiOpts = append(apiOpts, api.WithClusterLister(mcMgr))
 		srv = api.New(apiAddr, graphStore, aggregator.NewRegistry(), apiOpts...)
+		kubernetesProbe = mcMgr.Probe
 		informerStarter = &multiclusterStarter{
 			mgr:         mcMgr,
 			kubeconfigs: mcKubeconfigs,
 			onReady:     srv.Readiness().MarkReady,
 		}
 	}
+
+	// Start only after the single-cluster versus federation probe has been
+	// selected. This avoids a misleading local-control-plane signal in
+	// multi-cluster mode and keeps the closure race-free.
+	go operationsMonitor.Start(ctx)
 
 	// Opt-in telemetry runs as a detached background goroutine, NOT one
 	// of the blocking components below: disabled telemetry returns

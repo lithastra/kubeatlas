@@ -11,23 +11,33 @@ on:
     paths:
       - '.github/workflows/release.yml'
       - '.github/workflows/release-preflight.yml'
+      - '.github/workflows/e2e-kind-tier2.yml'
+      - '.github/workflows/scheduled-clean-cluster.yml'
       - '.goreleaser.yml'
       - 'Dockerfile'
       - 'CHANGELOG.md'
       - 'images/postgres-age/**'
       - 'helm/kubeatlas/**'
+      - 'docs/docs/operations/**'
       - 'test/verify/release-contract.sh'
+      - 'test/verify/operability-contract.sh'
+      - 'test/verify/public-clean-cluster.sh'
   push:
     branches: [main]
     paths:
       - '.github/workflows/release.yml'
       - '.github/workflows/release-preflight.yml'
+      - '.github/workflows/e2e-kind-tier2.yml'
+      - '.github/workflows/scheduled-clean-cluster.yml'
       - '.goreleaser.yml'
       - 'Dockerfile'
       - 'CHANGELOG.md'
       - 'images/postgres-age/**'
       - 'helm/kubeatlas/**'
+      - 'docs/docs/operations/**'
       - 'test/verify/release-contract.sh'
+      - 'test/verify/operability-contract.sh'
+      - 'test/verify/public-clean-cluster.sh'
 
 permissions:
   contents: read
@@ -90,6 +100,9 @@ jobs:
       - name: Verify release contract
         run: bash test/verify/release-contract.sh "$RELEASE_VERSION" "$RELEASE_NOTES"
 
+      - name: Verify operability contract
+        run: bash test/verify/operability-contract.sh
+
       - name: Verify Go modules
         run: go mod verify
 
@@ -133,3 +146,29 @@ jobs:
             ${{ runner.temp }}/helm/
             ${{ env.RELEASE_NOTES }}
           retention-days: 7
+
+  candidate-platform:
+    name: Frozen Kubernetes candidate matrix
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/e2e-kind-tier2.yml
+
+  required-results:
+    name: Release preflight required results
+    if: always()
+    needs:
+      - preflight
+      - candidate-platform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce artifact and candidate-platform results
+        env:
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          CANDIDATE_RESULT: ${{ needs.candidate-platform.result }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          test "${PREFLIGHT_RESULT}" = success
+          if [[ "${EVENT_NAME}" = workflow_dispatch ]]; then
+            test "${CANDIDATE_RESULT}" = success
+          else
+            test "${CANDIDATE_RESULT}" = skipped
+          fi

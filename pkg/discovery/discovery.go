@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,6 +55,8 @@ type Client struct {
 	dynamic   dynamic.Interface
 }
 
+var namespaceGVR = schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}
+
 // NewClient builds a Client from the most appropriate source for the
 // runtime environment.
 //
@@ -83,6 +86,21 @@ func NewClient(kubeconfigPath, contextName string) (*Client, error) {
 		return nil, fmt.Errorf("build dynamic client: %w", err)
 	}
 	return &Client{discovery: dc, dynamic: dyn}, nil
+}
+
+// Probe performs one bounded, read-only Kubernetes API request for the
+// operational monitor. Listing a single Namespace uses the same dynamic
+// client and ClusterRole permissions as the informer, so success proves the
+// watched control plane is reachable without treating a quiet cluster as
+// stale or requesting any Secret collection.
+func (c *Client) Probe(ctx context.Context) error {
+	if c == nil || c.dynamic == nil {
+		return errors.New("probe Kubernetes API: dynamic client is not configured")
+	}
+	if _, err := c.dynamic.Resource(namespaceGVR).List(ctx, metav1.ListOptions{Limit: 1}); err != nil {
+		return fmt.Errorf("probe Kubernetes API: %w", err)
+	}
+	return nil
 }
 
 func loadConfig(kubeconfigPath, contextName string) (*rest.Config, error) {

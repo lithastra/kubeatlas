@@ -123,7 +123,20 @@ v1.5.0 upgrade, failure-recovery, and deletion procedures.
 
 `livenessProbe` and `readinessProbe` map to `/healthz` and `/readyz`.
 `/readyz` only flips ready after the informer's initial sync, so a
-green readiness gate means the graph is fully populated.
+green readiness gate means the initial graph was populated. It does not prove
+that the Kubernetes API or PostgreSQL remained reachable after startup.
+
+| Key | Default | Notes |
+|---|---|---|
+| `operations.probeInterval` | `15s` | Interval for bounded read-only Kubernetes API and storage probes. |
+| `operations.probeTimeout` | `5s` | Per-dependency probe timeout. |
+| `operations.staleAfter` | `2m` | A continuing API probe failure changes graph state from `degraded` to `stale` after this duration. |
+| `operations.backupStatus.configMapRef.name` | `""` | Optional ConfigMap containing only the latest successful backup timestamp. Empty disables the marker. |
+| `operations.backupStatus.configMapRef.key` | `last-successful` | Key mounted read-only when a ConfigMap name is set. |
+
+See [Signals, alerts, and recovery](../operations/runbooks.md) for metric
+semantics, product-neutral PromQL examples, and interruption runbooks. The
+chart does not install a monitoring stack or Prometheus Operator CRDs.
 
 `nodeSelector`, `tolerations`, and `affinity` follow the standard
 Helm chart shape.

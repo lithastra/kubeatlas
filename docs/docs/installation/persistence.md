@@ -112,6 +112,26 @@ release gates pass and the signed artifacts are published.
 | `persistence.embedded.clusterNameSuffix` | `pg` | Final cluster name is `<release>-<suffix>`. |
 | `persistence.embedded.retainOnDelete` | `true` | Keep the CNPG `Cluster` and PVC when the KubeAtlas Helm release is uninstalled. |
 
+### Optional backup-age signal
+
+KubeAtlas v1.6 can expose the age of an operator-maintained successful-backup
+timestamp. It does not run or verify the backup itself. After a backup and its
+integrity checks succeed, update a ConfigMap containing only an RFC 3339 or Unix
+timestamp, then set:
+
+```yaml
+operations:
+  backupStatus:
+    configMapRef:
+      name: kubeatlas-backup-status
+      key: last-successful
+```
+
+The Chart mounts that one key read-only. Never put an archive, credential,
+destination URL, object key, or customer data in the ConfigMap. Alert on both
+marker availability and age, and keep restore drills as the actual recovery
+evidence. See [Signals, alerts, and recovery](../operations/runbooks.md).
+
 ### Upgrade from v1.5.0
 
 v1.5.0 bundled the operator inside the KubeAtlas release. Install

@@ -138,6 +138,22 @@ readinessProbe:
   initialDelaySeconds: 1
   periodSeconds: 5
 
+# Continuous product-neutral dependency observations exported on /metrics.
+# These bounded read-only probes do not change /readyz: readiness still means
+# the initial informer sync completed, while the metrics below make later API
+# or storage degradation visible to an operator.
+operations:
+  probeInterval: 15s
+  probeTimeout: 5s
+  staleAfter: 2m
+  backupStatus:
+    # Optional operator-maintained ConfigMap containing only the timestamp of
+    # the latest successful backup. KubeAtlas mounts it read-only and never
+    # runs backups itself. Leave name empty to disable the backup-age signal.
+    configMapRef:
+      name: ""
+      key: last-successful
+
 # Persistence (Tier 2 / PostgreSQL + Apache AGE).
 #
 # Default-off so a `helm install kubeatlas oci://...` with no flags

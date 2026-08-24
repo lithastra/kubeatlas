@@ -1,0 +1,108 @@
+name: Weekly public clean cluster
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-public-clean-cluster
+  cancel-in-progress: false
+
+jobs:
+  public-clean-cluster:
+    name: Anonymous public artifacts on vanilla Kubernetes
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Prepare bounded evidence artifact
+        run: |
+          : >/tmp/kubeatlas-public-clean-evidence.log
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.20.0
+
+      - name: Create a clean frozen vanilla Kubernetes cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.32.0
+          node_image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+          cluster_name: kubeatlas-public-clean
+          wait: 120s
+
+      - name: Resolve and verify the current public GitHub release anonymously
+        run: |
+          set -euo pipefail
+          release_json=$(curl -fsSL --retry 4 \
+            https://api.github.com/repos/lithastra/kubeatlas/releases/latest)
+          tag=$(jq -r '.tag_name' <<<"${release_json}")
+          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version=${tag#v}
+          archive="kubeatlas_${version}_linux_amd64.tar.gz"
+          archive_url=$(jq -r --arg name "${archive}" \
+            '.assets[] | select(.name == $name) | .browser_download_url' <<<"${release_json}")
+          checksums_url=$(jq -r \
+            '.assets[] | select(.name == "checksums.txt") | .browser_download_url' <<<"${release_json}")
+          [[ "${archive_url}" == https://* ]]
+          [[ "${checksums_url}" == https://* ]]
+          curl -fsSL --retry 4 -o "${RUNNER_TEMP}/${archive}" "${archive_url}"
+          curl -fsSL --retry 4 -o "${RUNNER_TEMP}/checksums.txt" "${checksums_url}"
+          pushd "${RUNNER_TEMP}" >/dev/null
+          grep -F "  ${archive}" checksums.txt | sha256sum --check --strict
+          popd >/dev/null
+          mkdir -p "${RUNNER_TEMP}/public-binary"
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/public-binary" kubeatlas
+          echo "PUBLIC_VERSION=${version}" >>"${GITHUB_ENV}"
+          echo "PUBLIC_BINARY=${RUNNER_TEMP}/public-binary/kubeatlas" >>"${GITHUB_ENV}"
+
+      - name: Verify the public Helm chart and versioned docs anonymously
+        run: |
+          set -euo pipefail
+          helm pull oci://ghcr.io/lithastra/charts/kubeatlas \
+            --version "${PUBLIC_VERSION}" \
+            --destination "${RUNNER_TEMP}"
+          mkdir -p "${RUNNER_TEMP}/public-chart"
+          tar -xzf "${RUNNER_TEMP}/kubeatlas-${PUBLIC_VERSION}.tgz" \
+            -C "${RUNNER_TEMP}/public-chart"
+          chart_version=$(awk '$1 == "version:" { print $2; exit }' \
+            "${RUNNER_TEMP}/public-chart/kubeatlas/Chart.yaml")
+          app_version=$(awk '$1 == "appVersion:" { gsub(/"/, "", $2); print $2; exit }' \
+            "${RUNNER_TEMP}/public-chart/kubeatlas/Chart.yaml")
+          test "${chart_version}" = "${PUBLIC_VERSION}"
+          test "${app_version}" = "${PUBLIC_VERSION}"
+          curl -fsSL --retry 4 \
+            "https://docs.kubeatlas.lithastra.com/${PUBLIC_VERSION}/quick-start" \
+            >/dev/null
+
+      - name: Install the external CloudNativePG prerequisite
+        run: |
+          helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+          helm repo update
+          helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
+            --version 0.29.0 \
+            --namespace cnpg-system --create-namespace \
+            --wait --timeout 5m
+          kubectl rollout status deployment/cnpg-cloudnative-pg \
+            --namespace cnpg-system --timeout=2m
+
+      - name: Verify public Tier 1 and Tier 2 installs
+        env:
+          KUBEATLAS_PUBLIC_VERSION: ${{ env.PUBLIC_VERSION }}
+          KUBEATLAS_PUBLIC_BINARY: ${{ env.PUBLIC_BINARY }}
+          KUBEATLAS_EVIDENCE_FILE: /tmp/kubeatlas-public-clean-evidence.log
+        run: bash test/verify/public-clean-cluster.sh
+
+      - name: Upload sanitized scheduled or failure evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kubeatlas-public-clean-cluster-evidence
+          path: /tmp/kubeatlas-public-clean-evidence.log
+          if-no-files-found: warn
+          retention-days: 7

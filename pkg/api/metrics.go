@@ -7,9 +7,11 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
+	"github.com/lithastra/kubeatlas/pkg/operations"
 	"github.com/lithastra/kubeatlas/pkg/otel"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 	"github.com/lithastra/kubeatlas/pkg/telemetry"
@@ -104,7 +106,7 @@ func (vc *versionCounter) snapshot() (v1alpha1, v1 map[string]uint64) {
 //
 // Write errors are ignored: a hung-up scraper isn't something /metrics
 // can do anything useful about.
-func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int, dynMetrics *discovery.DynamicMetrics, versionMetrics *versionCounter, telMetrics *telemetry.Metrics, otelMetrics *otel.Metrics) {
+func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, regoMetrics *rego.Metrics, regoModules func() int, snapMetrics *snapshot.Metrics, snapQueueDepth func() int, dynMetrics *discovery.DynamicMetrics, versionMetrics *versionCounter, telMetrics *telemetry.Metrics, otelMetrics *otel.Metrics, operationalStatus OperationalStatusProvider) {
 	p := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) }
 
 	p("# HELP kubeatlas_goroutines Number of currently running goroutines.\n")
@@ -118,6 +120,10 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, 
 		synced = 1
 	}
 	p("kubeatlas_informer_synced %d\n", synced)
+
+	if operationalStatus != nil {
+		writeOperationalPrometheus(w, operationalStatus.Snapshot(), synced == 1, time.Now())
+	}
 
 	p("# HELP kubeatlas_api_requests_total Total HTTP requests served, broken down by method and status.\n")
 	p("# TYPE kubeatlas_api_requests_total counter\n")
@@ -256,6 +262,70 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, 
 		p("# TYPE kubeatlas_dynamic_informer_errors_total counter\n")
 		p("kubeatlas_dynamic_informer_errors_total %d\n", s.Errors)
 	}
+}
+
+func writeOperationalPrometheus(w io.Writer, snap operations.Snapshot, initialSync bool, now time.Time) {
+	p := func(format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) }
+	state := snap.ObservationState(initialSync, now)
+	p("# HELP kubeatlas_graph_observation_state Current graph observation state as a one-hot gauge.\n")
+	p("# TYPE kubeatlas_graph_observation_state gauge\n")
+	for _, candidate := range []operations.ObservationState{
+		operations.ObservationInitializing,
+		operations.ObservationSynced,
+		operations.ObservationDegraded,
+		operations.ObservationStale,
+	} {
+		value := 0
+		if state == candidate {
+			value = 1
+		}
+		p("kubeatlas_graph_observation_state{state=%q} %d\n", candidate, value)
+	}
+
+	p("# HELP kubeatlas_kubernetes_api_reachable 1 if the latest bounded read-only Kubernetes API probe succeeded.\n")
+	p("# TYPE kubeatlas_kubernetes_api_reachable gauge\n")
+	p("kubeatlas_kubernetes_api_reachable %d\n", boolMetric(snap.KubernetesKnown && snap.KubernetesReachable))
+	p("# HELP kubeatlas_kubernetes_api_last_success_timestamp_seconds Unix timestamp of the latest successful Kubernetes API probe, or 0 before one succeeds.\n")
+	p("# TYPE kubeatlas_kubernetes_api_last_success_timestamp_seconds gauge\n")
+	p("kubeatlas_kubernetes_api_last_success_timestamp_seconds %d\n", unixMetric(snap.KubernetesLastSuccess))
+
+	p("# HELP kubeatlas_storage_reachable 1 if the latest bounded storage probe succeeded.\n")
+	p("# TYPE kubeatlas_storage_reachable gauge\n")
+	p("kubeatlas_storage_reachable %d\n", boolMetric(snap.StorageKnown && snap.StorageReachable))
+	p("# HELP kubeatlas_storage_durable 1 when graph storage is configured for durable PostgreSQL persistence, 0 for memory.\n")
+	p("# TYPE kubeatlas_storage_durable gauge\n")
+	p("kubeatlas_storage_durable %d\n", boolMetric(snap.StorageDurable))
+	p("# HELP kubeatlas_storage_last_success_timestamp_seconds Unix timestamp of the latest successful storage probe, or 0 before one succeeds.\n")
+	p("# TYPE kubeatlas_storage_last_success_timestamp_seconds gauge\n")
+	p("kubeatlas_storage_last_success_timestamp_seconds %d\n", unixMetric(snap.StorageLastSuccess))
+
+	p("# HELP kubeatlas_backup_status_available 1 when the optional operator-maintained backup timestamp marker is valid.\n")
+	p("# TYPE kubeatlas_backup_status_available gauge\n")
+	p("kubeatlas_backup_status_available %d\n", boolMetric(snap.BackupStatusAvailable))
+	p("# HELP kubeatlas_backup_last_success_timestamp_seconds Operator-reported Unix timestamp of the latest successful backup, or 0 when unavailable.\n")
+	p("# TYPE kubeatlas_backup_last_success_timestamp_seconds gauge\n")
+	p("kubeatlas_backup_last_success_timestamp_seconds %d\n", unixMetric(snap.BackupLastSuccess))
+	p("# HELP kubeatlas_backup_age_seconds Seconds since the operator-reported successful backup, or 0 when unavailable.\n")
+	p("# TYPE kubeatlas_backup_age_seconds gauge\n")
+	backupAge := int64(0)
+	if snap.BackupStatusAvailable && !snap.BackupLastSuccess.IsZero() && !snap.BackupLastSuccess.After(now) {
+		backupAge = int64(now.Sub(snap.BackupLastSuccess).Seconds())
+	}
+	p("kubeatlas_backup_age_seconds %d\n", backupAge)
+}
+
+func boolMetric(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func unixMetric(value time.Time) int64 {
+	if value.IsZero() {
+		return 0
+	}
+	return value.Unix()
 }
 
 // sortedKeys returns a map's keys in sorted order for deterministic

@@ -5,12 +5,13 @@
 # managed) and verify KubeAtlas survives the disconnect, retries
 # until PG is back, and recovers without panicking the process.
 #
-# Expected behaviour (v1.0):
+# Expected behaviour (v1.6):
 #   - During the outage, KubeAtlas logs pgx connect errors but
 #     does NOT exit. /healthz keeps returning 200; /readyz may
 #     dip to 503 if Tier 2 reads gate readiness — that is fine.
-#   - Within 30s of CNPG promoting a new primary, /readyz returns
-#     200 again and the cluster-view endpoint is served.
+#   - kubeatlas_storage_reachable becomes 0 during the interruption.
+#   - Within 120s of a replacement primary becoming Ready, storage
+#     reachability returns to 1 and the cluster-view endpoint is served.
 #   - kubeatlas_rego_eval_panic_total has not increased.
 #
 # Skipped on Tier 1 installs (no PG to disconnect from). Use
@@ -42,7 +43,7 @@ done
 
 echo "==> Locating CNPG primary Pod"
 PRIMARY=$(kubectl get pod -n "${NS}" \
-  -l "cnpg.io/cluster,role=primary" \
+  -l "cnpg.io/cluster=${RELEASE}-pg,cnpg.io/instanceRole=primary" \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
 
 if [[ -z "${PRIMARY}" ]]; then
@@ -57,42 +58,65 @@ panic_before=$(grep '^kubeatlas_rego_eval_panic_total ' <<<"${metrics_before}" \
   | awk '{print $2}' | head -1)
 panic_before=${panic_before:-0}
 echo "panic_total before: ${panic_before}"
+grep -Fq 'kubeatlas_storage_reachable 1' <<<"${metrics_before}" || {
+  echo "storage probe was not healthy before chaos" >&2
+  exit 1
+}
 
 echo "==> Deleting primary Pod ${PRIMARY}"
 kubectl delete pod -n "${NS}" "${PRIMARY}" --wait=false >/dev/null
 
-echo "==> Sleeping 10s while CNPG promotes a replacement"
-sleep 10
-
-echo "==> Waiting up to 60s for a new primary to be Ready"
+echo "==> Waiting up to 60s for KubeAtlas to observe storage unreachability"
 deadline=$((SECONDS + 60))
+outage_observed=0
+while (( SECONDS < deadline )); do
+  metrics_during=$(curl -fsS "http://127.0.0.1:${KUBEATLAS_PF_PORT}/metrics" 2>/dev/null || true)
+  if grep -Fq 'kubeatlas_storage_reachable 0' <<<"${metrics_during}"; then
+    outage_observed=1
+    break
+  fi
+  sleep 2
+done
+(( outage_observed == 1 )) || {
+  echo "storage outage was not visible in metrics within 60s" >&2
+  exit 1
+}
+
+echo "==> Waiting up to 120s for a replacement primary to be Ready"
+deadline=$((SECONDS + 120))
 new_primary=""
 while (( SECONDS < deadline )); do
   new_primary=$(kubectl get pod -n "${NS}" \
-    -l "cnpg.io/cluster,role=primary" \
+    -l "cnpg.io/cluster=${RELEASE}-pg,cnpg.io/instanceRole=primary" \
     -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-  if [[ -n "${new_primary}" ]] && kubectl get pod -n "${NS}" "${new_primary}" \
+  if [[ -n "${new_primary}" && "${new_primary}" != "${PRIMARY}" ]] &&
+     kubectl get pod -n "${NS}" "${new_primary}" \
        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null \
        | grep -qw True; then
     break
   fi
   sleep 2
 done
-[[ -n "${new_primary}" ]] || { echo "no new primary surfaced within 60s"; exit 1; }
+[[ -n "${new_primary}" && "${new_primary}" != "${PRIMARY}" ]] || {
+  echo "no replacement primary surfaced within 120s"
+  exit 1
+}
 echo "New primary: ${new_primary}"
 
-echo "==> Waiting up to 30s for kubeatlas /readyz to return 200"
-deadline=$((SECONDS + 30))
+echo "==> Waiting up to 120s for storage metrics and graph reads to recover"
+deadline=$((SECONDS + 120))
 ok=0
 while (( SECONDS < deadline )); do
-  if curl -fsS "http://127.0.0.1:${KUBEATLAS_PF_PORT}/readyz" >/dev/null 2>&1; then
+  metrics_after=$(curl -fsS "http://127.0.0.1:${KUBEATLAS_PF_PORT}/metrics" 2>/dev/null || true)
+  if grep -Fq 'kubeatlas_storage_reachable 1' <<<"${metrics_after}" &&
+     curl -fsS "http://127.0.0.1:${KUBEATLAS_PF_PORT}/api/v1/graph?level=cluster" >/dev/null 2>&1; then
     ok=1
     break
   fi
   sleep 2
 done
-(( ok == 1 )) || { echo "kubeatlas /readyz did not recover within 30s"; exit 1; }
-echo "kubeatlas /readyz: 200"
+(( ok == 1 )) || { echo "KubeAtlas storage/graph did not recover within 120s"; exit 1; }
+echo "kubeatlas storage and graph reads recovered"
 
 echo "==> Confirming panic counter did not increase"
 metrics_after=$(curl -fsS "http://127.0.0.1:${KUBEATLAS_PF_PORT}/metrics")

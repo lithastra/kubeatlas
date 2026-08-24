@@ -73,6 +73,19 @@ func (s *Store) Close() {
 	}
 }
 
+// Ping performs the bounded read-only Tier 2 reachability check used by the
+// operational monitor. It does not run a graph query or mutate application
+// data.
+func (s *Store) Ping(ctx context.Context) error {
+	if s == nil || s.pool == nil {
+		return errors.New("postgres.Ping: store is not configured")
+	}
+	if err := s.pool.Ping(ctx); err != nil {
+		return fmt.Errorf("postgres.Ping: %w", err)
+	}
+	return nil
+}
+
 // StoreVersion reports the GraphStore interface version this backend
 // implements. Internal interface version only — unrelated to the
 // public release version or the HTTP API versions.

@@ -1,55 +1,84 @@
-# Chaos scenarios
+# Chaos inventory
 
-Four hand-runnable scripts that poke KubeAtlas with situations that
-shouldn't happen in a healthy cluster but routinely do in real life.
-Phase 1 v0.1.0 exit gate is "the binary survives all four without
-crashing or wedging"; honest documentation of the *observed* graph
-behaviour for each is captured in the script header.
+These scripts exercise failure and overload behavior against a disposable
+Kubernetes environment. They are not all equivalent release gates. The table
+below is the source of truth for what runs automatically, what is opt-in, and
+what remains a manual operator drill.
 
-These scripts are **not wired into CI**. They run against a real
-kind cluster with the PetClinic phase1 fixture loaded. CI
-automation lands in Phase 2.
+Do not run them against a production cluster. Several scripts delete Pods,
+disconnect a member cluster, stop a kind control-plane container, or create a
+large burst of test resources.
 
-## Prerequisites
+## Automation status
 
-- `kubectl` pointed at a kind cluster.
-- `test/petclinic/run.sh phase1` already applied.
-- `kubeatlas` running in watch mode (one terminal: `kubeatlas`).
-- A second terminal to drive the chaos scripts.
-- The Web UI open at `http://localhost:8080` while observing.
-
-## Scenarios
-
-| Script | What it does | What you should see |
+| Script | Scenario | Automation status |
 |---|---|---|
-| `dangling-ref.sh` | Deletes a ConfigMap that a Deployment still references. | The ConfigMap node and its `USES_CONFIGMAP` edge disappear from the Deployment's neighbour view within a few seconds. v0.1.0 does **not** mark the edge as "broken"; the cascade is total. (Phase 2 tracks `BROKEN_REF` as a first-class edge state.) |
-| `owner-loop.sh` | Creates two ConfigMaps that name each other in `metadata.ownerReferences`. | The OwnerRef walker is BFS over an `owned->owner` map keyed on UID; cycles short-circuit on the visited set. KubeAtlas keeps responding; the workload aggregator does not loop. |
-| `resource-storm.sh` | Creates 100 ConfigMaps in a tight loop. | The Resources page shows the new ConfigMaps within ~30 s of the last `kubectl apply`. WS subscribers receive 100 GraphUpdate envelopes; no events lost (verify with `wscat`). |
-| `api-server-flap.sh` | Scales the kind apiserver to 0 then back to 1. | The informer logs a watch error, retries with exponential backoff, and re-syncs. `/readyz` flips back to 200. Web UI shows a stale graph during the outage and refreshes on reconnect. |
+| `snapshot-write-storm.sh` | Saturate the snapshot writer and expose dropped work. | **Required PR CI** through `e2e-kind-snapshots.yml` and `phase3.sh` with `KUBEATLAS_RUN_CHAOS=1`. |
+| `pg-disconnect.sh` | Delete the embedded CNPG primary; observe storage failure and recovery within 120 seconds. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`; also a manual production-readiness drill. |
+| `rego-panic.sh` | Contain a panicking rule evaluation. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`. |
+| `rego-runaway.sh` | Bound a non-terminating rule evaluation. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`. |
+| `cert-manager-flap.sh` | Restart cert-manager and confirm certificate recovery. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`. |
+| `otel-receiver-overload.sh` | Saturate the OTLP receiver and expose dropped spans. | **Opt-in heavy suite** in `phase5.sh` when `PHASE5_RUN_HEAVY=1`. |
+| `api-server-flap.sh` | Stop a kind control plane; observe degraded/stale graph state and recovery within 120 seconds. | **Manual** because it stops the Docker container that owns the active kind control plane. |
+| `cluster-disconnect.sh` | Disconnect one in-cluster federation member. | **Manual** federation drill. |
+| `cluster-disconnect-local.sh` | Disconnect one member from the local-binary federation fixture. | **Manual** federation drill. |
+| `dangling-ref.sh` | Delete a referenced ConfigMap. | **Manual** graph-correctness drill. |
+| `owner-loop.sh` | Create cyclic owner references. | **Manual** traversal-safety drill. |
+| `resource-storm.sh` | Create 100 ConfigMaps quickly. | **Manual** informer/WebSocket throughput drill. |
+| `telemetry-endpoint-down.sh` | Block the opt-in telemetry endpoint. | **Manual** telemetry-isolation drill. |
 
-## How to run
+The weekly public clean-cluster check is not a chaos scenario. It runs from
+`scheduled-clean-cluster.yml`, installs the current anonymous GitHub and Helm
+OCI artifacts on vanilla Kubernetes, and retains sanitized logs and metrics.
+The manual release preflight separately composes the frozen Kubernetes
+candidate matrix from `e2e-kind-tier2.yml`.
+
+## Common prerequisites
+
+- `kubectl` pointed at a disposable cluster that matches the script header.
+- `curl`, `jq`, and any scenario-specific tools listed by the script.
+- KubeAtlas running with the feature under test enabled.
+- A port-forward when the script expects a local metrics URL. Tier 2 scripts
+  default to `127.0.0.1:18080`; `api-server-flap.sh` defaults to a local
+  KubeAtlas process on port 8080.
+
+Read each script header before running it. The federation, cert-manager, OTel,
+snapshot, and Tier 2 scenarios require different fixtures; there is no single
+cluster setup that honestly covers all of them.
+
+## Required operational drills
+
+For an API-server interruption:
 
 ```bash
-# Terminal 1
-kubeatlas
-
-# Terminal 2 (after kubeatlas reports "informer caches synced")
-bash test/chaos/dangling-ref.sh
-bash test/chaos/owner-loop.sh
-bash test/chaos/resource-storm.sh
+# KubeAtlas must run outside the kind control-plane container so its metrics
+# stay reachable while the container is stopped.
 bash test/chaos/api-server-flap.sh
 ```
 
-Each script is self-cleaning by default. Pass `--no-cleanup` to keep
-the chaos in place for further inspection.
+The script requires `kubeatlas_kubernetes_api_reachable` to become `0`, the
+graph state to become `degraded` or `stale`, and both signals to recover within
+120 seconds. `/readyz` remains the initial-sync gate and therefore stays `200`
+after the first successful sync.
 
-## Reporting back
+For a PostgreSQL interruption:
 
-Anything that diverges from the table above is interesting. Open an
-issue at <https://github.com/lithastra/kubeatlas/issues> with:
+```bash
+kubectl port-forward -n kubeatlas service/kubeatlas 18080:80
+bash test/chaos/pg-disconnect.sh
+```
 
-1. The chaos scenario name.
-2. Cluster details (`kubectl version --short`, distro).
-3. KubeAtlas version (`kubeatlas -version`).
-4. Observed behaviour vs expected.
-5. The relevant chunk of `kubeatlas.log`.
+The script requires `kubeatlas_storage_reachable` to become `0`, a replacement
+CNPG primary to become Ready, storage reachability to return to `1`, and a graph
+read to succeed within 120 seconds. It never deletes the database PVC.
+
+## Reporting a divergence
+
+Open an issue at <https://github.com/lithastra/kubeatlas/issues> with:
+
+1. The exact script and KubeAtlas version.
+2. Kubernetes distribution and server version.
+3. Whether the run was required, opt-in, or manual.
+4. Expected and observed metrics, including recovery time.
+5. Sanitized logs. Never attach Secret values, database passwords,
+   kubeconfigs, tokens, or full cluster dumps.

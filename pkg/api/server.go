@@ -15,6 +15,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/operations"
 	"github.com/lithastra/kubeatlas/pkg/otel"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 )
@@ -39,6 +40,12 @@ type Server struct {
 	hub       *WatchHub
 	readiness *ReadinessGate
 	metrics   *metricsCounter
+
+	// operationalStatus surfaces bounded, read-only dependency probes on
+	// /metrics. It is deliberately separate from readiness: readiness proves
+	// initial informer sync, while this provider continues to observe API and
+	// storage reachability after startup.
+	operationalStatus OperationalStatusProvider
 
 	// versionMetrics splits request counts by API version (v1alpha1 vs
 	// v1) for the data-driven v1alpha1 retirement decision. Always set.
@@ -141,6 +148,13 @@ type ClusterRBAC interface {
 	VisibleClusters(r *http.Request) (allow map[string]struct{}, status int)
 }
 
+// OperationalStatusProvider supplies a sanitized snapshot for product-neutral
+// operator metrics. operations.Monitor satisfies it; the interface keeps the
+// API server easy to test without running background probes.
+type OperationalStatusProvider interface {
+	Snapshot() operations.Snapshot
+}
+
 // ServerOption tweaks an optional aspect of the Server. Required
 // dependencies stay positional; additive features (the embedded Web
 // UI, future hooks) ride on options so existing call sites and tests
@@ -190,6 +204,15 @@ func WithRegoMetrics(m *rego.Metrics, moduleCount func() int) ServerOption {
 func WithDynamicInformerMetrics(m *discovery.DynamicMetrics) ServerOption {
 	return func(s *Server) {
 		s.dynamicMetrics = m
+	}
+}
+
+// WithOperationalStatus wires continuous Kubernetes API, storage, and backup
+// marker observations into /metrics. No resource names, namespaces, probe
+// errors, or credentials are exposed.
+func WithOperationalStatus(provider OperationalStatusProvider) ServerOption {
+	return func(s *Server) {
+		s.operationalStatus = provider
 	}
 }
 
