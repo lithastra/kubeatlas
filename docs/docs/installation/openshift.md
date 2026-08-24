@@ -59,7 +59,7 @@ pull-secret from
      --wait --timeout 5m
 
    helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-     --version 1.5.1 \
+     --version 1.5.2 \
      --namespace kubeatlas --create-namespace \
      --set persistence.enabled=true \
      --set persistence.embedded.enabled=true \
@@ -102,10 +102,10 @@ sourcing. If your cluster pulls from a mirror, override
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.1 \
+  --version 1.5.2 \
   --namespace kubeatlas --create-namespace \
   --set image.repository=registry.example.com/mirror/lithastra/kubeatlas \
-  --set image.tag=v1.0.0
+  --set image.tag=1.5.2
 ```
 
 If you intend to expose the UI via an OCP Route, the chart does not

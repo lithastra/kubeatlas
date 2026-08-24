@@ -35,7 +35,7 @@ otel:
 
 ```bash
 helm upgrade --install kubeatlas \
-  oci://ghcr.io/lithastra/charts/kubeatlas --version 1.5.1 \
+  oci://ghcr.io/lithastra/charts/kubeatlas --version 1.5.2 \
   -f values.yaml
 ```
 

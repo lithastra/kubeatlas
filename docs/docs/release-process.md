@@ -10,7 +10,7 @@ A core Git tag is therefore the start of a release, not proof that the
 whole release is usable. The release owner closes the matrix below with
 public-download evidence before announcing the version.
 
-## v1.5.2 release-candidate matrix
+## v1.5.2 release matrix
 
 | Component | Required version | Distribution | Required evidence |
 |---|---:|---|---|
@@ -23,7 +23,31 @@ public-download evidence before announcing the version.
 | Krew manifest | `v1.5.2` | `kubernetes-sigs/krew-index` | All platform URLs and SHA256 values validate |
 | Headlamp plugin | `1.2.0` | `headlamp-k8s/plugins` | Catalog metadata, archive checksum, tests, and production build agree |
 | Backstage plugin | `1.0.0` | npm | Anonymous install and production build |
-| Documentation | `1.5.2` target; `1.5.1` remains public until promotion | Documentation site | Production build has no broken links or anchors; install commands resolve publicly |
+| Documentation | `1.5.2` | Documentation site | Production build has no broken links or anchors; current install commands resolve publicly |
+
+The core v1.5.2 security patch is gated by its binaries, application and
+database images, Helm chart, rule-pack audit, and documentation. The GitHub
+Action, Krew manifest, Headlamp catalog, and Backstage npm package are
+independently versioned integrations: record their evidence honestly, but do
+not keep a published core security fix out of the production install path while
+an external catalog review is pending. The Headlamp catalog PR may therefore
+remain open without blocking v1.5.2; update it only for substantive code,
+artifact, or maintainer feedback.
+
+Recorded v1.5.2 evidence:
+
+- The [public GitHub Release](https://github.com/lithastra/kubeatlas/releases/tag/v1.5.2)
+  and [release workflow](https://github.com/lithastra/kubeatlas/actions/runs/32648122333)
+  publish the tagged binaries, image, and Chart. The public Chart resolves to
+  OCI digest `sha256:6fda2e18b31537aa99db0b63366387c64e7e526e0c1ba7ccf7999048e3e1cee5`.
+- The [rule-pack distribution audit](https://github.com/lithastra/kubeatlas-rules/actions/runs/32675302764)
+  resolves, verifies, pulls, and loads all 14 formal OCI packs.
+- The [GitHub Action compatibility run](https://github.com/lithastra/kubeatlas-action/actions/runs/32686038064)
+  downloads and exercises the v1.5.2 release against a real kind cluster.
+- The [Krew v1.5.2 manifest](https://github.com/kubernetes-sigs/krew-index/pull/6234)
+  is merged. Backstage `1.0.0` resolves anonymously from npm. The
+  [Headlamp catalog PR](https://github.com/headlamp-k8s/plugins/pull/757)
+  remains under external review and is not represented as merged.
 
 Apache AGE does not publish a GA `1.6.0` tag for PostgreSQL 16. The
 database image therefore names the upstream `1.6.0-rc0` dependency
@@ -71,12 +95,14 @@ rule packs is disabled. Those are different release pipelines.
 6. Publish and smoke-test Action `v1.0.1`; move `v1` only after that
    immutable tag succeeds.
 7. Update Krew and the Headlamp catalog using checksums from already
-   published immutable archives. Verify the Backstage npm version.
+   published immutable archives. Verify the Backstage npm version. Track each
+   integration independently when an external review remains pending.
 8. Update version-pinned installation commands only after the matching
    chart is publicly pullable. This keeps documentation executable at
    every point in the release.
-9. Publish the draft GitHub Release and announcement only when every
-   matrix row has evidence.
+9. Publish the draft GitHub Release and core announcement only when every core
+   release row has evidence. Announce an independently versioned integration
+   only after its own row is complete.
 
 The GitHub Release being a draft does not make the tag run a dry run:
 the versioned application image and Helm chart are already public by that

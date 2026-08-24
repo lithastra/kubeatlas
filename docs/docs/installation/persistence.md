@@ -60,7 +60,7 @@ kubectl wait --for=condition=Established \
   --timeout=2m
 
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.1 \
+  --version 1.5.2 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true
@@ -106,9 +106,10 @@ helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
   --wait --timeout 5m
 
 helm upgrade kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.1 \
+  --version 1.5.2 \
   --namespace kubeatlas \
   --reuse-values \
+  --server-side=false \
   --set persistence.embedded.retainOnDelete=true \
   --wait --timeout 8m
 ```
