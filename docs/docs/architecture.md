@@ -225,10 +225,15 @@ Three composed queries that share the `Direction` enum on the
   corresponding release workflow and public artifact provide
   verifiable evidence.
 
-The next release line focuses on operability: Tier 2 backup/restore
-and upgrade drills, scheduled clean-cluster E2E, performance gates,
-and generated clients that keep the Web, Headlamp, and Backstage API
-types aligned. See the [Roadmap](./roadmap.md).
+The planned v1.6 release line focuses on production operability: a
+supported Kubernetes, CloudNativePG, and PostgreSQL baseline; one tested
+v1.5.2 upgrade and embedded Tier 2 restore path; scheduled clean-cluster
+evidence; performance and seven-day endurance gates; operator-visible
+failure signals; and verifiable core OCI artifacts. It remains a
+single-application-replica, externally authenticated, read-only deployment.
+Generated clients are a non-blocking stretch goal and ecosystem packages keep
+their independent release cadence. See the [v1.6 scope and release
+gates](./roadmap.md#v16-planned--production-operability).
 
 The v0.1.0 API surface and the `graph.Resource`/`graph.Edge`
 shapes stay frozen across v1.x: only additive changes. CI's
