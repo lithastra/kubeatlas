@@ -80,7 +80,7 @@ tests:
           value: ["postgresql.cnpg.io"]
       - equal:
           path: rules[9].resources
-          value: ["clusters", "backups", "scheduledbackups", "poolers", "imagecatalogs", "clusterimagecatalogs"]
+          value: ["backups", "clusterimagecatalogs", "clusters", "databaseroles", "databases", "failoverquorums", "imagecatalogs", "poolers", "publications", "scheduledbackups", "subscriptions"]
       # Each rule's verbs slice must be exactly the read-only triple.
       # Explicitly asserting every rule also catches a future broad
       # wildcard rule appended after the reviewed list.
