@@ -29,6 +29,12 @@ the tools above instead of replacing them.
 
 ## Project status
 
+**Current `main` is the unreleased v1.6 development line.** Its bounded target
+is production operability on vanilla Kubernetes 1.34–1.36; the remaining
+upgrade, restore, scheduled E2E, performance, soak, runbook, and artifact gates
+are still planned work. Use the documentation version menu to select **1.5.2**
+for instructions that match the latest published artifacts.
+
 **v1.5.2 is released.** The dependency graph keeps Secret references but
 KubeAtlas no longer lists or watches Secret objects. Defensive inputs are
 reduced to reference-only nodes before rule evaluation or storage, existing

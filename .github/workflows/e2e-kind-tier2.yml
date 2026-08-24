@@ -13,10 +13,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  e2e-kind-tier2:
-    name: kind + CNPG + kubeatlas Tier 2
+  e2e-kind-tier2-matrix:
+    name: Tier 2 (Kubernetes ${{ matrix.kubernetes }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kubernetes: '1.34'
+            server_version: v1.34.8
+            slug: k134
+            node_image: kindest/node:v1.34.8@sha256:02722c2dedddcfc00febf5d27fbeb9b7b2c14294c82109ff4a85d89ac9ba3256
+          - kubernetes: '1.35'
+            server_version: v1.35.5
+            slug: k135
+            node_image: kindest/node:v1.35.5@sha256:ce977ae6d65918d0b58a5f8b5e940429c2ce42fa3a5619ec2bbc60b949c0ac95
+          - kubernetes: '1.36'
+            server_version: v1.36.1
+            slug: k136
+            node_image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
 
     steps:
       - uses: actions/checkout@v7
@@ -33,10 +49,17 @@ jobs:
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
-          version: v0.24.0
-          node_image: kindest/node:v1.31.0
-          cluster_name: kubeatlas-tier2
+          version: v0.32.0
+          node_image: ${{ matrix.node_image }}
+          cluster_name: kubeatlas-tier2-${{ matrix.slug }}
           wait: 120s
+
+      - name: Verify Kubernetes server version
+        env:
+          EXPECTED_SERVER_VERSION: ${{ matrix.server_version }}
+        run: |
+          actual="$(kubectl version -o json | jq -r '.serverVersion.gitVersion')"
+          test "${actual}" = "${EXPECTED_SERVER_VERSION}"
 
       - name: Add CloudNativePG Helm repository
         run: |
@@ -47,7 +70,7 @@ jobs:
         run: |
           helm upgrade --install cnpg \
             cloudnative-pg/cloudnative-pg \
-            --version 0.22.1 \
+            --version 0.29.0 \
             --namespace cnpg-system --create-namespace \
             --wait --timeout 5m
           kubectl rollout status \
@@ -84,14 +107,52 @@ jobs:
         # The v1.5.1 release publishes this image to GHCR. PR E2E
         # builds it locally so validation does not depend on an
         # unreleased package.
-        run: docker build -t local-postgres-age:16.6-age1.6.0-rc0.1 images/postgres-age
+        run: docker build -t local-postgres-age:16.15-age1.6.0-rc0.2 images/postgres-age
 
       - name: Load images into kind
         run: |
           kind load docker-image kubeatlas:tier2-test \
-            --name kubeatlas-tier2
-          kind load docker-image local-postgres-age:16.6-age1.6.0-rc0.1 \
-            --name kubeatlas-tier2
+            --name kubeatlas-tier2-${{ matrix.slug }}
+          kind load docker-image local-postgres-age:16.15-age1.6.0-rc0.2 \
+            --name kubeatlas-tier2-${{ matrix.slug }}
+
+      - name: Verify a fresh Tier 1 install
+        run: |
+          helm install kubeatlas-tier1 helm/kubeatlas \
+            --namespace kubeatlas-tier1 --create-namespace \
+            --set image.repository=kubeatlas \
+            --set image.tag=tier2-test \
+            --set image.pullPolicy=Never \
+            --wait --timeout 5m
+          kubectl rollout status deployment/kubeatlas-tier1 \
+            --namespace kubeatlas-tier1 \
+            --timeout=2m
+          helm uninstall kubeatlas-tier1 --namespace kubeatlas-tier1
+
+      - name: Verify a fresh embedded Tier 2 install
+        run: |
+          helm install kubeatlas-fresh helm/kubeatlas \
+            --namespace kubeatlas-fresh --create-namespace \
+            --set image.repository=kubeatlas \
+            --set image.tag=tier2-test \
+            --set image.pullPolicy=Never \
+            --set persistence.enabled=true \
+            --set persistence.embedded.enabled=true \
+            --set persistence.embedded.retainOnDelete=false \
+            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
+            --set persistence.embedded.storageSize=1Gi \
+            --wait --timeout 8m
+          kubectl rollout status deployment/kubeatlas-fresh \
+            --namespace kubeatlas-fresh \
+            --timeout=2m
+          helm uninstall kubeatlas-fresh \
+            --namespace kubeatlas-fresh \
+            --wait --timeout 5m
+          kubectl wait --for=delete \
+            cluster.postgresql.cnpg.io/kubeatlas-fresh-pg \
+            --namespace kubeatlas-fresh \
+            --timeout=5m
+          kubectl delete namespace kubeatlas-fresh --wait=true
 
       - name: Create the Secret canary fixture before v1.5.1 starts
         run: |
@@ -115,7 +176,7 @@ jobs:
             --namespace kubeatlas \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
-            --set persistence.embedded.image=local-postgres-age:16.6-age1.6.0-rc0.1 \
+            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
             --set persistence.embedded.storageSize=2Gi \
             --set snapshots.enabled=true \
             --set rulePacks.openshift=true \
@@ -137,7 +198,7 @@ jobs:
             --set image.pullPolicy=Never \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
-            --set persistence.embedded.image=local-postgres-age:16.6-age1.6.0-rc0.1 \
+            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
             --set persistence.embedded.storageSize=2Gi \
             --set snapshots.enabled=true \
             --set rulePacks.openshift=true \
@@ -175,8 +236,213 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: kubeatlas-tier2-logs
+          name: kubeatlas-tier2-${{ matrix.slug }}-logs
           path: |
             /tmp/kubeatlas-*.log
           if-no-files-found: ignore
           retention-days: 7
+
+  cnpg-upgrade-chain:
+    name: CloudNativePG upgrade window (${{ matrix.window }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # CNPG 1.24 and 1.30 have no common supported Kubernetes minor.
+      # These overlapping windows keep every operator and Kubernetes pairing
+      # inside CNPG's published support matrix while proving every operator
+      # transition. An actual Kubernetes control-plane upgrade is provider
+      # owned and belongs to the v1.5.2 -> v1.6 recovery exercise (#24).
+      matrix:
+        include:
+          - window: k131-cnpg124-to-127
+            kind_version: v0.31.0
+            node_image: kindest/node:v1.31.14@sha256:6f86cf509dbb42767b6e79debc3f2c32e4ee01386f0489b3b2be24b0a55aac2b
+            initial_chart: 0.22.1
+            initial_operator: 1.24.1
+            upgrade_charts: 0.23.2 0.25.0 0.26.1
+            expected_operator: 1.27.1
+          - window: k133-cnpg127-to-129
+            kind_version: v0.31.0
+            node_image: kindest/node:v1.33.7@sha256:d26ef333bdb2cbe9862a0f7c3803ecc7b4303d8cea8e814b481b09949d353040
+            initial_chart: 0.26.1
+            initial_operator: 1.27.1
+            upgrade_charts: 0.27.1 0.28.3
+            expected_operator: 1.29.1
+          - window: k134-cnpg129-to-130
+            kind_version: v0.32.0
+            node_image: kindest/node:v1.34.8@sha256:02722c2dedddcfc00febf5d27fbeb9b7b2c14294c82109ff4a85d89ac9ba3256
+            initial_chart: 0.28.3
+            initial_operator: 1.29.1
+            upgrade_charts: 0.29.0
+            expected_operator: 1.30.0
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.20.0
+
+      - name: Create kind cluster for the supported upgrade window
+        uses: helm/kind-action@v1
+        with:
+          version: ${{ matrix.kind_version }}
+          node_image: ${{ matrix.node_image }}
+          cluster_name: kubeatlas-cnpg-${{ matrix.window }}
+          wait: 120s
+
+      - name: Add CloudNativePG Helm repository
+        run: |
+          helm repo add cloudnative-pg https://cloudnative-pg.io/charts
+          helm repo update
+
+      - name: Install the window's initial CloudNativePG release
+        env:
+          INITIAL_CHART: ${{ matrix.initial_chart }}
+          INITIAL_OPERATOR: ${{ matrix.initial_operator }}
+        run: |
+          helm upgrade --install cnpg \
+            cloudnative-pg/cloudnative-pg \
+            --version "${INITIAL_CHART}" \
+            --namespace cnpg-system --create-namespace \
+            --wait --timeout 5m
+          kubectl rollout status deployment/cnpg-cloudnative-pg \
+            --namespace cnpg-system \
+            --timeout=2m
+          image="$(kubectl get deployment cnpg-cloudnative-pg \
+            --namespace cnpg-system \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          test "${image##*:}" = "${INITIAL_OPERATOR}"
+
+      - name: Upgrade CloudNativePG one operator minor at a time
+        env:
+          UPGRADE_CHARTS: ${{ matrix.upgrade_charts }}
+        run: |
+          read -ra chart_versions <<< "${UPGRADE_CHARTS}"
+          for chart_version in "${chart_versions[@]}"; do
+            echo "Upgrading CloudNativePG chart to ${chart_version}"
+            helm upgrade cnpg cloudnative-pg/cloudnative-pg \
+              --version "${chart_version}" \
+              --namespace cnpg-system \
+              --wait --timeout 5m
+            kubectl rollout status deployment/cnpg-cloudnative-pg \
+              --namespace cnpg-system \
+              --timeout=2m
+            case "${chart_version}" in
+              0.23.2) expected_operator=1.25.1 ;;
+              0.25.0) expected_operator=1.26.1 ;;
+              0.26.1) expected_operator=1.27.1 ;;
+              0.27.1) expected_operator=1.28.1 ;;
+              0.28.3) expected_operator=1.29.1 ;;
+              0.29.0) expected_operator=1.30.0 ;;
+              *) echo "Unexpected CloudNativePG chart ${chart_version}" >&2; exit 1 ;;
+            esac
+            image="$(kubectl get deployment cnpg-cloudnative-pg \
+              --namespace cnpg-system \
+              -o jsonpath='{.spec.template.spec.containers[0].image}')"
+            test "${image##*:}" = "${expected_operator}"
+          done
+
+      - name: Verify the final operator and CRDs
+        env:
+          EXPECTED_OPERATOR: ${{ matrix.expected_operator }}
+        run: |
+          helm status cnpg --namespace cnpg-system
+          image="$(kubectl get deployment cnpg-cloudnative-pg \
+            --namespace cnpg-system \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          test "${image##*:}" = "${EXPECTED_OPERATOR}"
+          kubectl wait --for=condition=Established \
+            crd/clusters.postgresql.cnpg.io \
+            --timeout=2m
+
+  postgres-age-architectures:
+    name: PostgreSQL + AGE (linux/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            uname: x86_64
+          - arch: arm64
+            uname: aarch64
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and load the architecture-specific image
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          docker buildx build \
+            --platform "linux/${TARGET_ARCH}" \
+            --load \
+            --tag local-postgres-age:architecture-test \
+            images/postgres-age
+
+      - name: Verify architecture and embedded dependency versions
+        env:
+          EXPECTED_UNAME: ${{ matrix.uname }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          image=local-postgres-age:architecture-test
+          actual_uname="$(docker run --rm \
+            --platform "linux/${TARGET_ARCH}" \
+            --entrypoint uname \
+            "${image}" -m)"
+          test "${actual_uname}" = "${EXPECTED_UNAME}"
+
+          test "$(docker image inspect "${image}" \
+            --format '{{ index .Config.Labels "io.kubeatlas.postgresql.version" }}')" = 16.15
+          test "$(docker image inspect "${image}" \
+            --format '{{ index .Config.Labels "io.kubeatlas.apache-age.version" }}')" = PG16/v1.6.0-rc0
+          test "$(docker image inspect "${image}" \
+            --format '{{ index .Config.Labels "io.kubeatlas.apache-age.commit" }}')" = \
+            2db2f060c4c9265a14d40f007eb8c56febf31e4c
+
+          docker run --rm \
+            --platform "linux/${TARGET_ARCH}" \
+            --entrypoint sh \
+            "${image}" -euc '
+              postgres_version="$(postgres --version)"
+              printf "%s\n" "${postgres_version}"
+              case "${postgres_version}" in
+                *" 16.15"*) ;;
+                *) exit 1 ;;
+              esac
+
+              pkglibdir="$(pg_config --pkglibdir)"
+              extensiondir="$(pg_config --sharedir)/extension"
+              test -s "${pkglibdir}/age.so"
+              test -s "${extensiondir}/age.control"
+              grep -F "default_version" "${extensiondir}/age.control"
+              grep -Fq "1.6.0" "${extensiondir}/age.control"
+              ldd "${pkglibdir}/age.so" | tee /tmp/age-ldd.txt
+              ! grep -Fq "not found" /tmp/age-ldd.txt
+            '
+
+  e2e-kind-tier2:
+    name: kind + CNPG + kubeatlas Tier 2
+    if: always()
+    needs:
+      - e2e-kind-tier2-matrix
+      - cnpg-upgrade-chain
+      - postgres-age-architectures
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce the supported Kubernetes and CNPG matrix
+        env:
+          MATRIX_RESULT: ${{ needs.e2e-kind-tier2-matrix.result }}
+          UPGRADE_RESULT: ${{ needs.cnpg-upgrade-chain.result }}
+          ARCHITECTURE_RESULT: ${{ needs.postgres-age-architectures.result }}
+        run: |
+          test "${MATRIX_RESULT}" = success
+          test "${UPGRADE_RESULT}" = success
+          test "${ARCHITECTURE_RESULT}" = success

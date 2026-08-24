@@ -110,7 +110,7 @@ jobs:
           helm repo update
           helm upgrade --install cnpg \
             cloudnative-pg/cloudnative-pg \
-            --version 0.22.1 \
+            --version 0.29.0 \
             --namespace cnpg-system --create-namespace \
             --wait --timeout 5m
           kubectl wait \
@@ -141,7 +141,7 @@ jobs:
           REGISTRY="$(oc registry info --internal)"
           IMAGE="${REGISTRY}/${KUBEATLAS_NAMESPACE}/kubeatlas:crc-test"
           docker build -t "${IMAGE}" .docker-context
-          PG_IMAGE="${REGISTRY}/${KUBEATLAS_NAMESPACE}/postgres-age:16.6-age1.6.0-rc0.1"
+          PG_IMAGE="${REGISTRY}/${KUBEATLAS_NAMESPACE}/postgres-age:16.15-age1.6.0-rc0.2"
           docker build -t "${PG_IMAGE}" images/postgres-age
           oc create namespace "${KUBEATLAS_NAMESPACE}" --dry-run=client -o yaml | oc apply -f -
           docker push "${IMAGE}"
