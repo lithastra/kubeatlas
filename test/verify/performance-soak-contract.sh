@@ -54,6 +54,17 @@ write_performance production-10k single-large-namespace "${TMP}/performance/path
 bash test/verify/v160-performance-evidence.sh \
   "${TMP}/performance/default.json" "${TMP}/performance/distributed.json" "${TMP}/performance/pathological.json"
 
+# The random sentinel Secret is intentionally unreferenced, so no
+# reference-only graph placeholder exists for its detail endpoint. Keep the
+# runner's one narrow 404 allowance under the fast contract: other security
+# surfaces must still require HTTP 200.
+grep -Fq \
+  '"/api/v1/resources/${NAMESPACE}/Secret/v160-soak-sentinel" true' \
+  test/soak/v160-soak.sh
+grep -Fq \
+  '"${allow_not_found}" == "true" && "${http_code}" == "404"' \
+  test/soak/v160-soak.sh
+
 jq '.results.cluster_view.p95_ms = 1001' "${TMP}/performance/default.json" >"${TMP}/performance/invalid.json"
 if bash test/verify/v160-performance-evidence.sh \
   "${TMP}/performance/invalid.json" "${TMP}/performance/distributed.json" "${TMP}/performance/pathological.json" \
