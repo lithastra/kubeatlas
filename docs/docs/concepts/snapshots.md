@@ -137,7 +137,7 @@ the full request and response shapes.
 
 ## Enabling snapshots
 
-Install CloudNativePG 0.22.1 first as described in
+Install CloudNativePG chart 0.29.0 (operator 1.30.0) first as described in
 [Persistence (Tier 2)](../installation/persistence.md#path-a-embedded-cloudnativepg),
 then enable both persistence and snapshots:
 

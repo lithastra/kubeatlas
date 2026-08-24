@@ -194,7 +194,7 @@ Tier 2 + cert-manager TLS (production-shaped install):
 helm repo add cloudnative-pg https://cloudnative-pg.io/charts
 helm repo update
 helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
-  --version 0.22.1 \
+  --version 0.29.0 \
   --namespace cnpg-system --create-namespace \
   --wait --timeout 5m
 

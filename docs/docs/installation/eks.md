@@ -5,11 +5,17 @@ title: Amazon EKS
 
 # Installing on Amazon EKS
 
-KubeAtlas runs on EKS the same way it runs on any other Kubernetes
-distribution — the chart is unchanged, and the read-only RBAC the
-chart ships needs no IAM elevation beyond a normal worker-node
-identity. What EKS adds is the optional **eks rule pack**: a Rego
-pack that models the custom resources EKS add-ons inject into the
+:::warning Integration guide, not a v1.6 support gate
+
+The planned v1.6 production matrix covers vanilla Kubernetes 1.34–1.36. EKS is
+not a release-gating environment. This page preserves the optional EKS rule-pack
+integration and is not a claim of provider-specific production support.
+
+:::
+
+The chart and its read-only RBAC can be installed on EKS without asking
+KubeAtlas for AWS IAM access. What EKS adds is the optional **eks rule pack**:
+a Rego pack that models the custom resources EKS add-ons inject into the
 cluster.
 
 ## What the eks rule pack does (and does not)
@@ -64,7 +70,7 @@ exist:
    helm repo add cloudnative-pg https://cloudnative-pg.io/charts
    helm repo update
    helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
-     --version 0.22.1 \
+     --version 0.29.0 \
      --namespace cnpg-system --create-namespace \
      --wait --timeout 5m
 
@@ -105,7 +111,7 @@ exist:
 
 ## Fargate
 
-KubeAtlas runs on Fargate-only EKS clusters without changes. The
+The chart can run on Fargate-only EKS clusters without changes. The
 chart's Pod requests fit a `0.5 vCPU / 1 GB` Fargate profile for
 Tier 1; Tier 2 with the external CloudNativePG operator needs
 profiles that admit both the operator and database Pods. Size the

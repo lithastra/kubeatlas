@@ -5,9 +5,17 @@ title: OpenShift / OpenShift Local (CRC)
 
 # Installing on OpenShift
 
-KubeAtlas runs on OpenShift the same way it runs on any Kubernetes
-distribution — the chart is unchanged. What you get for free on
-OpenShift:
+:::warning Integration guide, not a v1.6 support gate
+
+The planned v1.6 production matrix covers vanilla Kubernetes 1.34–1.36.
+OpenShift is not a release-gating environment. This page preserves the shipped
+OpenShift integration and local CRC workflow; it is not a provider-specific
+production-support claim.
+
+:::
+
+The KubeAtlas chart is unchanged on OpenShift. What the existing integration
+provides:
 
 - The OpenShift detector at startup notices `route.openshift.io` and
   auto-loads the embedded openshift rule pack (Route, DeploymentConfig,
@@ -54,7 +62,7 @@ pull-secret from
    helm repo add cloudnative-pg https://cloudnative-pg.io/charts
    helm repo update
    helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
-     --version 0.22.1 \
+     --version 0.29.0 \
      --namespace cnpg-system --create-namespace \
      --wait --timeout 5m
 

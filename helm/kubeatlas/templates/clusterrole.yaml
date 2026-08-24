@@ -76,12 +76,17 @@ rules:
   # Optional CloudNativePG resources used by the Tier 2 integration.
   - apiGroups: ["postgresql.cnpg.io"]
     resources:
-      - clusters
       - backups
-      - scheduledbackups
-      - poolers
-      - imagecatalogs
       - clusterimagecatalogs
+      - clusters
+      - databaseroles
+      - databases
+      - failoverquorums
+      - imagecatalogs
+      - poolers
+      - publications
+      - scheduledbackups
+      - subscriptions
     verbs: ["get", "list", "watch"]
   # Optional Kyverno policy and report CRDs.
   - apiGroups: ["kyverno.io"]

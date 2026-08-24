@@ -112,7 +112,7 @@ limit if your fleet is significantly larger.
 | Key | Default | Notes |
 |---|---|---|
 | `persistence.enabled` | `false` | Tier 1 is in-memory only. Set `true` for PostgreSQL + Apache AGE Tier 2. |
-| `persistence.embedded.enabled` | `false` | Create a CNPG-managed PostgreSQL `Cluster`; requires the external CloudNativePG 0.22.1 operator first. |
+| `persistence.embedded.enabled` | `false` | Create a CNPG-managed PostgreSQL `Cluster`; current main requires the external CloudNativePG chart 0.29.0 / operator 1.30.0 first. |
 | `persistence.embedded.retainOnDelete` | `true` | Keep the CNPG `Cluster` and PVC on KubeAtlas uninstall. |
 | `persistence.embedded.storageSize` | `5Gi` | Requested PVC size; cannot be shrunk in place. |
 

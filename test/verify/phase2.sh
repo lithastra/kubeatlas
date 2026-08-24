@@ -88,10 +88,12 @@ KUBEATLAS_PF_PORT="${KUBEATLAS_PF_PORT:-18080}"
 KUBEATLAS_PF_PID=""
 
 start_port_forward() {
-  if [[ -n "${KUBEATLAS_PF_PID}" ]]; then
+  local target=${1:-deploy/${DEPLOY}}
+  if [[ -n "${KUBEATLAS_PF_PID}" ]] && kill -0 "${KUBEATLAS_PF_PID}" 2>/dev/null; then
     return 0
   fi
-  kubectl port-forward -n "${NS}" "deploy/${DEPLOY}" \
+  KUBEATLAS_PF_PID=""
+  kubectl port-forward -n "${NS}" "${target}" \
     "${KUBEATLAS_PF_PORT}:8080" >/tmp/kubeatlas-pf.log 2>&1 &
   KUBEATLAS_PF_PID=$!
   trap stop_port_forward EXIT
@@ -100,8 +102,13 @@ start_port_forward() {
     if curl -fsS --max-time 1 "http://127.0.0.1:${KUBEATLAS_PF_PORT}/healthz" >/dev/null 2>&1; then
       return 0
     fi
+    if ! kill -0 "${KUBEATLAS_PF_PID}" 2>/dev/null; then
+      cat /tmp/kubeatlas-pf.log >&2
+      fail "port-forward to ${target} exited before becoming ready"
+    fi
     sleep 1
   done
+  cat /tmp/kubeatlas-pf.log >&2
   fail "port-forward did not become ready on :${KUBEATLAS_PF_PORT}"
 }
 
@@ -139,6 +146,35 @@ wait_for_pod_ready() {
     sleep 1
   done
   fail "no Ready Pod after ${timeout}s"
+}
+
+# Return the name of a Ready replacement Pod, excluding the Pod being
+# deleted. A Deployment does not create a new ReplicaSet for a manual Pod
+# deletion, so `kubectl rollout status` can return while the terminating Pod
+# still satisfies the Deployment's availability count.
+wait_for_replacement_pod_ready() {
+  local old_pod=$1
+  local timeout=$2
+  local deadline=$((SECONDS + timeout))
+  local replacement_pod
+  while (( SECONDS < deadline )); do
+    replacement_pod=$(kubectl get pod -n "${NS}" \
+      -l "app.kubernetes.io/name=${RELEASE}" -o json 2>/dev/null \
+      | jq -r --arg old_pod "${old_pod}" '
+          [.items[]
+            | select(.metadata.name != $old_pod)
+            | select(any(.status.conditions[]?;
+                .type == "Ready" and .status == "True"))]
+          | sort_by(.metadata.creationTimestamp)
+          | last
+          | .metadata.name // empty')
+    if [[ -n "${replacement_pod}" ]]; then
+      printf '%s\n' "${replacement_pod}"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 # ----- preflight -----------------------------------------------------
@@ -201,22 +237,17 @@ else
     -o jsonpath='{.items[0].metadata.name}')
   [[ -n "${old_pod}" ]] || fail "no Pod found"
   # The port-forward we opened in preflight binds to the soon-to-be-
-  # killed Pod. Stop it before deletion and reopen against the new
-  # Pod once the deployment rollout is complete.
+  # killed Pod. Stop it before deletion and reopen against the exact
+  # replacement Pod once that Pod reports Ready.
   stop_port_forward
   kubectl delete pod -n "${NS}" "${old_pod}" --wait=false >/dev/null
   restart_started=${SECONDS}
-  # `kubectl rollout status` is the deployment-level signal: it waits
-  # until the new ReplicaSet has the desired count of Ready Pods AND
-  # the old one is fully drained. Plain `wait_for_pod_ready` could
-  # return on the still-terminating Pod's Ready=True condition,
-  # which then fights kubectl port-forward.
-  if ! kubectl rollout status -n "${NS}" "deploy/${DEPLOY}" \
-       --timeout="${RESTART_BUDGET_SECONDS}s" >/dev/null 2>&1; then
-    fail "deployment rollout did not complete in ${RESTART_BUDGET_SECONDS}s"
+  if ! new_pod=$(wait_for_replacement_pod_ready \
+       "${old_pod}" "${RESTART_BUDGET_SECONDS}"); then
+    fail "replacement Pod did not become Ready in ${RESTART_BUDGET_SECONDS}s"
   fi
   restart_elapsed=$(( SECONDS - restart_started ))
-  start_port_forward
+  start_port_forward "pod/${new_pod}"
   pass "new Pod Ready in ${restart_elapsed}s (budget ${RESTART_BUDGET_SECONDS}s)"
 
   step "persistence: post-restart resource count matches pre-restart"

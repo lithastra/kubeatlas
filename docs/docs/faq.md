@@ -29,7 +29,14 @@ blast-radius mode directly inside Headlamp's cluster console:
 
 ## Can I run this in production today?
 
-Yes — for read-only introspection. From v1.0 the chart ships an
+The published v1.5.2 release can be used for read-only introspection within its
+documented single-replica, authentication, and persistence boundaries. Select
+**1.5.2** in the documentation version menu for instructions that match those
+artifacts. Current `main` is the unreleased v1.6 development line; its new
+vanilla-Kubernetes production matrix is not a released support claim until all
+v1.6 gates pass.
+
+From v1.0 the chart ships an
 opt-in Tier 2 backend (PostgreSQL + Apache AGE via a CNPG-managed
 `Cluster`; install the cluster-scoped operator first) so restart
 preserves the graph. Single-
@@ -44,11 +51,14 @@ exposing the UI.
 
 ## Does it work on OpenShift / EKS / AKS / GKE?
 
-Yes — anything that exposes a standard Kubernetes API at version
-1.26 or later. Discovery is GVR-driven, so platform-specific add-ons
-that publish CRDs work as long as the cluster has them installed.
+The planned v1.6 production support matrix is vanilla Kubernetes
+1.34–1.36, matching the three upstream-maintained minor branches at
+code freeze. Discovery is GVR-driven, so platform-specific add-ons may
+work when their CRDs and explicit read-only RBAC are present, but EKS,
+AKS, GKE, and OpenShift are not v1.6 release-gating environments and
+must not inherit a production-support claim from the vanilla matrix.
 
-OpenShift gets first-class support from v1.0: the detector at
+OpenShift integration has shipped since v1.0: the detector at
 startup notices `route.openshift.io`, auto-loads the embedded
 rule pack (Route, DeploymentConfig, BuildConfig, ImageStream,
 SecurityContextConstraints), and the docs include a CRC and OCP
