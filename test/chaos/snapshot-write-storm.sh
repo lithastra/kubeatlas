@@ -28,6 +28,8 @@
 #   COUNT              number of ConfigMaps (default 1000).
 #   NS                 storm namespace (default petclinic-snap-storm).
 #   DROP_BUDGET_PCT    max acceptable drop ratio (default 10).
+#   KUBEATLAS_NAMESPACE namespace containing the KubeAtlas Pod.
+#   KUBEATLAS_REQUIRE_TIER2 fail instead of skip when the writer is absent.
 
 set -euo pipefail
 
@@ -35,6 +37,8 @@ PORT="${KUBEATLAS_PF_PORT:-18081}"
 COUNT="${COUNT:-1000}"
 NS="${NS:-petclinic-snap-storm}"
 DROP_BUDGET_PCT="${DROP_BUDGET_PCT:-10}"
+KUBEATLAS_NAMESPACE="${KUBEATLAS_NAMESPACE:-kubeatlas}"
+REQUIRE_TIER2="${KUBEATLAS_REQUIRE_TIER2:-0}"
 CLEANUP="${CLEANUP:-1}"
 [ "${1:-}" = "--no-cleanup" ] && CLEANUP=0
 
@@ -47,6 +51,10 @@ metric() {
 
 echo "==> Preflight: confirm the snapshot writer is running (Tier 2)"
 if ! api /metrics 2>/dev/null | grep -q '^kubeatlas_snapshot_events_processed_total'; then
+  if [[ "${REQUIRE_TIER2}" == "1" ]]; then
+    echo "FAIL: required Tier 2 snapshot metrics are absent."
+    exit 1
+  fi
   echo "SKIP: /metrics has no snapshot block — Tier 1 or snapshots.enabled=false."
   echo "      The snapshot-write-storm scenario only applies to a Tier 2 install."
   exit 0
@@ -79,7 +87,7 @@ echo "==> Waiting 45s for the writer to drain the queue"
 sleep 45
 
 echo "==> Asserting the kubeatlas process survived the burst"
-if ! kubectl get pod -n kubeatlas -l app.kubernetes.io/name=kubeatlas \
+if ! kubectl get pod -n "${KUBEATLAS_NAMESPACE}" -l app.kubernetes.io/name=kubeatlas \
     -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null \
     | grep -qw True; then
   echo "FAIL: no Ready kubeatlas Pod after the storm — the process did not survive."
