@@ -49,6 +49,7 @@ GraphStore v2 clean-up that surfaces `graphstore_version` on
 | **v1.4 / v1.5** | ✅ Released | Offline diagnostic report, Gatekeeper/Kyverno policy visibility, opt-in anonymous telemetry, v1alpha1 usage counters (v1.4). v1.5 (a non-breaking minor): OpenTelemetry runtime overlay (`CALLS_AT_RUNTIME`), read-side multi-cluster RBAC visibility (F-206), an internal GraphStore v2 clean-up, and the Backstage plugin reaching GA at Headlamp parity. `v1alpha1` stays frozen — there is no v2.0 on the committed roadmap. |
 | **v1.5.1** | ✅ Released | Explicit CloudNativePG prerequisite, retained Tier 2 data by default, reproducible PostgreSQL + AGE image, and enforced upgrade, recovery, uninstall-retention, and snapshot release evidence. |
 | **v1.5.2** | ✅ Released | Secret relationships remain reference-only while Secret objects, values, identifying metadata, and historical event payloads are excluded or scrubbed. |
+| **v1.6** | 🎯 Planned | Production operability: supported dependency baselines, a tested v1.5.2 upgrade and Tier 2 restore path, scheduled clean-cluster evidence, performance and soak gates, operator runbooks, and verifiable core cluster artifacts. |
 | **Further out** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference; a possible future `v1alpha1` retirement (which would version a v2.0). |
 
 ## Related tools
@@ -346,6 +347,148 @@ frozen, and there is **no v2.0** on the committed roadmap.
   Overlay view (+ TraceTimeline linking to Jaeger/Tempo); the
   Backstage plugin reaches v1.0.0 GA at Headlamp parity, adding an
   Admission-policies card (F-205) and a Runtime-calls card (F-204).
+
+## v1.6 (planned) — production operability
+
+v1.6 is a reliability release for DevOps teams operating KubeAtlas on
+vanilla Kubernetes. It does not widen the product surface. Its release
+contract is that an operator can install verifiable public artifacts on a
+supported Kubernetes cluster, upgrade directly from v1.5.2, restore Tier 2
+after deliberate data loss, and run a measured seven-day soak without
+weakening KubeAtlas's read-only or Secret-data boundaries.
+
+This is a plan, not a description of what v1.5.2 already implements. Each
+capability below must produce the listed public or CI evidence before v1.6.0
+can claim it.
+
+Tracking lives in the
+[v1.6 Production Operability milestone](https://github.com/lithastra/kubeatlas/milestone/2).
+The implementation order is the supported
+[platform baseline](https://github.com/lithastra/kubeatlas/issues/23),
+[upgrade and recovery](https://github.com/lithastra/kubeatlas/issues/24),
+[scheduled evidence and runbooks](https://github.com/lithastra/kubeatlas/issues/25),
+[performance and endurance](https://github.com/lithastra/kubeatlas/issues/26),
+then the final
+[core artifact audit](https://github.com/lithastra/kubeatlas/issues/27).
+
+### Committed scope
+
+- **Supported platform baseline** — at the v1.6 code freeze, support and test
+  only the three Kubernetes minor branches still maintained upstream. The
+  Helm `kubeVersion`, documentation, kind images, and release matrix must name
+  the same frozen range. The planning matrix begins with Kubernetes
+  1.34–1.36; it must be refreshed if upstream support changes before the
+  release cut.
+- **Supported persistence dependencies** — move the external CloudNativePG
+  prerequisite to a then-supported, security-fixed release and document the
+  operator upgrade chain from the v1.5.2 prerequisite. Keep PostgreSQL on
+  major 16 to avoid an unrelated major-version migration, but rebuild on the
+  current PostgreSQL 16 patch release at code freeze. Keep the pinned Apache
+  AGE PG16 1.6.0 release commit unless an upgrade or restore test proves that
+  a change is required.
+- **One upgrade path** — automate a clean v1.5.2 → v1.6.0 Tier 2 upgrade,
+  including the separately owned CloudNativePG prerequisite, database-image
+  update, application migration, initial re-sync, and failure diagnostics.
+  KubeAtlas must not bundle, take ownership of, or silently upgrade the
+  cluster-scoped operator.
+- **One Tier 2 recovery path** — provide one provider-neutral, end-to-end
+  backup and restore procedure for the embedded CloudNativePG path. Restore
+  into a fresh database or namespace after deliberately deleting the original
+  database. BYO PostgreSQL remains operator-owned: KubeAtlas documents its
+  data and extension contract but does not claim to automate every provider.
+- **Continuous compatibility evidence** — run a scheduled clean-cluster test
+  from public artifacts at least weekly, and run the frozen Kubernetes matrix
+  before release. PR-only source builds do not prove that registries, charts,
+  external operators, and public installation instructions still compose.
+- **Performance and endurance gates** — verify the default resource profile
+  at approximately 5K resources and a documented production profile at
+  approximately 10K resources. Preserve the existing representative-workload
+  targets of cluster and namespace view p95 ≤ 1 s and blast-radius p95 ≤
+  500 ms. Complete a 168-hour Docker Desktop Kubernetes soak after the final
+  dependency and instrumentation changes.
+- **Operator visibility and runbooks** — make it possible to determine whether
+  the graph is synced or stale, the database is reachable and durable,
+  events or snapshots were dropped, and the most recent backup is too old.
+  Ship product-neutral metrics, alert examples, and current chaos/recovery
+  runbooks; do not require a Prometheus Operator CRD or a specific dashboard.
+- **Core cluster artifact trust** — keyless-sign the application image,
+  PostgreSQL + AGE image, and Helm OCI chart by digest. Produce and verify
+  SBOM and provenance attestations for both runtime images. Verification from
+  an anonymous clean environment, constrained to the expected GitHub Actions
+  OIDC identity, is a release gate.
+- **Security invariants everywhere** — retain read-only Kubernetes RBAC and
+  reference-only Secret nodes. Secret objects, values, identifying metadata,
+  database credentials, and federation kubeconfigs must remain absent from
+  APIs, the Web UI, database rows, history, backups, logs, diagnostics,
+  exports, rule inputs, and telemetry. A random sentinel scan gates every
+  upgrade, restore, and soak run.
+
+### v1.6.0 release gates
+
+| Gate | Required evidence |
+|---|---|
+| Fresh install | Tier 1 and embedded Tier 2 install successfully across the frozen Kubernetes matrix. |
+| Upgrade | A real public v1.5.2 Tier 2 installation upgrades to the candidate without data-contract or readiness failure. |
+| Recovery | A protected backup restores into a fresh database or namespace after deliberate deletion; retained history and rebuildable graph data match the documented contract. |
+| Dependency failure | API-server and PostgreSQL interruptions are visible and KubeAtlas returns to a healthy, synced state within 120 seconds after the dependency becomes available. |
+| Endurance | The final candidate completes 168 hours with no unexplained crash, OOM, restart, silent event loss, or unbounded memory, goroutine, or queue growth. |
+| Performance | The 5K default and 10K documented profiles meet their frozen latency and resource thresholds; pathological layouts are recorded separately rather than hidden. |
+| Secret boundary | The sentinel is absent from every collected runtime, persistence, backup, export, diagnostic, log, and telemetry artifact. |
+| Artifact trust | Anonymous pulls and identity-constrained signature, SBOM, and provenance verification pass for every core cluster artifact. |
+| Documentation | The support matrix, single-replica outage, external-auth requirement, backup sensitivity, upgrade ordering, and rollback limits match observed evidence. |
+
+The soak threshold must be fixed before the run starts. After a 24-hour
+warm-up, the proposed release threshold is no sustained increase greater than
+20% over the first stable-day baseline for RSS, goroutines, or queue depth.
+Injected restarts are recorded separately; all other restarts fail the gate.
+Normal load permits no dropped events or snapshots. An intentional overload
+may shed work only when the loss is counted, logged, and alertable.
+
+### Explicit non-goals
+
+- Multiple KubeAtlas application replicas, leader election, active/active HA,
+  or zero-downtime application upgrades. Tier 2 remains a single-application-
+  replica deployment using `Recreate`.
+- Built-in authentication, OIDC/SSO, sessions, per-user response filtering,
+  access audit, or deeper multi-tenancy. Production exposure stays behind an
+  operator-managed authentication layer.
+- EKS, AKS, GKE, managed-database, object-store, or backup-provider-specific
+  integrations. The acceptance environment is vanilla Kubernetes, with the
+  endurance run on Docker Desktop Kubernetes.
+- New graph edge types, cloud-resource discovery, cross-cluster inference,
+  automatic remediation, Kubernetes write permissions, or a Web UI redesign.
+- `/api/v2`, removal of `/api/v1alpha1`, or any other breaking public API
+  change. The v1.x additive compatibility gate remains in force.
+- Headlamp, Backstage, Krew, GitHub Action, rule-pack, or upstream-catalog
+  publication as a core v1.6.0 blocker. Those repositories retain independent
+  version and review cadences.
+- Parallel implementations for multiple backup providers, direct upgrades
+  from arbitrary historical releases, or a maintained v1.5 support branch.
+- Relaxing the v1.5.2 Secret boundary, or adding a general redaction system for
+  non-Secret cluster data. ConfigMap values, workload specs, RBAC, names, and
+  other topology remain observable and potentially persistent, so exposing
+  KubeAtlas still requires an explicit information-leak warning.
+- Signing every downloadable CLI archive. v1.6 first closes the trust chain for
+  the OCI chart and images used by the production cluster path; binary archives
+  retain checksums and must not be described as signed.
+
+Generated API clients are a stretch goal, not a v1.6.0 gate. The main-repo Web
+client may adopt generated types if that change stays additive and does not
+delay the committed operability work. Headlamp and Backstage consume the
+published API schema on their independent release cadence.
+
+### Support and rollback policy
+
+- v1.6 supports a direct upgrade from the latest v1.5.2 release only. Older
+  installations move to v1.5.2 first.
+- After v1.6.0 is released, only the latest v1.6 patch is maintained; the
+  project does not run parallel v1.5 and v1.6 maintenance branches.
+- Database downgrade is not promised. Recovery from a failed irreversible
+  migration uses the protected pre-upgrade backup and documented restore path,
+  not an older binary against the migrated database.
+- Core current-state graph data is rebuildable from Kubernetes; retained
+  history and other persistence-only data must be called out separately in the
+  backup contract.
 
 ### Deferred — future human decisions, not commitments
 
