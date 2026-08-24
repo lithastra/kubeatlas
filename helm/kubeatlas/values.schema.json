@@ -16,6 +16,11 @@
       "type": "object",
       "properties": {
         "repository": { "type": "string", "minLength": 1 },
+        "digest": {
+          "type": "string",
+          "pattern": "^$|^sha256:[0-9a-f]{64}$",
+          "description": "Optional immutable OCI manifest digest. When set it takes precedence over tag."
+        },
         "tag": { "type": "string" },
         "pullPolicy": {
           "type": "string",

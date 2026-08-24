@@ -21,6 +21,10 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/lithastra/kubeatlas
+  # Optional immutable manifest digest. When set, it takes precedence over
+  # tag and renders repository@sha256:..., which is the recommended form
+  # after verifying a release signature.
+  digest: ""
   # Empty tag -> chart uses .Chart.AppVersion (defined in Chart.yaml).
   tag: ""
   pullPolicy: IfNotPresent

@@ -104,6 +104,14 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
+    # Keep both attestations explicit. The release audit verifies that every
+    # platform manifest is covered by SPDX SBOM and SLSA provenance predicates.
+    # Snapshot builds use buildx --load for each platform, which cannot load a
+    # provenance manifest list into the local Docker daemon. Production tag
+    # builds push directly and must keep provenance enabled.
+    sbom: true
+    flags:
+      - "--provenance={{ if .IsSnapshot }}false{{ else }}true{{ end }}"
     labels:
       org.opencontainers.image.title: "{{ .ProjectName }}"
       org.opencontainers.image.version: "{{ .Version }}"
