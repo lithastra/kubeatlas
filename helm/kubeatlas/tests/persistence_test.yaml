@@ -85,6 +85,29 @@ tests:
       - notExists:
           path: metadata.annotations
 
+  - it: embedded mode renders explicit CloudNativePG resources
+    template: postgres-cluster.yaml
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      persistence.embedded.resources.requests.cpu: 500m
+      persistence.embedded.resources.requests.memory: 1Gi
+      persistence.embedded.resources.limits.cpu: "2"
+      persistence.embedded.resources.limits.memory: 2Gi
+    asserts:
+      - equal:
+          path: spec.resources.requests.cpu
+          value: 500m
+      - equal:
+          path: spec.resources.requests.memory
+          value: 1Gi
+      - equal:
+          path: spec.resources.limits.cpu
+          value: "2"
+      - equal:
+          path: spec.resources.limits.memory
+          value: 2Gi
+
   - it: embedded mode injects wait-for-pg init container
     template: deployment.yaml
     set:

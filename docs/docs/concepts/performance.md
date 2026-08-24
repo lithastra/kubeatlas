@@ -77,3 +77,27 @@ baseline, regresses by more than 20 %:
 # capture a fresh run per fixture, then:
 bash test/verify/perf-regression.sh
 ```
+
+## Planned v1.6 release gate
+
+The historical baselines above remain useful regression signals, but they do
+not prove the unreleased v1.6 production contract. v1.6 adds three bounded,
+fail-closed measurements on one exact candidate commit:
+
+| Evidence row | Kubernetes fixture | Resources | Namespace p95 |
+|---|---|---|---|
+| Default 5K | One synthetic namespace: 5,000 ConfigMaps, 1,000 Deployments, and 200 Services | Chart-default KubeAtlas requests and limits | Gated at 1 second |
+| Production 10K | The same deterministic shape distributed over 10 namespaces | [`v160-production-10k-values.yaml`](https://github.com/lithastra/kubeatlas/blob/main/test/perf/v160-production-10k-values.yaml) | Gated at 1 second |
+| Pathological 10K | All 10K fixture objects in one namespace | The same production profile | Recorded, but not substituted for the representative gate |
+
+All three rows gate cluster-view p95 at 1 second and blast-radius p95 at 500
+milliseconds. Each endpoint receives at least 100 samples, and any HTTP
+failure fails the row even when it would fall below the p95 rank. Evidence also
+records the clean Git commit, immutable application and PostgreSQL image IDs,
+rendered resource settings, exact fixture counts, Kubernetes and Docker
+Desktop versions, host capacity, RSS, restarts, and OOM state.
+
+The scripts and synthetic CI contract are present on `main`; that is not a
+claim that the final v1.6 measurements or 168-hour run have completed. Follow
+the [v1.6 performance and soak runbook](../operations/v160-performance-soak.md)
+and retain all three JSON rows for independent verification.

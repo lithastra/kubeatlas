@@ -15,15 +15,24 @@
 #   - Informer event-handler latency stays <100 ms per event in
 #     normal operation (eyeball with the metrics endpoint).
 #
-# Exit code: 0 if kubectl operations succeed.
+# Exit code: 0 only when all resources become visible within the deadline.
 
 set -euo pipefail
 
 NS="${NS:-petclinic-storm}"
 COUNT="${COUNT:-100}"
 CLEANUP="${CLEANUP:-1}"
+KUBEATLAS_URL="${KUBEATLAS_URL:-http://127.0.0.1:8080}"
 
 [ "${1:-}" = "--no-cleanup" ] && CLEANUP=0
+
+cleanup() {
+  if [[ "${CLEANUP}" == "1" ]]; then
+    echo "==> Cleaning up namespace ${NS}"
+    kubectl delete namespace "${NS}" --ignore-not-found >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
 
 echo "==> Creating storm namespace ${NS}"
 kubectl create namespace "${NS}" --dry-run=client -o yaml | kubectl apply -f -
@@ -49,7 +58,7 @@ echo "==> Waiting up to 30 s for the namespace view to reach ${COUNT} ConfigMaps
 deadline=$(( $(date +%s) + 30 ))
 last_count=0
 while [ "$(date +%s)" -lt "${deadline}" ]; do
-  last_count=$(curl -fsS "http://localhost:8080/api/v1alpha1/graph?level=namespace&namespace=${NS}" \
+  last_count=$(curl -fsS --max-time 10 "${KUBEATLAS_URL}/api/v1/graph?level=namespace&namespace=${NS}" \
     | jq '[.nodes[] | select(.kind=="ConfigMap")] | length')
   echo "  ${last_count}/${COUNT}"
   if [ "${last_count}" -ge "${COUNT}" ]; then
@@ -62,11 +71,9 @@ echo
 if [ "${last_count}" -ge "${COUNT}" ]; then
   echo "OK: kubeatlas saw all ${COUNT} ConfigMaps within 30 s."
 else
-  echo "WARN: only ${last_count}/${COUNT} visible after 30 s — check kubeatlas.log for"
+  echo "FAIL: only ${last_count}/${COUNT} visible after 30 s — check kubeatlas.log for"
   echo "      'dropping update for slow subscriber' or informer backpressure errors."
+  rc=1
 fi
 
-if [ "${CLEANUP}" = "1" ]; then
-  echo "==> Cleaning up namespace ${NS}"
-  kubectl delete namespace "${NS}" --ignore-not-found
-fi
+exit "${rc:-0}"

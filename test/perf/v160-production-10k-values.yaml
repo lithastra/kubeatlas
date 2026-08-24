@@ -1,0 +1,29 @@
+# Reproducible v1.6 evidence profile for approximately 10K Kubernetes
+# resources. This file is an acceptance-test input, not a change to the
+# zero-configuration chart defaults. Actual evidence must record the rendered
+# requests and limits, Docker Desktop resources, Kubernetes version, fixture
+# counts, and immutable image IDs.
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+persistence:
+  enabled: true
+  embedded:
+    enabled: true
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+
+snapshots:
+  enabled: true

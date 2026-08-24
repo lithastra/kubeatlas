@@ -150,6 +150,21 @@ jobs:
         run: bash test/verify/platform-baseline.sh
       - name: Verify the v1.6 operability contract
         run: bash test/verify/operability-contract.sh
+      - name: Verify the v1.6 performance and soak evidence contract
+        run: |
+          bash -n \
+            test/chaos/api-server-flap.sh \
+            test/chaos/otel-receiver-overload.sh \
+            test/chaos/pg-disconnect.sh \
+            test/chaos/resource-storm.sh \
+            test/chaos/snapshot-write-storm.sh \
+            test/perf/stress-10k-distributed.sh \
+            test/perf/v160-performance-gate.sh \
+            test/soak/v160-soak.sh \
+            test/verify/v160-performance-evidence.sh \
+            test/verify/v160-soak-evidence.sh \
+            test/verify/performance-soak-contract.sh
+          bash test/verify/performance-soak-contract.sh
       - name: helm unittest
         run: helm unittest helm/kubeatlas
 

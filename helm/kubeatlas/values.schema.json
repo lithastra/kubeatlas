@@ -260,6 +260,7 @@
             "retainOnDelete":   { "type": "boolean" },
             "storageSize":      { "type": "string", "minLength": 1 },
             "storageClassName": { "type": "string" },
+            "resources":        { "type": "object" },
             "image":            { "type": "string", "minLength": 1 },
             "clusterNameSuffix": {
               "type": "string",

@@ -33,6 +33,10 @@ metadata:
 spec:
   instances: 1
   imageName: {{ .Values.persistence.embedded.image | quote }}
+  {{ with .Values.persistence.embedded.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   postgresql:
     shared_preload_libraries:
       - age

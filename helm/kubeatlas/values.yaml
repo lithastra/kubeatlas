@@ -195,6 +195,11 @@ persistence:
     # default StorageClass is used unless overridden.
     storageSize: 5Gi
     storageClassName: ""
+    # Optional CloudNativePG instance resources. Empty by default to preserve
+    # the zero-configuration development path. The documented v1.6 10K
+    # production evidence profile sets explicit requests and limits for both
+    # KubeAtlas and PostgreSQL so results are reproducible.
+    resources: {}
     # Image pin matches images/postgres-age/image.env, Dockerfile, and the test
     # bootstrap. The release workflow treats this recipe-version tag as
     # immutable: changing AGE, PostgreSQL, or the Dockerfile requires a new tag

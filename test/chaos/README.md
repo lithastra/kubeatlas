@@ -19,7 +19,7 @@ large burst of test resources.
 | `rego-runaway.sh` | Bound a non-terminating rule evaluation. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`. |
 | `cert-manager-flap.sh` | Restart cert-manager and confirm certificate recovery. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`. |
 | `otel-receiver-overload.sh` | Saturate the OTLP receiver and expose dropped spans. | **Opt-in heavy suite** in `phase5.sh` when `PHASE5_RUN_HEAVY=1`. |
-| `api-server-flap.sh` | Stop a kind control plane; observe degraded/stale graph state and recovery within 120 seconds. | **Manual** because it stops the Docker container that owns the active kind control plane. |
+| `api-server-flap.sh` | On Docker Desktop, withdraw only the kube-apiserver static-Pod manifest; observe degraded/stale graph state and recovery within 120 seconds. | **Manual** because it deliberately interrupts the active local API server. |
 | `cluster-disconnect.sh` | Disconnect one in-cluster federation member. | **Manual** federation drill. |
 | `cluster-disconnect-local.sh` | Disconnect one member from the local-binary federation fixture. | **Manual** federation drill. |
 | `dangling-ref.sh` | Delete a referenced ConfigMap. | **Manual** graph-correctness drill. |
@@ -51,12 +51,15 @@ cluster setup that honestly covers all of them.
 For an API-server interruption:
 
 ```bash
-# KubeAtlas must run outside the kind control-plane container so its metrics
-# stay reachable while the container is stopped.
-bash test/chaos/api-server-flap.sh
+# The exact context, kindest/node image, static manifest, and hold path are
+# checked before mutation. An EXIT trap restores the manifest on failure.
+KUBEATLAS_CONFIRM_API_FLAP=docker-desktop \
+  bash test/chaos/api-server-flap.sh
 ```
 
-The script requires `kubeatlas_kubernetes_api_reachable` to become `0`, the
+The script probes the still-running KubeAtlas Pod from inside the Docker
+Desktop node container while kubectl is unavailable. It requires
+`kubeatlas_kubernetes_api_reachable` to become `0`, the
 graph state to become `degraded` or `stale`, and both signals to recover within
 120 seconds. `/readyz` remains the initial-sync gate and therefore stays `200`
 after the first successful sync.

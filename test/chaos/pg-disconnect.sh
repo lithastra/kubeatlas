@@ -31,6 +31,7 @@ NS="${NS:-kubeatlas}"
 RELEASE="${RELEASE:-kubeatlas}"
 TIER="${KUBEATLAS_TIER:-tier2}"
 KUBEATLAS_PF_PORT="${KUBEATLAS_PF_PORT:-18080}"
+RESULT_FILE="${KUBEATLAS_CHAOS_RESULT_FILE:-}"
 
 if [[ "${TIER}" != "tier2" ]]; then
   echo "pg-disconnect: SKIPPED (KUBEATLAS_TIER=${TIER}; this scenario is Tier 2 only)"
@@ -40,6 +41,10 @@ fi
 for cmd in kubectl curl jq; do
   command -v "${cmd}" >/dev/null || { echo "missing: ${cmd}" >&2; exit 1; }
 done
+if [[ -n "${RESULT_FILE}" && -e "${RESULT_FILE}" ]]; then
+  echo "refusing to overwrite existing result file ${RESULT_FILE}" >&2
+  exit 1
+fi
 
 echo "==> Locating CNPG primary Pod"
 PRIMARY=$(kubectl get pod -n "${NS}" \
@@ -102,6 +107,7 @@ done
   exit 1
 }
 echo "New primary: ${new_primary}"
+recovery_started_at=$(date +%s)
 
 echo "==> Waiting up to 120s for storage metrics and graph reads to recover"
 deadline=$((SECONDS + 120))
@@ -116,6 +122,11 @@ while (( SECONDS < deadline )); do
   sleep 2
 done
 (( ok == 1 )) || { echo "KubeAtlas storage/graph did not recover within 120s"; exit 1; }
+recovery_seconds=$(( $(date +%s) - recovery_started_at ))
+(( recovery_seconds <= 120 )) || {
+  echo "KubeAtlas recovered in ${recovery_seconds}s, exceeding the 120s budget" >&2
+  exit 1
+}
 echo "kubeatlas storage and graph reads recovered"
 
 echo "==> Confirming panic counter did not increase"
@@ -127,6 +138,16 @@ echo "panic_total after: ${panic_after}"
 if [[ "${panic_after}" != "${panic_before}" ]]; then
   echo "panic_total moved (${panic_before} -> ${panic_after}); chaos crossed a guard"
   exit 1
+fi
+
+if [[ -n "${RESULT_FILE}" ]]; then
+  jq -n \
+    --arg scenario postgresql-interruption \
+    --arg original_primary "${PRIMARY}" \
+    --arg replacement_primary "${new_primary}" \
+    --argjson recovery_seconds "${recovery_seconds}" \
+    '{scenario: $scenario, status: "pass", original_primary: $original_primary, replacement_primary: $replacement_primary, outage_observed: true, recovery_seconds: $recovery_seconds}' \
+    >"${RESULT_FILE}"
 fi
 
 echo

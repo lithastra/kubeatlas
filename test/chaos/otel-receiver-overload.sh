@@ -32,6 +32,8 @@
 #                      bounded shedding + a live main path, not zero loss)
 #   P95_BUDGET_SEC     max acceptable main-path p95 during flood (default 0.5)
 #   NAMESPACE          kubeatlas namespace (default kubeatlas)
+#   TELEMETRYGEN_IMAGE telemetrygen image (legacy default: latest; release
+#                      evidence must provide an immutable digest)
 #
 # Exit code: 0 on pass, 1 on any failed assertion.
 
@@ -44,6 +46,7 @@ TARGET_RATE="${TARGET_RATE:-100000}"
 DROP_BUDGET_PCT="${DROP_BUDGET_PCT:-95}"
 P95_BUDGET_SEC="${P95_BUDGET_SEC:-0.5}"
 NAMESPACE="${NAMESPACE:-kubeatlas}"
+TELEMETRYGEN_IMAGE="${TELEMETRYGEN_IMAGE:-ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest}"
 
 api() { curl -fsS --max-time 10 "http://127.0.0.1:${PORT}$1"; }
 
@@ -87,7 +90,7 @@ MONITOR_PID=$!
 # Generate the span flood. --network host so localhost:4317 reaches the
 # port-forwarded receiver.
 docker run --rm --network host \
-  ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest \
+  "${TELEMETRYGEN_IMAGE}" \
   traces --otlp-insecure --otlp-endpoint="localhost:${OTEL_GRPC_PORT}" \
   --rate="${TARGET_RATE}" --duration="${DURATION_SEC}s" \
   || { echo "FAIL: telemetrygen could not reach the receiver on ${OTEL_GRPC_PORT}"; kill "$MONITOR_PID" 2>/dev/null || true; exit 1; }
