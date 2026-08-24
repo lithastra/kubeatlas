@@ -49,6 +49,9 @@ expected_postgres_age_image="${POSTGRES_AGE_REPOSITORY}:${EXPECTED_POSTGRES_AGE_
 require_text images/postgres-age/Dockerfile "ARG CNPG_IMAGE=${EXPECTED_CNPG_IMAGE}"
 require_text images/postgres-age/Dockerfile "ARG AGE_VERSION=${EXPECTED_AGE_VERSION}"
 require_text images/postgres-age/Dockerfile "ARG AGE_COMMIT=${EXPECTED_AGE_COMMIT}"
+require_text images/postgres-age/Dockerfile 'LABEL io.kubeatlas.postgresql.version="16.15"'
+require_text images/postgres-age/Dockerfile 'LABEL io.kubeatlas.apache-age.version="${AGE_VERSION}"'
+require_text images/postgres-age/Dockerfile 'LABEL io.kubeatlas.apache-age.commit="${AGE_COMMIT}"'
 
 tier2_workflow=.github/workflows/e2e-kind-tier2.yml
 require_text "$tier2_workflow" 'version: v0.32.0'
@@ -58,6 +61,9 @@ require_text "$tier2_workflow" 'kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a
 require_text "$tier2_workflow" "--version ${EXPECTED_CNPG_CHART}"
 require_text "$tier2_workflow" "expected_operator: ${EXPECTED_CNPG_OPERATOR}"
 require_text "$tier2_workflow" "local-postgres-age:${EXPECTED_POSTGRES_AGE_TAG}"
+require_text "$tier2_workflow" 'name: PostgreSQL + AGE (linux/${{ matrix.arch }})'
+require_text "$tier2_workflow" '--platform "linux/${TARGET_ARCH}"'
+require_text "$tier2_workflow" '- postgres-age-architectures'
 
 for workflow in \
   .github/workflows/e2e.yml \

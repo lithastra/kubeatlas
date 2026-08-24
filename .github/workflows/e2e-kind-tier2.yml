@@ -357,18 +357,92 @@ jobs:
             crd/clusters.postgresql.cnpg.io \
             --timeout=2m
 
+  postgres-age-architectures:
+    name: PostgreSQL + AGE (linux/${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            uname: x86_64
+          - arch: arm64
+            uname: aarch64
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and load the architecture-specific image
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          docker buildx build \
+            --platform "linux/${TARGET_ARCH}" \
+            --load \
+            --tag local-postgres-age:architecture-test \
+            images/postgres-age
+
+      - name: Verify architecture and embedded dependency versions
+        env:
+          EXPECTED_UNAME: ${{ matrix.uname }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          image=local-postgres-age:architecture-test
+          actual_uname="$(docker run --rm \
+            --platform "linux/${TARGET_ARCH}" \
+            --entrypoint uname \
+            "${image}" -m)"
+          test "${actual_uname}" = "${EXPECTED_UNAME}"
+
+          test "$(docker image inspect "${image}" \
+            --format '{{ index .Config.Labels "io.kubeatlas.postgresql.version" }}')" = 16.15
+          test "$(docker image inspect "${image}" \
+            --format '{{ index .Config.Labels "io.kubeatlas.apache-age.version" }}')" = PG16/v1.6.0-rc0
+          test "$(docker image inspect "${image}" \
+            --format '{{ index .Config.Labels "io.kubeatlas.apache-age.commit" }}')" = \
+            2db2f060c4c9265a14d40f007eb8c56febf31e4c
+
+          docker run --rm \
+            --platform "linux/${TARGET_ARCH}" \
+            --entrypoint sh \
+            "${image}" -euc '
+              postgres_version="$(postgres --version)"
+              printf "%s\n" "${postgres_version}"
+              case "${postgres_version}" in
+                *" 16.15"*) ;;
+                *) exit 1 ;;
+              esac
+
+              pkglibdir="$(pg_config --pkglibdir)"
+              extensiondir="$(pg_config --sharedir)/extension"
+              test -s "${pkglibdir}/age.so"
+              test -s "${extensiondir}/age.control"
+              grep -F "default_version" "${extensiondir}/age.control"
+              grep -Fq "1.6.0" "${extensiondir}/age.control"
+              ldd "${pkglibdir}/age.so" | tee /tmp/age-ldd.txt
+              ! grep -Fq "not found" /tmp/age-ldd.txt
+            '
+
   e2e-kind-tier2:
     name: kind + CNPG + kubeatlas Tier 2
     if: always()
     needs:
       - e2e-kind-tier2-matrix
       - cnpg-upgrade-chain
+      - postgres-age-architectures
     runs-on: ubuntu-latest
     steps:
       - name: Enforce the supported Kubernetes and CNPG matrix
         env:
           MATRIX_RESULT: ${{ needs.e2e-kind-tier2-matrix.result }}
           UPGRADE_RESULT: ${{ needs.cnpg-upgrade-chain.result }}
+          ARCHITECTURE_RESULT: ${{ needs.postgres-age-architectures.result }}
         run: |
           test "${MATRIX_RESULT}" = success
           test "${UPGRADE_RESULT}" = success
+          test "${ARCHITECTURE_RESULT}" = success

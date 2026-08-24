@@ -53,6 +53,9 @@ RUN git clone --depth 1 --branch ${AGE_VERSION} https://github.com/apache/age.gi
 # ---- stage 2: clean CNPG image + the freshly-compiled AGE -------
 FROM ${CNPG_IMAGE}
 
+ARG AGE_VERSION
+ARG AGE_COMMIT
+
 USER root
 
 # AGE's `make install` writes the .so to PG's pkglibdir and the
@@ -71,3 +74,6 @@ USER postgres
 LABEL org.opencontainers.image.source="https://github.com/lithastra/kubeatlas"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.description="CloudNativePG-compatible Postgres 16 with Apache AGE compiled from source against matching glibc"
+LABEL io.kubeatlas.postgresql.version="16.15"
+LABEL io.kubeatlas.apache-age.version="${AGE_VERSION}"
+LABEL io.kubeatlas.apache-age.commit="${AGE_COMMIT}"
