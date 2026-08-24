@@ -74,16 +74,102 @@ The release evidence must describe each artifact independently:
 - Binary archives have a GoReleaser-generated SHA-256 checksum file.
 - The PostgreSQL + AGE build explicitly enables BuildKit SBOM and
   provenance attestations, and the release verifies their manifests.
-- The application image, Helm chart, and binary archives do not currently
-  have a KubeAtlas release job that creates Cosign signatures. Do not call
-  them signed.
-- Do not claim an application-image or binary SBOM/provenance guarantee
-  until the workflow explicitly enables it and a public release audit
-  verifies the resulting attestations.
+- The published v1.5.2 application image, Helm chart, and binary archives do
+  not have KubeAtlas Cosign signatures. Do not retroactively call them signed.
+- The v1.6 release workflow is configured to keyless-sign the application
+  image, PostgreSQL + AGE image, and Helm OCI chart by immutable digest. It
+  also explicitly creates and verifies per-platform application-image and
+  database-image SPDX SBOM and SLSA provenance statements.
+- Configuration is not public evidence. Do not call a v1.6 artifact signed or
+  attested until its tag workflow and anonymous clean-cluster audit pass for
+  the exact candidate commit and digests that completed the 168-hour gate.
+- Binary archives remain checksum-verified but unsigned. Their contents are
+  not covered by the OCI image signatures.
 
-The unsigned application artifacts are a documented current limitation,
-not evidence that signature verification for separately distributed Rego
-rule packs is disabled. Those are different release pipelines.
+The v1.5.2 unsigned application artifacts are a documented historical
+limitation, not evidence that signature verification for separately
+distributed Rego rule packs is disabled. Those are different release
+pipelines.
+
+## Verifying a v1.6 core candidate
+
+The release audit runs these checks from a fresh job with an empty registry
+credential configuration. An operator can repeat them after replacing the
+example tag and commit with the values in the retained
+`core-artifact-audit-<tag>` workflow artifact:
+
+```bash
+tag=v1.6.0
+commit=<40-character-commit-from-the-audit-evidence>
+version=${tag#v}
+issuer=https://token.actions.githubusercontent.com
+identity="https://github.com/lithastra/kubeatlas/.github/workflows/release.yml@refs/tags/${tag}"
+
+app_repository=ghcr.io/lithastra/kubeatlas
+database_repository=ghcr.io/lithastra/postgres-age
+chart_repository=ghcr.io/lithastra/charts/kubeatlas
+database_tag=16.15-age1.6.0-rc0.2
+
+app_digest=$(oras resolve "${app_repository}:${version}")
+database_digest=$(oras resolve "${database_repository}:${database_tag}")
+chart_digest=$(oras resolve "${chart_repository}:${version}")
+
+for artifact in \
+  "${app_repository}@${app_digest}" \
+  "${database_repository}@${database_digest}" \
+  "${chart_repository}@${chart_digest}"; do
+  cosign verify \
+    --certificate-identity "${identity}" \
+    --certificate-oidc-issuer "${issuer}" \
+    --certificate-github-workflow-repository lithastra/kubeatlas \
+    --certificate-github-workflow-ref "refs/tags/${tag}" \
+    --certificate-github-workflow-sha "${commit}" \
+    -a "release-tag=${tag}" \
+    -a "release-commit=${commit}" \
+    "${artifact}"
+done
+```
+
+Checking only that *some* valid Sigstore signature exists is insufficient. The
+identity, GitHub repository, tag ref, commit SHA, signed annotations, and
+immutable digest are all part of the verification policy. The retained audit
+also inspects both image indexes and proves that their linux/amd64 and
+linux/arm64 manifests each have SPDX and SLSA statements bound to that exact
+platform digest.
+
+After verification, pin the application image digest during installation so a
+later tag lookup is not introduced between verification and deployment:
+
+```bash
+helm upgrade --install kubeatlas \
+  oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version "${version}" \
+  --namespace kubeatlas --create-namespace \
+  --set-string "image.digest=${app_digest}"
+```
+
+The Helm chart is still selected by version for Helm client compatibility, but
+the operator should verify its resolved OCI digest immediately before the
+install. The release audit performs the same resolution, then installs the
+chart with the verified application-image digest on a clean kind cluster.
+
+## v1.6 trust-gate order
+
+1. Freeze the release workflow, runtime images, Chart, dependencies, recovery
+   behavior, and instrumentation.
+2. Complete the performance gates and 168 continuous hours on that exact
+   candidate commit. A later change to those surfaces invalidates the run.
+3. Run the manual frozen candidate preflight on the same commit.
+4. Create the signed release tag. The tag workflow publishes the database and
+   application image indexes with attestations, creates a draft GitHub Release,
+   pushes the Chart, and keyless-signs all three OCI digests.
+5. Keep the GitHub Release draft. A separate no-package-permission job creates
+   an empty registry credential configuration, resolves the public artifacts,
+   verifies exact workflow/ref/SHA signatures, validates per-platform
+   attestations, anonymously pulls the database image and Chart, and installs
+   the digest-pinned application on clean Kubernetes.
+6. Preserve the bounded JSON audit artifact even on failure. Publish the draft
+   release only when the clean audit and every other core row are green.
 
 ## Required order
 

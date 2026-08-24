@@ -62,12 +62,16 @@ Effective ServiceAccount name: explicit override or computed default.
 {{- end -}}
 
 {{/*
-Effective container image reference. Falls back to .Chart.AppVersion
-when .Values.image.tag is empty.
+Effective container image reference. An explicitly verified digest takes
+precedence; otherwise the tag falls back to .Chart.AppVersion.
 */}}
 {{- define "kubeatlas.image" -}}
+{{- if .Values.image.digest -}}
+{{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+{{- else -}}
 {{- $tag := default .Chart.AppVersion .Values.image.tag -}}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

@@ -18,8 +18,13 @@ on:
       - 'CHANGELOG.md'
       - 'images/postgres-age/**'
       - 'helm/kubeatlas/**'
+      - 'docs/docs/release-process.md'
       - 'docs/docs/operations/**'
       - 'test/verify/release-contract.sh'
+      - 'test/verify/artifact-trust-contract.sh'
+      - 'test/verify/core-artifact-audit.sh'
+      - 'test/verify/image-attestations.sh'
+      - 'test/verify/sign-core-artifact.sh'
       - 'test/verify/operability-contract.sh'
       - 'test/verify/public-clean-cluster.sh'
   push:
@@ -34,8 +39,13 @@ on:
       - 'CHANGELOG.md'
       - 'images/postgres-age/**'
       - 'helm/kubeatlas/**'
+      - 'docs/docs/release-process.md'
       - 'docs/docs/operations/**'
       - 'test/verify/release-contract.sh'
+      - 'test/verify/artifact-trust-contract.sh'
+      - 'test/verify/core-artifact-audit.sh'
+      - 'test/verify/image-attestations.sh'
+      - 'test/verify/sign-core-artifact.sh'
       - 'test/verify/operability-contract.sh'
       - 'test/verify/public-clean-cluster.sh'
 
@@ -102,6 +112,15 @@ jobs:
 
       - name: Verify operability contract
         run: bash test/verify/operability-contract.sh
+
+      - name: Verify core artifact trust contract
+        run: |
+          bash -n \
+            test/verify/artifact-trust-contract.sh \
+            test/verify/core-artifact-audit.sh \
+            test/verify/image-attestations.sh \
+            test/verify/sign-core-artifact.sh
+          bash test/verify/artifact-trust-contract.sh
 
       - name: Verify Go modules
         run: go mod verify
