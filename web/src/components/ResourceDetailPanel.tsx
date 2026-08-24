@@ -1,8 +1,8 @@
 import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Chip, Divider, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 
 import type { Edge, Resource } from '../api/types';
+import { Icon } from '../design/Icon';
 import { NeighborView } from './NeighborView';
 import { NetworkPolicyView } from './NetworkPolicyView';
 
@@ -40,7 +40,7 @@ export function ResourceDetailPanel({ resource, incoming, outgoing, mermaidText 
         </Stack>
         {resource.annotations && Object.keys(resource.annotations).length > 0 && (
           <Accordion sx={{ mt: 1 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <AccordionSummary expandIcon={<Icon name="chevron-down" />}>
               <Typography variant="body2">Annotations ({Object.keys(resource.annotations).length})</Typography>
             </AccordionSummary>
             <AccordionDetails>
