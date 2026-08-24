@@ -137,7 +137,7 @@ func New(cfg Config, kubernetesProbe, storageProbe Probe) *Monitor {
 		cfg.StaleAfter = DefaultStaleAfter
 	}
 	if kubernetesProbe == nil {
-		kubernetesProbe = func(context.Context) error { return errors.New("Kubernetes probe is not configured") }
+		kubernetesProbe = func(context.Context) error { return errors.New("kubernetes probe is not configured") }
 	}
 	if storageProbe == nil {
 		storageProbe = func(context.Context) error { return errors.New("storage probe is not configured") }
