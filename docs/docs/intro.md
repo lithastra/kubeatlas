@@ -29,13 +29,14 @@ the tools above instead of replacing them.
 
 ## Project status
 
-**v1.5.2 release candidate.** The dependency graph keeps Secret references but
+**v1.5.2 is released.** The dependency graph keeps Secret references but
 KubeAtlas no longer lists or watches Secret objects. Defensive inputs are
 reduced to reference-only nodes before rule evaluation or storage, existing
 Tier 2 Secret rows and historical event payloads are scrubbed during migration,
-and snapshot history is metadata-only for every resource. The production
-install command remains pinned to v1.5.1 until all v1.5.2 artifacts pass the
-[release matrix](./release-process.md).
+and snapshot history is metadata-only for every resource. The public release
+artifacts and production install path are verified; new installations should
+pin v1.5.2. See the [release matrix](./release-process.md) for the evidence and
+the independently reviewed integration status.
 
 **v1.5.1.** The v1.5.0 feature set is unchanged, but the Tier 2
 installation and release lifecycle are hardened:

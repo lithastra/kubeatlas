@@ -27,14 +27,14 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**v1.5.2 is being prepared as a security patch.** KubeAtlas no longer lists or
+**v1.5.2 is released as a security patch.** KubeAtlas no longer lists or
 watches Kubernetes Secret objects. Secret relationships remain visible as
 reference-only graph nodes, while Secret values and identifying metadata are
 rejected at collection and scrubbed at both storage boundaries. Snapshot event
 payloads are metadata-only for every resource. See the
 [v1.5.2 changelog](./CHANGELOG.md#v152--secret-data-boundary) for the complete
-upgrade and validation boundary. Continue installing v1.5.1 until the v1.5.2
-chart and release artifacts are publicly verified.
+upgrade and validation boundary. The public binaries, multi-architecture image,
+and Helm chart have been verified; new installations should pin v1.5.2.
 
 **v1.5.1 hardens release reliability.** This patch release strengthens the Tier 2
 installation and release lifecycle without expanding the product
@@ -181,7 +181,7 @@ to a running UI):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.1 \
+  --version 1.5.2 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
@@ -199,7 +199,7 @@ helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
   --wait --timeout 5m
 
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.1 \
+  --version 1.5.2 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \
