@@ -49,6 +49,8 @@ bin/
 # goreleaser output (repo-root only — don't catch web/dist or
 # cmd/kubeatlas/web/dist).
 /dist/
+# Local release-gate evidence. Preserve it externally; never commit it.
+/.evidence/
 
 # Embedded Web UI bundle. The directory is populated only at release
 # time (Dockerfile / goreleaser before-hook) when building with

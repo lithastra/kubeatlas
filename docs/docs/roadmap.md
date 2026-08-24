@@ -437,9 +437,11 @@ then the final
 | Artifact trust | Anonymous pulls and identity-constrained signature, SBOM, and provenance verification pass for every core cluster artifact. |
 | Documentation | The support matrix, single-replica outage, external-auth requirement, backup sensitivity, upgrade ordering, and rollback limits match observed evidence. |
 
-The soak threshold must be fixed before the run starts. After a 24-hour
-warm-up, the proposed release threshold is no sustained increase greater than
-20% over the first stable-day baseline for RSS, goroutines, or queue depth.
+The soak threshold is frozen before the run starts. After a 24-hour warm-up,
+the next 24 hours form the stable-day baseline. Each later UTC-independent
+24-hour window must keep RSS, goroutine, and queue-depth p95 at no more than
+120% of that baseline; a zero queue-depth baseline must remain zero outside an
+intentional overload.
 Injected restarts are recorded separately; all other restarts fail the gate.
 Normal load permits no dropped events or snapshots. An intentional overload
 may shed work only when the loss is counted, logged, and alertable.
