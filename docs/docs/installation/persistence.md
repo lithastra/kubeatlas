@@ -323,13 +323,9 @@ PG_POD=$(kubectl get pods -n "${NAMESPACE}" \
   -l "cnpg.io/cluster=${PG_CLUSTER},cnpg.io/instanceRole=primary" \
   -o jsonpath='{.items[0].metadata.name}')
 
-kubectl cp "${BACKUP_FILE}" \
-  "${NAMESPACE}/${PG_POD}:/tmp/kubeatlas-restore.dump" -c postgres
-kubectl exec -n "${NAMESPACE}" "${PG_POD}" -c postgres -- \
+kubectl exec -i -n "${NAMESPACE}" "${PG_POD}" -c postgres -- \
   pg_restore --clean --if-exists --exit-on-error \
-  -U postgres -d kubeatlas /tmp/kubeatlas-restore.dump
-kubectl exec -n "${NAMESPACE}" "${PG_POD}" -c postgres -- \
-  unlink /tmp/kubeatlas-restore.dump
+  -U postgres -d kubeatlas <"${BACKUP_FILE}"
 
 kubectl scale deployment -n "${NAMESPACE}" "${RELEASE}" --replicas=1
 kubectl rollout status deployment -n "${NAMESPACE}" "${RELEASE}" \

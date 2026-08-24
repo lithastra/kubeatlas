@@ -31,7 +31,6 @@ RESTORED_SQL_FILE=/tmp/kubeatlas-v160-restored.sql
 SURFACES_FILE=/tmp/kubeatlas-upgrade-recovery-surfaces.log
 DUMP_LOG=/tmp/kubeatlas-upgrade-recovery-pg-dump.log
 RESTORE_LOG=/tmp/kubeatlas-upgrade-recovery-pg-restore.log
-POD_BACKUP=/tmp/kubeatlas-v152-upgrade-recovery.dump
 DIAGNOSTICS_LOG=/tmp/kubeatlas-upgrade-recovery-diagnostics.log
 SECRET_SENTINEL=""
 SECRET_SENTINEL_B64=""
@@ -445,15 +444,11 @@ assert_sensitive_values_absent "${BACKUP_SQL_FILE}" \
   "${source_password}" "${restored_password}"
 
 step "restore the protected archive with owners, ACLs, and AGE graph objects"
-kubectl cp "${BACKUP_FILE}" \
-  "${NS}/${restored_pg_pod}:${POD_BACKUP}" -c postgres >/dev/null
-if ! kubectl exec -n "${NS}" "${restored_pg_pod}" -c postgres -- \
+if ! kubectl exec -i -n "${NS}" "${restored_pg_pod}" -c postgres -- \
   pg_restore --clean --if-exists --exit-on-error \
-    -U postgres -d kubeatlas "${POD_BACKUP}" 2>"${RESTORE_LOG}"; then
+    -U postgres -d kubeatlas <"${BACKUP_FILE}" 2>"${RESTORE_LOG}"; then
   fail "pg_restore failed; see ${RESTORE_LOG}"
 fi
-kubectl exec -n "${NS}" "${restored_pg_pod}" -c postgres -- \
-  unlink "${POD_BACKUP}"
 
 restored_history=$(sql_value "SELECT count(*) FROM public.resource_events WHERE namespace = '${NS}'")
 restored_snapshots=$(sql_value 'SELECT count(*) FROM public.snapshot_meta')
