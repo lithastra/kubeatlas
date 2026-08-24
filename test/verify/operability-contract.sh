@@ -56,6 +56,8 @@ for env_name in \
   require_text "${deployment}" "${env_name}"
 done
 require_text "${deployment}" 'readOnly: true'
+require_text "${deployment}" 'Old releases have no operations block'
+require_text "${deployment}" 'default "15s"'
 require_text helm/kubeatlas/values.yaml 'configMapRef:'
 
 if grep -RiqE '^kind:[[:space:]]*(ServiceMonitor|PodMonitor|Prometheus|GrafanaDashboard)[[:space:]]*$' \

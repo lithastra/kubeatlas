@@ -446,7 +446,7 @@
     },
     "extraLabels": { "type": "object" }
   },
-  "required": ["image", "service", "ingress", "podSecurityContext", "securityContext", "operations", "persistence"],
+  "required": ["image", "service", "ingress", "podSecurityContext", "securityContext", "persistence"],
   "allOf": [
     {
       "comment": "Multi-cluster federation requires a kubeconfigSecret to point the runtime at. multicluster.enabled=true with an empty kubeconfigSecret is rejected at chart-render time (P3-T21).",

@@ -1,3 +1,13 @@
+{{- /*
+Old releases have no operations block in their stored Helm values. Helm
+--reuse-values intentionally does not merge newly added chart defaults, so use
+the same secure defaults here when upgrading from v1.5.x.
+*/ -}}
+{{- $operations := .Values.operations | default dict -}}
+{{- $backupStatus := get $operations "backupStatus" | default dict -}}
+{{- $backupRef := get $backupStatus "configMapRef" | default dict -}}
+{{- $backupName := get $backupRef "name" | default "" -}}
+{{- $backupKey := get $backupRef "key" | default "last-successful" -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -87,12 +97,12 @@ spec:
             - name: KUBEATLAS_RULEPACK_OPENSHIFT
               value: {{ printf "%v" .Values.rulePacks.openshift | quote }}
             - name: KUBEATLAS_OPERATIONS_PROBE_INTERVAL
-              value: {{ .Values.operations.probeInterval | quote }}
+              value: {{ get $operations "probeInterval" | default "15s" | quote }}
             - name: KUBEATLAS_OPERATIONS_PROBE_TIMEOUT
-              value: {{ .Values.operations.probeTimeout | quote }}
+              value: {{ get $operations "probeTimeout" | default "5s" | quote }}
             - name: KUBEATLAS_OPERATIONS_STALE_AFTER
-              value: {{ .Values.operations.staleAfter | quote }}
-            {{- if .Values.operations.backupStatus.configMapRef.name }}
+              value: {{ get $operations "staleAfter" | default "2m" | quote }}
+            {{- if $backupName }}
             # The mounted ConfigMap contains a timestamp only. It is maintained
             # by the operator's backup workflow and is never a credential or a
             # substitute for restore testing.
@@ -205,7 +215,7 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.operations.backupStatus.configMapRef.name }}
+            {{- if $backupName }}
             - name: backup-status
               mountPath: /var/run/kubeatlas/backup
               readOnly: true
@@ -223,12 +233,12 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-        {{- if .Values.operations.backupStatus.configMapRef.name }}
+        {{- if $backupName }}
         - name: backup-status
           configMap:
-            name: {{ .Values.operations.backupStatus.configMapRef.name | quote }}
+            name: {{ $backupName | quote }}
             items:
-              - key: {{ .Values.operations.backupStatus.configMapRef.key | quote }}
+              - key: {{ $backupKey | quote }}
                 path: last-successful
         {{- end }}
         {{- if .Values.multicluster.enabled }}
