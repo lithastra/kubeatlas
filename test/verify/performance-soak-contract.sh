@@ -65,6 +65,19 @@ grep -Fq \
   '"${allow_not_found}" == "true" && "${http_code}" == "404"' \
   test/soak/v160-soak.sh
 
+# The v1.5.2 upgrade verifier must not keep polling a dead kubectl tunnel.
+# A request can race the application listener during a rollout, which makes
+# kubectl port-forward exit even though the Pod becomes healthy moments later.
+grep -Fq \
+  'kubectl rollout status --namespace "${NS}" "deployment/${RELEASE}"' \
+  test/verify/v152-secret-boundary.sh
+grep -Fq \
+  'if [[ -z "${PF_PID}" ]] || ! kill -0 "${PF_PID}" 2>/dev/null; then' \
+  test/verify/v152-secret-boundary.sh
+grep -Fq \
+  'start_port_forward_process' \
+  test/verify/v152-secret-boundary.sh
+
 jq '.results.cluster_view.p95_ms = 1001' "${TMP}/performance/default.json" >"${TMP}/performance/invalid.json"
 if bash test/verify/v160-performance-evidence.sh \
   "${TMP}/performance/invalid.json" "${TMP}/performance/distributed.json" "${TMP}/performance/pathological.json" \
