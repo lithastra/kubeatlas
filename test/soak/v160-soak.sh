@@ -170,6 +170,26 @@ start_port_forward() {
 }
 
 api() { curl -fsS --max-time 10 "http://127.0.0.1:${PF_PORT}$1"; }
+append_security_surface() {
+  local endpoint=$1 allow_not_found=${2:-false} response http_code response_body
+  if ! response=$(curl -sS --max-time 10 -w $'\n%{http_code}' \
+    "http://127.0.0.1:${PF_PORT}${endpoint}"); then
+    fail "security surface ${endpoint} was unreachable"
+  fi
+  http_code=${response##*$'\n'}
+  response_body=${response%$'\n'*}
+  printf '%s\n' "${response_body}" >>"${SURFACE_FILE}"
+  if [[ "${http_code}" == "200" ]]; then
+    return 0
+  fi
+  # An unreferenced Secret has no reference-only graph placeholder, so its
+  # detail endpoint correctly returns 404. Retain and scan that bounded error
+  # body, while rejecting 404s from every other surface and all other errors.
+  if [[ "${allow_not_found}" == "true" && "${http_code}" == "404" ]]; then
+    return 0
+  fi
+  fail "security surface ${endpoint} returned HTTP ${http_code}"
+}
 metric() {
   local metrics=$1 name=$2
   awk -v name="${name}" '$1 == name {print $2; found=1} END {if (!found) print 0}' <<<"${metrics}" | tail -n1
@@ -195,9 +215,10 @@ scan_security_surfaces() {
   fi
   SURFACE_FILE=$(mktemp)
   : >"${SURFACE_FILE}"
+  append_security_surface \
+    "/api/v1/resources/${NAMESPACE}/Secret/v160-soak-sentinel" true
   for endpoint in \
     '/api/v1/graph?level=cluster' \
-    "/api/v1/resources/${NAMESPACE}/Secret/v160-soak-sentinel" \
     '/api/v1/snapshots' \
     "/api/v1/diagnose?namespace=${NAMESPACE}" \
     "/api/v1alpha1/export?format=svg&namespace=${NAMESPACE}" \
@@ -205,8 +226,7 @@ scan_security_surfaces() {
     '/api/v1/telemetry/status' \
     '/api/v1/telemetry/preview' \
     '/metrics'; do
-    api "${endpoint}" >>"${SURFACE_FILE}"
-    printf '\n' >>"${SURFACE_FILE}"
+    append_security_surface "${endpoint}"
   done
   if (( full_scan == 1 )); then
     kubectl logs -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE}" \

@@ -10,6 +10,7 @@ NS="${KUBEATLAS_NAMESPACE:-kubeatlas}"
 RELEASE="${KUBEATLAS_RELEASE:-kubeatlas}"
 PG_CLUSTER="${KUBEATLAS_PG_CLUSTER:-${RELEASE}-pg}"
 PF_PORT="${KUBEATLAS_PF_PORT:-18082}"
+PF_LOG="${KUBEATLAS_PF_LOG:-/tmp/kubeatlas-v152-secret-boundary-pf.log}"
 CANARY_B64="a3ViZWF0bGFzLXYxNTItdXBncmFkZS1zZWNyZXQtY2FuYXJ5"
 PF_PID=""
 
@@ -45,29 +46,53 @@ assert_sql() {
 }
 
 stop_port_forward() {
-  if [[ -n "${PF_PID}" ]] && kill -0 "${PF_PID}" 2>/dev/null; then
-    kill "${PF_PID}" 2>/dev/null || true
+  if [[ -n "${PF_PID}" ]]; then
+    if kill -0 "${PF_PID}" 2>/dev/null; then
+      kill "${PF_PID}" 2>/dev/null || true
+    fi
     wait "${PF_PID}" 2>/dev/null || true
   fi
   PF_PID=""
 }
 
-start_port_forward() {
+start_port_forward_process() {
+  stop_port_forward
   # Target the Deployment explicitly. Snapshot Jobs intentionally share the
   # app labels used by the Service selector but do not expose the HTTP port, so
   # service port-forward can race and select a snapshot Pod.
   kubectl port-forward --namespace "${NS}" "deployment/${RELEASE}" \
-    "${PF_PORT}:8080" >/tmp/kubeatlas-v152-secret-boundary-pf.log 2>&1 &
+    "${PF_PORT}:8080" >>"${PF_LOG}" 2>&1 &
   PF_PID=$!
+}
+
+start_port_forward() {
+  local attempts=0
+  local deadline
+
+  kubectl rollout status --namespace "${NS}" "deployment/${RELEASE}" \
+    --timeout=2m >/dev/null \
+    || fail "KubeAtlas Deployment did not finish rolling out"
+
+  deadline=$((SECONDS + 60))
+  : >"${PF_LOG}"
   trap stop_port_forward EXIT
-  for _ in $(seq 1 60); do
+
+  while (( SECONDS < deadline )); do
+    # A first request can reach the Pod just before the listener is ready.
+    # kubectl exits after that refused connection, so replace the dead tunnel
+    # instead of continuing to probe a local port with no listener.
+    if [[ -z "${PF_PID}" ]] || ! kill -0 "${PF_PID}" 2>/dev/null; then
+      start_port_forward_process
+      attempts=$((attempts + 1))
+    fi
     if curl -fsS --max-time 1 \
       "http://127.0.0.1:${PF_PORT}/readyz" >/dev/null 2>&1; then
       return
     fi
     sleep 1
   done
-  fail "KubeAtlas API did not become reachable on ${PF_PORT}"
+  stop_port_forward
+  fail "KubeAtlas API did not become reachable on ${PF_PORT} after ${attempts} port-forward attempt(s); see ${PF_LOG}"
 }
 
 case "${STAGE}" in
