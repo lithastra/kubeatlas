@@ -78,6 +78,22 @@ grep -Fq \
   'start_port_forward_process' \
   test/verify/v152-secret-boundary.sh
 
+# The 168-hour runner must not attach its replacement tunnel to a terminating
+# Pod. Require an explicitly different Ready Pod, a Pod-specific tunnel, and
+# retry behavior when kubectl exits before the application becomes reachable.
+grep -Fq \
+  'select(.metadata.uid != $old_uid)' \
+  test/soak/v160-soak.sh
+grep -Fq \
+  'kubectl delete pod -n "${NAMESPACE}" "${before_name}"' \
+  test/soak/v160-soak.sh
+grep -Fq \
+  'start_port_forward "pod/${after_name}" "${remaining}"' \
+  test/soak/v160-soak.sh
+grep -Fq \
+  'if [[ -z "${PF_PID}" ]] || ! kill -0 "${PF_PID}" 2>/dev/null; then' \
+  test/soak/v160-soak.sh
+
 jq '.results.cluster_view.p95_ms = 1001' "${TMP}/performance/default.json" >"${TMP}/performance/invalid.json"
 if bash test/verify/v160-performance-evidence.sh \
   "${TMP}/performance/invalid.json" "${TMP}/performance/distributed.json" "${TMP}/performance/pathological.json" \

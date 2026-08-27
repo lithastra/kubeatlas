@@ -49,8 +49,10 @@ pass() { printf 'PASS: %s\n' "$*"; }
 
 stop_process() {
   local pid=$1
-  if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
-    kill "${pid}" 2>/dev/null || true
+  if [[ -n "${pid}" ]]; then
+    if kill -0 "${pid}" 2>/dev/null; then
+      kill "${pid}" 2>/dev/null || true
+    fi
     wait "${pid}" 2>/dev/null || true
   fi
 }
@@ -155,18 +157,32 @@ mkdir -p "${LOG_DIR}"
 : >"${EVENTS_FILE}"
 
 start_port_forward() {
+  local target=${1:-deployment/${RELEASE}}
+  local timeout_seconds=${2:-60}
+  local deadline=$((SECONDS + timeout_seconds))
+  local attempts=0
+
   stop_process "${PF_PID}"
-  kubectl port-forward -n "${NAMESPACE}" "deployment/${RELEASE}" \
-    "${PF_PORT}:8080" >"${LOG_DIR}/port-forward.log" 2>&1 &
-  PF_PID=$!
-  for _ in $(seq 1 60); do
-    if curl -fsS --max-time 1 "http://127.0.0.1:${PF_PORT}/readyz" >/dev/null 2>&1; then
+  PF_PID=""
+  while (( SECONDS < deadline )); do
+    if [[ -z "${PF_PID}" ]] || ! kill -0 "${PF_PID}" 2>/dev/null; then
+      stop_process "${PF_PID}"
+      attempts=$((attempts + 1))
+      printf 'attempt=%s target=%s\n' "${attempts}" "${target}" \
+        >>"${LOG_DIR}/port-forward.log"
+      kubectl port-forward -n "${NAMESPACE}" "${target}" \
+        "${PF_PORT}:8080" >>"${LOG_DIR}/port-forward.log" 2>&1 &
+      PF_PID=$!
+    fi
+    if kill -0 "${PF_PID}" 2>/dev/null \
+      && curl -fsS --max-time 1 "http://127.0.0.1:${PF_PORT}/readyz" >/dev/null 2>&1; then
       return 0
     fi
-    kill -0 "${PF_PID}" 2>/dev/null || fail "port-forward exited before KubeAtlas became ready"
     sleep 1
   done
-  fail "KubeAtlas did not become reachable through port-forward"
+  stop_process "${PF_PID}"
+  PF_PID=""
+  fail "KubeAtlas did not become reachable through ${target} port-forward after ${attempts} attempts"
 }
 
 api() { curl -fsS --max-time 10 "http://127.0.0.1:${PF_PORT}$1"; }
@@ -283,6 +299,29 @@ current_app_pod() {
   kubectl get pods -n "${NAMESPACE}" \
     -l "app.kubernetes.io/name=kubeatlas,app.kubernetes.io/instance=${RELEASE}" \
     -o json | jq -c '[.items[] | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))] | sort_by(.metadata.creationTimestamp) | last'
+}
+
+wait_for_replacement_app_pod() {
+  local old_uid=$1 timeout_seconds=$2
+  local deadline=$((SECONDS + timeout_seconds))
+  local pod_json
+
+  while (( SECONDS < deadline )); do
+    pod_json=$(kubectl get pods -n "${NAMESPACE}" \
+      -l "app.kubernetes.io/name=kubeatlas,app.kubernetes.io/instance=${RELEASE}" \
+      -o json | jq -c --arg old_uid "${old_uid}" '
+        [.items[]
+          | select(.metadata.uid != $old_uid)
+          | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))]
+        | sort_by(.metadata.creationTimestamp)
+        | last // empty')
+    if [[ -n "${pod_json}" ]]; then
+      printf '%s\n' "${pod_json}"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 record_event() {
@@ -436,18 +475,30 @@ capture_sample() {
 }
 
 event_app_restart() {
-  local before_uid started after_json after_uid recovery
-  before_uid=$(jq -r '.metadata.uid' <<<"$(current_app_pod)")
+  local before_json before_name before_uid started restart_deadline remaining
+  local after_json after_name after_uid recovery
+  before_json=$(current_app_pod)
+  before_name=$(jq -r '.metadata.name // empty' <<<"${before_json}")
+  before_uid=$(jq -r '.metadata.uid // empty' <<<"${before_json}")
+  [[ -n "${before_name}" && -n "${before_uid}" ]] \
+    || fail "app restart could not identify the current Ready Pod"
   started=$(date +%s)
-  kubectl delete pod -n "${NAMESPACE}" \
-    -l "app.kubernetes.io/name=kubeatlas,app.kubernetes.io/instance=${RELEASE}" \
+  restart_deadline=$((SECONDS + 120))
+  stop_process "${PF_PID}"
+  PF_PID=""
+  kubectl delete pod -n "${NAMESPACE}" "${before_name}" \
     --wait=false >"${LOG_DIR}/app-restart.log" 2>&1
-  kubectl rollout status deployment -n "${NAMESPACE}" "${RELEASE}" --timeout=120s \
-    >>"${LOG_DIR}/app-restart.log" 2>&1
-  start_port_forward
-  after_json=$(current_app_pod)
-  after_uid=$(jq -r '.metadata.uid' <<<"${after_json}")
-  [[ "${after_uid}" != "${before_uid}" ]] || fail "app restart did not replace the Pod"
+  remaining=$((restart_deadline - SECONDS))
+  (( remaining > 0 )) || fail "app restart recovery exceeded 120 seconds before replacement"
+  after_json=$(wait_for_replacement_app_pod "${before_uid}" "${remaining}") \
+    || fail "app restart did not produce a replacement Ready Pod within 120 seconds"
+  after_name=$(jq -r '.metadata.name // empty' <<<"${after_json}")
+  after_uid=$(jq -r '.metadata.uid // empty' <<<"${after_json}")
+  [[ -n "${after_name}" && -n "${after_uid}" && "${after_uid}" != "${before_uid}" ]] \
+    || fail "app restart did not replace the Pod"
+  remaining=$((restart_deadline - SECONDS))
+  (( remaining > 0 )) || fail "app restart recovery exceeded 120 seconds before port-forward"
+  start_port_forward "pod/${after_name}" "${remaining}"
   recovery=$(( $(date +%s) - started ))
   (( recovery <= 120 )) || fail "app restart recovery exceeded 120 seconds"
   restarted_pod_uid=${after_uid}
