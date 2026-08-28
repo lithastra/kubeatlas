@@ -56,9 +56,10 @@ initial sync; `503` until then. Use this — not `/healthz` — for
 
 ### `GET /metrics`
 
-Prometheus text exposition. Hand-rolled (no client_golang
-dependency); covers goroutine count, informer sync state, and
-request counts by method and status. `Content-Type: text/plain`.
+Prometheus text exposition. Hand-rolled (no client_golang dependency); covers
+the Go runtime memory boundary, goroutine count, informer and dependency
+state, bounded operational counters, and request counts by method and status.
+`Content-Type: text/plain`.
 
 ### `GET /api/v1/info`
 

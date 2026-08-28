@@ -22,6 +22,7 @@ require_text() {
 
 metrics_file=pkg/api/metrics.go
 for metric in \
+  kubeatlas_go_memory_limit_bytes \
   kubeatlas_graph_observation_state \
   kubeatlas_kubernetes_api_reachable \
   kubeatlas_kubernetes_api_last_success_timestamp_seconds \
@@ -49,6 +50,8 @@ require_text pkg/store/postgres/store.go 's.pool.Ping(ctx)'
 
 deployment=helm/kubeatlas/templates/deployment.yaml
 for env_name in \
+  KUBEATLAS_CONTAINER_MEMORY_LIMIT_BYTES \
+  KUBEATLAS_GO_MEMORY_LIMIT_PERCENT \
   KUBEATLAS_OPERATIONS_PROBE_INTERVAL \
   KUBEATLAS_OPERATIONS_PROBE_TIMEOUT \
   KUBEATLAS_OPERATIONS_STALE_AFTER \
@@ -98,6 +101,7 @@ for expected in \
   'no built-in authentication' \
   'cluster-wide information leak' \
   'Only Kubernetes Secret values' \
+  'kubeatlas_go_memory_limit_bytes' \
   'kubeatlas_graph_observation_state{state="stale"} == 1' \
   'kubeatlas_storage_reachable == 0' \
   'increase(kubeatlas_snapshot_queue_drop_total[5m]) > 0' \

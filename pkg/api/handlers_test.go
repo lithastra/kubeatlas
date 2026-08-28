@@ -441,6 +441,8 @@ func TestHandleMetrics_PromExposition(t *testing.T) {
 	for _, want := range []string{
 		"# TYPE kubeatlas_goroutines gauge",
 		"kubeatlas_goroutines ",
+		"# TYPE kubeatlas_go_memory_limit_bytes gauge",
+		"kubeatlas_go_memory_limit_bytes ",
 		"kubeatlas_informer_synced 1",
 		"# TYPE kubeatlas_api_requests_total counter",
 		`kubeatlas_api_requests_total{method="GET",status="200"}`,

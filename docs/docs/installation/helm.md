@@ -96,9 +96,22 @@ the hardening off.
 | `resources.requests.memory` | `128Mi` |
 | `resources.limits.cpu` | `500m` |
 | `resources.limits.memory` | `512Mi` |
+| `runtime.goMemoryLimitPercent` | `75` |
 
-A 1000-resource cluster steady-states at ~110 MB; raise the memory
-limit if your fleet is significantly larger.
+A 1000-resource cluster steady-states at ~110 MB. KubeAtlas reads the actual
+container memory limit through the Downward API and applies
+`runtime.goMemoryLimitPercent` as Go's soft runtime-managed-memory boundary.
+The default derives 384MiB from the 512Mi container limit, leaving headroom for
+stacks, the binary, mappings, and other memory Go cannot release. If your fleet
+is significantly larger, raise `resources.limits.memory`; the 75% boundary
+tracks it automatically (for example, 1536MiB with a 2Gi limit).
+
+:::warning
+Raising the percentage reduces protection from Kubernetes OOM kills. Lowering
+it too far can cause excessive garbage collection. The chart accepts only
+50–90%; validate latency and restarts at the target cluster size before
+changing the default.
+:::
 
 ### `networkPolicy`
 

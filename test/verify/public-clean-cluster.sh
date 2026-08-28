@@ -184,6 +184,7 @@ minor_patch=${PUBLIC_VERSION#*.}
 minor=${minor_patch%%.*}
 if (( major > 1 || (major == 1 && minor >= 6) )); then
   for metric in \
+    kubeatlas_go_memory_limit_bytes \
     kubeatlas_graph_observation_state \
     kubeatlas_kubernetes_api_reachable \
     kubeatlas_storage_reachable \

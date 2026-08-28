@@ -377,6 +377,11 @@ func main() {
 		runOnce(*level, *namespace, *kind, *name, *format, *kubeconfig, *kubeContext)
 		return
 	}
+	if limit, configured, err := configureGoMemoryLimit(os.Getenv); err != nil {
+		log.Fatalf("configure Go memory limit: %v", err)
+	} else if configured {
+		slog.Info("configured Go runtime memory limit", "bytes", limit)
+	}
 	runWatch(rulePackRefs(rulePacks), *kubeconfig, *kubeContext)
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"sync"
@@ -112,6 +113,10 @@ func writePrometheus(w io.Writer, gate *ReadinessGate, counter *metricsCounter, 
 	p("# HELP kubeatlas_goroutines Number of currently running goroutines.\n")
 	p("# TYPE kubeatlas_goroutines gauge\n")
 	p("kubeatlas_goroutines %d\n", runtime.NumGoroutine())
+
+	p("# HELP kubeatlas_go_memory_limit_bytes Go runtime-managed-memory soft limit in bytes.\n")
+	p("# TYPE kubeatlas_go_memory_limit_bytes gauge\n")
+	p("kubeatlas_go_memory_limit_bytes %d\n", debug.SetMemoryLimit(-1))
 
 	p("# HELP kubeatlas_informer_synced 1 if the informer cache has completed initial sync, 0 otherwise.\n")
 	p("# TYPE kubeatlas_informer_synced gauge\n")

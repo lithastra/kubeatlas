@@ -204,6 +204,19 @@
       ]
     },
     "resources": { "type": "object" },
+    "runtime": {
+      "type": "object",
+      "description": "Go runtime memory controls. The soft limit must leave headroom below the container memory limit for memory outside Go's control.",
+      "properties": {
+        "goMemoryLimitPercent": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 90,
+          "description": "Percentage of the actual container memory limit applied as Go's soft runtime-managed-memory boundary."
+        }
+      },
+      "required": ["goMemoryLimitPercent"]
+    },
     "livenessProbe": { "type": "object" },
     "readinessProbe": { "type": "object" },
     "operations": {

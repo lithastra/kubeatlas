@@ -8,6 +8,12 @@ the same secure defaults here when upgrading from v1.5.x.
 {{- $backupRef := get $backupStatus "configMapRef" | default dict -}}
 {{- $backupName := get $backupRef "name" | default "" -}}
 {{- $backupKey := get $backupRef "key" | default "last-successful" -}}
+{{- /*
+Old releases also have no runtime block in their stored Helm values. Keep the
+new memory-safety default when --reuse-values upgrades a v1.5.x release.
+*/ -}}
+{{- $runtime := .Values.runtime | default dict -}}
+{{- $goMemoryLimitPercent := get $runtime "goMemoryLimitPercent" | default 75 -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -87,6 +93,18 @@ spec:
               protocol: TCP
             {{- end }}
           env:
+            # The process applies this percentage of the actual container
+            # memory limit as Go's soft runtime-managed-memory boundary. The
+            # remaining headroom covers stacks, mappings, the binary, and
+            # other memory the Go runtime cannot manage.
+            - name: KUBEATLAS_CONTAINER_MEMORY_LIMIT_BYTES
+              valueFrom:
+                resourceFieldRef:
+                  containerName: kubeatlas
+                  resource: limits.memory
+                  divisor: "1"
+            - name: KUBEATLAS_GO_MEMORY_LIMIT_PERCENT
+              value: {{ $goMemoryLimitPercent | quote }}
             # rulePacks.openshift selects the OpenShift detector
             # mode (auto | true | false). Accepts string OR bool
             # (Helm's --set parses bare true/false as bool unless
