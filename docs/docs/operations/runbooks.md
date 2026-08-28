@@ -29,6 +29,7 @@ exposing it.
 
 | Metric | Meaning |
 |---|---|
+| `kubeatlas_go_memory_limit_bytes` | Go's current soft runtime-managed-memory boundary. The chart derives it from the container limit; compare it with `resources.limits.memory` when investigating memory pressure. |
 | `kubeatlas_informer_synced` | `1` after the initial informer cache sync. It does not return to `0` after a later API outage, so do not use it alone as a freshness signal. |
 | `kubeatlas_graph_observation_state{state="..."}` | One-hot graph state: `initializing`, `synced`, `degraded`, or `stale`. Exactly one series is `1`. |
 | `kubeatlas_kubernetes_api_reachable` | Result of the latest bounded, read-only Kubernetes API probe. In multi-cluster mode it is `1` only when every attached member responds. |

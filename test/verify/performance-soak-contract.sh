@@ -17,20 +17,22 @@ PG_DIGEST=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 write_performance() {
   local profile=$1 layout=$2 path=$3 configmaps=$4 deployments=$5 services=$6 namespaces=$7 gated=$8 namespace_p95=$9
-  local app_resources pg_resources
+  local app_resources pg_resources go_memory_limit_bytes
   if [[ "${profile}" == "default-5k" ]]; then
     app_resources='{"requests":{"cpu":"100m","memory":"128Mi"},"limits":{"cpu":"500m","memory":"512Mi"}}'
     pg_resources='{}'
+    go_memory_limit_bytes=402653184
   else
     app_resources='{"requests":{"cpu":"500m","memory":"512Mi"},"limits":{"cpu":"2","memory":"2Gi"}}'
     pg_resources='{"requests":{"cpu":"500m","memory":"1Gi"},"limits":{"cpu":"2","memory":"2Gi"}}'
+    go_memory_limit_bytes=1610612736
   fi
   namespace_csv=$(seq 0 $((namespaces - 1)) | awk '{printf "%sstress-test-%02d", sep, $1; sep=","}')
   jq -n \
     --arg profile "${profile}" --arg layout "${layout}" --arg sha "${SHA}" \
     --arg app_image "example.invalid/kubeatlas@sha256:${DIGEST}" \
     --arg pg_image "example.invalid/postgres@sha256:${PG_DIGEST}" \
-    --arg namespaces "${namespace_csv}" --argjson app_resources "${app_resources}" \
+    --arg namespaces "${namespace_csv}" --argjson go_memory_limit_bytes "${go_memory_limit_bytes}" --argjson app_resources "${app_resources}" \
     --argjson pg_resources "${pg_resources}" --argjson configmaps "${configmaps}" \
     --argjson deployments "${deployments}" --argjson services "${services}" \
     --argjson gated "${gated}" --argjson namespace_p95 "${namespace_p95}" '
@@ -39,7 +41,7 @@ write_performance() {
       captured_at:"2026-08-24T00:00:00Z",status:"pass",
       candidate:{git_sha:$sha,dirty:false,app_image_id:$app_image,postgres_image_id:$pg_image,chart_manifest_sha256:"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
       environment:{kubernetes_context:"docker-desktop",kubernetes_server_version:"v1.36.1",docker_server_version:"29.0",docker_desktop:"Docker Desktop",os:"Darwin",arch:"arm64",kernel:"test",cpu:"test",host_memory_bytes:17179869184},
-      profile:{name:$profile,layout:$layout,application_resources:$app_resources,postgres_resources:$pg_resources},
+      profile:{name:$profile,layout:$layout,go_memory_limit_percent:75,go_memory_limit_bytes:$go_memory_limit_bytes,application_resources:$app_resources,postgres_resources:$pg_resources},
       fixture:{namespaces_csv:$namespaces,target_namespace:($namespaces|split(",")[0]),counts:{configmaps:$configmaps,deployments:$deployments,replicasets:$deployments,services:$services,total:($configmaps+$deployments+$deployments+$services)},samples_per_endpoint:100},
       targets_ms:{cluster_view_p95:1000,namespace_view_p95:1000,blast_radius_p95:500},
       results:{cluster_view:{p50_ms:100,p95_ms:500,p99_ms:600,failures:0},namespace_view:{p50_ms:100,p95_ms:$namespace_p95,p99_ms:$namespace_p95,failures:0,gated:$gated},blast_radius:{p50_ms:10,p95_ms:100,p99_ms:120,failures:0}},
@@ -53,6 +55,14 @@ write_performance production-10k distributed "${TMP}/performance/distributed.jso
 write_performance production-10k single-large-namespace "${TMP}/performance/pathological.json" 10000 2000 400 1 false 1400
 bash test/verify/v160-performance-evidence.sh \
   "${TMP}/performance/default.json" "${TMP}/performance/distributed.json" "${TMP}/performance/pathological.json"
+
+jq '.profile.go_memory_limit_bytes = 536870912' "${TMP}/performance/default.json" >"${TMP}/performance/wrong-memory-limit.json"
+if bash test/verify/v160-performance-evidence.sh \
+  "${TMP}/performance/wrong-memory-limit.json" "${TMP}/performance/distributed.json" "${TMP}/performance/pathological.json" \
+  >/dev/null 2>&1; then
+  echo "performance verifier accepted the wrong Go memory limit" >&2
+  exit 1
+fi
 
 # The random sentinel Secret is intentionally unreferenced, so no
 # reference-only graph placeholder exists for its detail endpoint. Keep the

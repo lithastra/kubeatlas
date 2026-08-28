@@ -13,6 +13,12 @@ resources:
     cpu: "2"
     memory: 2Gi
 
+# Explicitly freeze the chart default's automatic 75% Go-managed-memory
+# boundary at the larger application limit. The process derives 1536MiB from
+# the 2Gi container limit and leaves 512MiB for non-Go process memory.
+runtime:
+  goMemoryLimitPercent: 75
+
 persistence:
   enabled: true
   embedded:
