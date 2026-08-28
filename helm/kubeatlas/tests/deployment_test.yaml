@@ -86,6 +86,40 @@ tests:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.path
           value: /readyz
 
+  - it: leaves non-Go headroom below the default container memory limit
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_CONTAINER_MEMORY_LIMIT_BYTES
+            valueFrom:
+              resourceFieldRef:
+                containerName: kubeatlas
+                resource: limits.memory
+                divisor: "1"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_GO_MEMORY_LIMIT_PERCENT
+            value: "75"
+
+  - it: renders an explicit Go memory limit percentage override
+    set:
+      runtime.goMemoryLimitPercent: 80
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBEATLAS_GO_MEMORY_LIMIT_PERCENT
+            value: "80"
+
+  - it: rejects a Go memory percentage without enough process headroom
+    set:
+      runtime.goMemoryLimitPercent: 91
+    asserts:
+      - failedTemplate:
+          errorPattern: "runtime/goMemoryLimitPercent|maximum"
+
   - it: renders continuous operational probe defaults without a backup mount
     asserts:
       - contains:

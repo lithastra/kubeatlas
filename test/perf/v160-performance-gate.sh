@@ -116,8 +116,22 @@ grep -Fq 'kubeatlas_snapshot_queue_depth ' <<<"${metrics}" \
 
 app_resources=$(kubectl get deployment -n "${NAMESPACE}" "${RELEASE}" -o json \
   | jq -c '.spec.template.spec.containers[] | select(.name == "kubeatlas") | .resources')
+go_memory_limit_percent=$(kubectl get deployment -n "${NAMESPACE}" "${RELEASE}" -o json \
+  | jq -r '.spec.template.spec.containers[] | select(.name == "kubeatlas")
+    | .env[] | select(.name == "KUBEATLAS_GO_MEMORY_LIMIT_PERCENT") | .value')
+memory_limit_resource=$(kubectl get deployment -n "${NAMESPACE}" "${RELEASE}" -o json \
+  | jq -c '.spec.template.spec.containers[] | select(.name == "kubeatlas")
+    | .env[] | select(.name == "KUBEATLAS_CONTAINER_MEMORY_LIMIT_BYTES")
+    | .valueFrom.resourceFieldRef')
 pg_resources=$(kubectl get "clusters.postgresql.cnpg.io/${PG_CLUSTER}" \
   -n "${NAMESPACE}" -o json | jq -c '.spec.resources // {}')
+
+jq -e '
+  .containerName == "kubeatlas"
+  and .resource == "limits.memory"
+  and .divisor == "1"
+' <<<"${memory_limit_resource}" >/dev/null \
+  || fail "Go memory safety must derive from the actual container memory limit"
 
 if [[ "${PROFILE}" == "default-5k" ]]; then
   jq -e '
@@ -125,6 +139,9 @@ if [[ "${PROFILE}" == "default-5k" ]]; then
     and .limits.cpu == "500m" and .limits.memory == "512Mi"
   ' <<<"${app_resources}" >/dev/null \
     || fail "default-5k must use the chart's exact default application resources"
+  [[ "${go_memory_limit_percent}" == "75" ]] \
+    || fail "default-5k must reserve the chart's 25% non-Go memory headroom"
+  expected_go_memory_limit_bytes=402653184
 else
   jq -e '
     .requests.cpu == "500m" and .requests.memory == "512Mi"
@@ -136,7 +153,14 @@ else
     and .limits.cpu == "2" and .limits.memory == "2Gi"
   ' <<<"${pg_resources}" >/dev/null \
     || fail "production-10k PostgreSQL resources do not match the frozen profile"
+  [[ "${go_memory_limit_percent}" == "75" ]] \
+    || fail "production-10k must reserve the frozen 25% non-Go memory headroom"
+  expected_go_memory_limit_bytes=1610612736
 fi
+
+go_memory_limit_bytes=$(awk '$1 == "kubeatlas_go_memory_limit_bytes" {print $2; exit}' <<<"${metrics}")
+[[ "${go_memory_limit_bytes}" == "${expected_go_memory_limit_bytes}" ]] \
+  || fail "reported Go memory limit ${go_memory_limit_bytes:-missing} does not match derived limit ${expected_go_memory_limit_bytes}"
 
 percentile() {
   local name=$1
@@ -276,6 +300,8 @@ jq -n \
   --arg cpu "${cpu_model}" --argjson host_memory_bytes "${host_memory_bytes}" \
   --arg app_image_id "${app_image_id}" --arg pg_image_id "${pg_image_id}" \
   --arg chart_manifest_sha256 "${chart_manifest_sha}" \
+  --argjson go_memory_limit_percent "${go_memory_limit_percent}" \
+  --argjson go_memory_limit_bytes "${go_memory_limit_bytes}" \
   --argjson app_resources "${app_resources}" --argjson pg_resources "${pg_resources}" \
   --argjson fixture_counts "${fixture_counts}" --argjson samples "${SAMPLES}" \
   --argjson cluster "${cluster_result}" --argjson namespace_result "${namespace_result}" \
@@ -287,7 +313,7 @@ jq -n \
     captured_at: $captured_at,
     candidate: {git_sha: $git_sha, dirty: $dirty, app_image_id: $app_image_id, postgres_image_id: $pg_image_id, chart_manifest_sha256: $chart_manifest_sha256},
     environment: {kubernetes_context: $context, kubernetes_server_version: $kubernetes, docker_server_version: $docker, docker_desktop: $docker_desktop, os: $os, arch: $arch, kernel: $kernel, cpu: $cpu, host_memory_bytes: $host_memory_bytes},
-    profile: {name: $profile, layout: $layout, application_resources: $app_resources, postgres_resources: $pg_resources},
+    profile: {name: $profile, layout: $layout, go_memory_limit_percent: $go_memory_limit_percent, go_memory_limit_bytes: $go_memory_limit_bytes, application_resources: $app_resources, postgres_resources: $pg_resources},
     fixture: {namespaces_csv: $namespaces, target_namespace: $target_namespace, counts: $fixture_counts, samples_per_endpoint: $samples},
     targets_ms: {cluster_view_p95: 1000, namespace_view_p95: 1000, blast_radius_p95: 500},
     results: {cluster_view: $cluster, namespace_view: ($namespace_result + {gated: $namespace_gated}), blast_radius: $blast},

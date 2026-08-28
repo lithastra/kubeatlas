@@ -86,15 +86,15 @@ fail-closed measurements on one exact candidate commit:
 
 | Evidence row | Kubernetes fixture | Resources | Namespace p95 |
 |---|---|---|---|
-| Default 5K | One synthetic namespace: 5,000 ConfigMaps, 1,000 Deployments, and 200 Services | Chart-default KubeAtlas requests and limits | Gated at 1 second |
-| Production 10K | The same deterministic shape distributed over 10 namespaces | [`v160-production-10k-values.yaml`](https://github.com/lithastra/kubeatlas/blob/main/test/perf/v160-production-10k-values.yaml) | Gated at 1 second |
+| Default 5K | One synthetic namespace: 5,000 ConfigMaps, 1,000 Deployments, and 200 Services | Chart-default requests and limits; the 75% runtime boundary derives a 384MiB Go soft limit | Gated at 1 second |
+| Production 10K | The same deterministic shape distributed over 10 namespaces | [`v160-production-10k-values.yaml`](https://github.com/lithastra/kubeatlas/blob/main/test/perf/v160-production-10k-values.yaml); the same 75% boundary derives 1536MiB from 2Gi | Gated at 1 second |
 | Pathological 10K | All 10K fixture objects in one namespace | The same production profile | Recorded, but not substituted for the representative gate |
 
 All three rows gate cluster-view p95 at 1 second and blast-radius p95 at 500
 milliseconds. Each endpoint receives at least 100 samples, and any HTTP
 failure fails the row even when it would fall below the p95 rank. Evidence also
 records the clean Git commit, immutable application and PostgreSQL image IDs,
-rendered resource settings, exact fixture counts, Kubernetes and Docker
+rendered resource settings and Go memory limit, exact fixture counts, Kubernetes and Docker
 Desktop versions, host capacity, RSS, restarts, and OOM state.
 
 The scripts and synthetic CI contract are present on `main`; that is not a

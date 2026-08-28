@@ -30,8 +30,10 @@ The gate requires:
   and snapshots;
 - a clean checkout whose `HEAD` equals `KUBEATLAS_EXPECTED_GIT_SHA`;
 - at least 100 samples per performance endpoint;
-- the chart-default application resource profile for 5K;
-- `test/perf/v160-production-10k-values.yaml` for both 10K layouts;
+- the chart-default application resource profile and automatic 75% Go soft
+  memory boundary (384MiB at the 512Mi limit) for 5K;
+- `test/perf/v160-production-10k-values.yaml`, where the same boundary derives
+  1536MiB from the 2Gi limit, for both 10K layouts;
 - immutable application and PostgreSQL image IDs; and
 - a new evidence directory. Runners refuse to overwrite prior evidence.
 

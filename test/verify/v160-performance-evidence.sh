@@ -50,12 +50,16 @@ jq -se '
     and (.results.cluster_view.p95_ms <= .targets_ms.cluster_view_p95)
     and (.results.blast_radius.p95_ms <= .targets_ms.blast_radius_p95);
   def default_resources:
-    .profile.application_resources == {
+    .profile.go_memory_limit_percent == 75
+    and .profile.go_memory_limit_bytes == 402653184
+    and .profile.application_resources == {
       requests: {cpu: "100m", memory: "128Mi"},
       limits: {cpu: "500m", memory: "512Mi"}
     };
   def production_resources:
-    .profile.application_resources == {
+    .profile.go_memory_limit_percent == 75
+    and .profile.go_memory_limit_bytes == 1610612736
+    and .profile.application_resources == {
       requests: {cpu: "500m", memory: "512Mi"},
       limits: {cpu: "2", memory: "2Gi"}
     }

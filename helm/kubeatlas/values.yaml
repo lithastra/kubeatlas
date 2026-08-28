@@ -127,6 +127,14 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# Go's soft limit covers runtime-managed memory only. The process reads its
+# actual container limit through the Kubernetes Downward API and applies this
+# percentage, leaving the remainder for stacks, the binary, memory mappings,
+# and other non-Go allocations. Keep the percentage below 100 and validate it
+# against your cluster size before raising it.
+runtime:
+  goMemoryLimitPercent: 75
+
 # Liveness + readiness probes — match the /healthz and /readyz handlers.
 livenessProbe:
   httpGet:
