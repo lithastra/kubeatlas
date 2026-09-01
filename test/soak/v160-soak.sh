@@ -9,6 +9,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "${ROOT_DIR}"
+source test/soak/lib/v160-soak-event.sh
 
 NAMESPACE="${KUBEATLAS_NAMESPACE:-kubeatlas}"
 RELEASE="${KUBEATLAS_RELEASE:-kubeatlas}"
@@ -325,15 +326,7 @@ wait_for_replacement_app_pod() {
 }
 
 record_event() {
-  local name=$1 status=$2 recovery_seconds=$3 details=${4:-{}}
-  jq -cn \
-    --arg schema 'https://kubeatlas.lithastra.com/schemas/v160-soak-event-v1.json' \
-    --arg name "${name}" --arg status "${status}" \
-    --argjson captured_at_epoch "$(date +%s)" \
-    --argjson recovery_seconds "${recovery_seconds}" \
-    --argjson details "${details}" \
-    '{"$schema": $schema, captured_at_epoch: $captured_at_epoch, name: $name, status: $status, recovery_seconds: $recovery_seconds, sentinel_absent: true, details: $details}' \
-    >>"${EVENTS_FILE}"
+  v160_soak_event_json "$@" >>"${EVENTS_FILE}"
 }
 
 run_logged() {

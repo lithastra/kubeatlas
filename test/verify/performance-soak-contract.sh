@@ -15,6 +15,27 @@ SHA=0123456789abcdef0123456789abcdef01234567
 DIGEST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 PG_DIGEST=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
+source test/soak/lib/v160-soak-event.sh
+
+event_with_details=$(v160_soak_event_json app-restart pass 2 \
+  '{"before_pod_uid":"pod-before","after_pod_uid":"pod-after"}')
+jq -e '
+  .name == "app-restart"
+  and .status == "pass"
+  and .recovery_seconds == 2
+  and .sentinel_absent == true
+  and .details == {before_pod_uid:"pod-before",after_pod_uid:"pod-after"}
+' <<<"${event_with_details}" >/dev/null
+
+event_without_details=$(v160_soak_event_json resource-storm pass 0)
+jq -e '.name == "resource-storm" and .details == {}' \
+  <<<"${event_without_details}" >/dev/null
+
+if v160_soak_event_json app-restart pass 2 '{invalid-json}' >/dev/null 2>&1; then
+  echo "soak event serializer accepted invalid details JSON" >&2
+  exit 1
+fi
+
 write_performance() {
   local profile=$1 layout=$2 path=$3 configmaps=$4 deployments=$5 services=$6 namespaces=$7 gated=$8 namespace_p95=$9
   local app_resources pg_resources go_memory_limit_bytes
