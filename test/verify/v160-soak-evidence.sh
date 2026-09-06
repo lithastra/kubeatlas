@@ -48,6 +48,9 @@ jq -e '
   and .configuration.warmup_seconds == 86400
   and .configuration.baseline_seconds == 86400
   and (.configuration.sample_interval_seconds >= 60 and .configuration.sample_interval_seconds <= 300)
+  and .configuration.security_surface_timeout_seconds == 30
+  and .configuration.security_surface_attempts == 3
+  and .configuration.security_surface_retry_delay_seconds == 2
   and (.finished_at_epoch - .started_at_epoch >= .configuration.duration_seconds)
   and (.sentinel.sha256 | sha256)
   and .sentinel.raw_value_retained == false
