@@ -10,6 +10,7 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "${ROOT_DIR}"
 source test/soak/lib/v160-soak-event.sh
+source test/soak/lib/v160-soak-http.sh
 
 NAMESPACE="${KUBEATLAS_NAMESPACE:-kubeatlas}"
 RELEASE="${KUBEATLAS_RELEASE:-kubeatlas}"
@@ -23,6 +24,9 @@ WARMUP_SECONDS=86400
 BASELINE_SECONDS=86400
 SAMPLE_INTERVAL_SECONDS="${KUBEATLAS_SOAK_SAMPLE_INTERVAL_SECONDS:-300}"
 FULL_SCAN_INTERVAL_SECONDS=21600
+SECURITY_SURFACE_TIMEOUT_SECONDS=30
+SECURITY_SURFACE_ATTEMPTS=3
+SECURITY_SURFACE_RETRY_DELAY_SECONDS=2
 RECOVERY_NAMESPACE="${KUBEATLAS_RECOVERY_NAMESPACE:-kubeatlas-soak-recovery}"
 CANDIDATE_IMAGE="${KUBEATLAS_CANDIDATE_IMAGE:-}"
 CANDIDATE_PG_IMAGE="${KUBEATLAS_CANDIDATE_PG_IMAGE:-}"
@@ -189,9 +193,14 @@ start_port_forward() {
 api() { curl -fsS --max-time 10 "http://127.0.0.1:${PF_PORT}$1"; }
 append_security_surface() {
   local endpoint=$1 allow_not_found=${2:-false} response http_code response_body
-  if ! response=$(curl -sS --max-time 10 -w $'\n%{http_code}' \
-    "http://127.0.0.1:${PF_PORT}${endpoint}"); then
-    fail "security surface ${endpoint} was unreachable"
+  if ! response=$(v160_soak_http_get_with_retry \
+    "http://127.0.0.1:${PF_PORT}${endpoint}" \
+    "${SECURITY_SURFACE_TIMEOUT_SECONDS}" \
+    "${SECURITY_SURFACE_ATTEMPTS}" \
+    "${SECURITY_SURFACE_RETRY_DELAY_SECONDS}" \
+    "${LOG_DIR}/security-surface-retries.log" \
+    "${endpoint}"); then
+    fail "security surface ${endpoint} remained unreachable after ${SECURITY_SURFACE_ATTEMPTS} attempts"
   fi
   http_code=${response##*$'\n'}
   response_body=${response%$'\n'*}
@@ -632,12 +641,21 @@ jq -n \
   --arg restarted_uid "${restarted_pod_uid}" --argjson artifacts "${artifacts}" \
   --argjson started_at_epoch "${soak_started_at}" --argjson finished_at_epoch "${finished_at_epoch}" \
   --argjson duration_seconds "${DURATION_SECONDS}" --argjson sample_interval "${SAMPLE_INTERVAL_SECONDS}" \
+  --argjson security_timeout "${SECURITY_SURFACE_TIMEOUT_SECONDS}" \
+  --argjson security_attempts "${SECURITY_SURFACE_ATTEMPTS}" \
+  --argjson security_retry_delay "${SECURITY_SURFACE_RETRY_DELAY_SECONDS}" \
   --argjson otel_enabled "${otel_enabled}" --argjson scan_count "${SENTINEL_SCAN_COUNT}" '
   {
     "$schema": $schema, status: "pass",
     candidate: {git_sha:$git_sha,dirty:false,app_image_id:$app_image_id,postgres_image_id:$pg_image_id},
     environment: {kubernetes_context:"docker-desktop",kubernetes_server_version:$kubernetes},
-    configuration: {duration_seconds:$duration_seconds,warmup_seconds:86400,baseline_seconds:86400,sample_interval_seconds:$sample_interval,otel_enabled:$otel_enabled},
+    configuration: {
+      duration_seconds:$duration_seconds,warmup_seconds:86400,baseline_seconds:86400,
+      sample_interval_seconds:$sample_interval,otel_enabled:$otel_enabled,
+      security_surface_timeout_seconds:$security_timeout,
+      security_surface_attempts:$security_attempts,
+      security_surface_retry_delay_seconds:$security_retry_delay
+    },
     started_at_epoch:$started_at_epoch,finished_at_epoch:$finished_at_epoch,
     sentinel:{sha256:$sentinel_sha,raw_value_retained:false,scan_count:$scan_count},
     expected_app_pod_uids:[$initial_uid,$restarted_uid],artifacts:$artifacts

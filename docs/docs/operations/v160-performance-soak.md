@@ -105,6 +105,16 @@ PostgreSQL interruption, Docker Desktop API-server interruption, and—only when
 OTel is enabled—receiver overload. The final event reruns the public v1.5.2 to
 candidate upgrade and destructive backup/delete/restore proof.
 
+Security-surface scans allow a bounded recovery from transient transport
+failures: by default each request may take up to 30 seconds and is attempted no
+more than three times, with a two-second delay between attempts. Failed
+attempts are retained in `logs/security-surface-retries.log`. An unexpected
+HTTP status or a surface that remains unreachable still stops the run, so
+retries cannot convert a persistent failure into passing evidence. These three
+values are frozen in the runner, recorded in the final manifest, and enforced
+by the independent verifier so release evidence always uses one reproducible
+contract.
+
 The documented production profile leaves OTel disabled. If the candidate
 enables it, also set `KUBEATLAS_TELEMETRYGEN_IMAGE` to an immutable
 `repository@sha256:...` telemetrygen image; a mutable `latest` tag is rejected

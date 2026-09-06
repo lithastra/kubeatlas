@@ -16,6 +16,7 @@ DIGEST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 PG_DIGEST=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 source test/soak/lib/v160-soak-event.sh
+source test/soak/lib/v160-soak-http.sh
 
 event_with_details=$(v160_soak_event_json app-restart pass 2 \
   '{"before_pod_uid":"pod-before","after_pod_uid":"pod-after"}')
@@ -35,6 +36,48 @@ if v160_soak_event_json app-restart pass 2 '{invalid-json}' >/dev/null 2>&1; the
   echo "soak event serializer accepted invalid details JSON" >&2
   exit 1
 fi
+
+# A single transport timeout must not invalidate seven days of otherwise valid
+# evidence, but a persistent timeout must still fail closed after the bounded
+# attempt count. The helper returns the complete body/status framing unchanged.
+mkdir -p "${TMP}/mock-bin"
+cat >"${TMP}/mock-bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+count=0
+[[ ! -f "${MOCK_CURL_COUNT_FILE}" ]] || count=$(<"${MOCK_CURL_COUNT_FILE}")
+count=$((count + 1))
+printf '%s\n' "${count}" >"${MOCK_CURL_COUNT_FILE}"
+if (( count <= MOCK_CURL_FAILURES )); then
+  printf 'curl: simulated timeout\n' >&2
+  exit 28
+fi
+printf '{"safe":true}\n200\n'
+EOF
+chmod +x "${TMP}/mock-bin/curl"
+
+retry_log="${TMP}/security-surface-retries.log"
+retry_count="${TMP}/retry-count"
+retry_response=$(PATH="${TMP}/mock-bin:${PATH}" \
+  MOCK_CURL_COUNT_FILE="${retry_count}" MOCK_CURL_FAILURES=1 \
+  v160_soak_http_get_with_retry 'http://127.0.0.1:18085/test' 30 3 0 \
+    "${retry_log}" '/test')
+[[ "${retry_response}" == $'{"safe":true}\n200' ]] \
+  || { echo "security surface retry altered the response" >&2; exit 1; }
+[[ "$(<"${retry_count}")" == "2" ]] \
+  || { echo "security surface retry did not recover on the second attempt" >&2; exit 1; }
+grep -Fq 'transport_failure endpoint=/test attempt=1/3 curl_exit=28' "${retry_log}"
+
+persistent_count="${TMP}/persistent-count"
+if PATH="${TMP}/mock-bin:${PATH}" \
+  MOCK_CURL_COUNT_FILE="${persistent_count}" MOCK_CURL_FAILURES=3 \
+  v160_soak_http_get_with_retry 'http://127.0.0.1:18085/test' 30 3 0 \
+    "${retry_log}" '/test' >/dev/null; then
+  echo "security surface retry accepted a persistent transport failure" >&2
+  exit 1
+fi
+[[ "$(<"${persistent_count}")" == "3" ]] \
+  || { echo "security surface retry exceeded its bounded attempt count" >&2; exit 1; }
 
 write_performance() {
   local profile=$1 layout=$2 path=$3 configmaps=$4 deployments=$5 services=$6 namespaces=$7 gated=$8 namespace_p95=$9
@@ -94,6 +137,12 @@ grep -Fq \
   test/soak/v160-soak.sh
 grep -Fq \
   '"${allow_not_found}" == "true" && "${http_code}" == "404"' \
+  test/soak/v160-soak.sh
+grep -Fq \
+  'v160_soak_http_get_with_retry' \
+  test/soak/v160-soak.sh
+grep -Fq \
+  'remained unreachable after ${SECURITY_SURFACE_ATTEMPTS} attempts' \
   test/soak/v160-soak.sh
 
 # The v1.5.2 upgrade verifier must not keep polling a dead kubectl tunnel.
@@ -180,7 +229,12 @@ jq -n \
     "$schema":"https://kubeatlas.lithastra.com/schemas/v160-soak-evidence-v1.json",status:"pass",
     candidate:{git_sha:$sha,dirty:false,app_image_id:("example.invalid/kubeatlas@sha256:"+$digest),postgres_image_id:("example.invalid/postgres@sha256:"+$pg_digest)},
     environment:{kubernetes_context:"docker-desktop",kubernetes_server_version:"v1.36.1"},
-    configuration:{duration_seconds:604800,warmup_seconds:86400,baseline_seconds:86400,sample_interval_seconds:300,otel_enabled:false},
+    configuration:{
+      duration_seconds:604800,warmup_seconds:86400,baseline_seconds:86400,
+      sample_interval_seconds:300,otel_enabled:false,
+      security_surface_timeout_seconds:30,security_surface_attempts:3,
+      security_surface_retry_delay_seconds:2
+    },
     started_at_epoch:$start,finished_at_epoch:$finish,
     sentinel:{sha256:"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",raw_value_retained:false,scan_count:2016},
     expected_app_pod_uids:["pod-before","pod-after"],
@@ -191,6 +245,14 @@ jq -n \
   }' >"${TMP}/soak/manifest.json"
 
 bash test/verify/v160-soak-evidence.sh "${TMP}/soak"
+jq '.configuration.security_surface_attempts = 4' "${TMP}/soak/manifest.json" >"${TMP}/soak/invalid-manifest.json"
+mv "${TMP}/soak/invalid-manifest.json" "${TMP}/soak/manifest.json"
+if bash test/verify/v160-soak-evidence.sh "${TMP}/soak" >/dev/null 2>&1; then
+  echo "soak verifier accepted a weakened security-surface retry contract" >&2
+  exit 1
+fi
+jq '.configuration.security_surface_attempts = 3' "${TMP}/soak/manifest.json" >"${TMP}/soak/valid-manifest.json"
+mv "${TMP}/soak/valid-manifest.json" "${TMP}/soak/manifest.json"
 jq '.configuration.duration_seconds = 10' "${TMP}/soak/manifest.json" >"${TMP}/soak/invalid-manifest.json"
 mv "${TMP}/soak/invalid-manifest.json" "${TMP}/soak/manifest.json"
 if bash test/verify/v160-soak-evidence.sh "${TMP}/soak" >/dev/null 2>&1; then
