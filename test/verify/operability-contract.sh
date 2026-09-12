@@ -119,4 +119,6 @@ require_text test/chaos/README.md '**Required PR CI**'
 require_text test/chaos/README.md '**Opt-in suite**'
 require_text test/chaos/README.md '**Manual**'
 
+python3 test/verify/pg_disconnect_test.py
+
 printf 'operability contract: metrics, deployment, evidence, and runbooks aligned\n'

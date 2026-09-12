@@ -211,7 +211,7 @@ jq -cn '
     {name:"otel-overload",recovery_seconds:0,status:"not-applicable"},
     {name:"final-upgrade-restore",recovery_seconds:0,status:"pass"}
   ][]
-  | {"$schema":"https://kubeatlas.lithastra.com/schemas/v160-soak-event-v1.json",captured_at_epoch:(if .name == "final-upgrade-restore" then 2000604800 else 2000000000 end),name:.name,status:.status,recovery_seconds:.recovery_seconds,sentinel_absent:true,details:{}}
+  | {"$schema":"https://kubeatlas.lithastra.com/schemas/v160-soak-event-v1.json",captured_at_epoch:(if .name == "final-upgrade-restore" then 2000604800 else 2000000000 end),name:.name,status:.status,recovery_seconds:.recovery_seconds,sentinel_absent:true,details:(if .name == "postgresql-interruption" then {injection:"cnpg-hibernation",outage_observed:true,original_primary_uid:"pg-before",replacement_primary_uid:"pg-after",replacement_ready_seconds:10,recovery_seconds:60,outage_observed_at_epoch:2000000000} else {} end)}
 ' >"${TMP}/soak/events.jsonl"
 
 if command -v sha256sum >/dev/null 2>&1; then
@@ -219,7 +219,11 @@ if command -v sha256sum >/dev/null 2>&1; then
   events_hash=$(sha256sum "${TMP}/soak/events.jsonl" | awk '{print $1}')
 else
   samples_hash=$(shasum -a 256 "${TMP}/soak/samples.jsonl" | awk '{print $1}')
-  events_hash=$(shasum -a 256 "${TMP}/soak/events.jsonl" | awk '{print $1}')
+  if command -v sha256sum >/dev/null 2>&1; then
+    events_hash=$(sha256sum "${TMP}/soak/events.jsonl" | awk '{print $1}')
+  else
+    events_hash=$(shasum -a 256 "${TMP}/soak/events.jsonl" | awk '{print $1}')
+  fi
 fi
 jq -n \
   --arg sha "${SHA}" --arg digest "${DIGEST}" --arg pg_digest "${PG_DIGEST}" \
@@ -245,6 +249,28 @@ jq -n \
   }' >"${TMP}/soak/manifest.json"
 
 bash test/verify/v160-soak-evidence.sh "${TMP}/soak"
+# Refresh the artifact hash so these failures test event semantics, not hashing.
+cp "${TMP}/soak/events.jsonl" "${TMP}/valid-events.jsonl"
+cp "${TMP}/soak/manifest.json" "${TMP}/valid-manifest.json"
+for mutation in \
+  '.details.outage_observed = false' \
+  '.details.replacement_primary_uid = .details.original_primary_uid' \
+  'del(.details.original_primary_uid)' \
+  '.details.replacement_ready_seconds = 121' \
+  '.details.recovery_seconds = -1' \
+  '.details.outage_observed_at_epoch = 0'; do
+  jq -c "if .name == \"postgresql-interruption\" then ${mutation} else . end" \
+    "${TMP}/valid-events.jsonl" >"${TMP}/soak/events.jsonl"
+  events_hash=$(shasum -a 256 "${TMP}/soak/events.jsonl" | awk '{print $1}')
+  jq --arg hash "${events_hash}" '(.artifacts[] | select(.path == "events.jsonl").sha256) = $hash' \
+    "${TMP}/valid-manifest.json" >"${TMP}/soak/manifest.json"
+  if bash test/verify/v160-soak-evidence.sh "${TMP}/soak" >/dev/null 2>&1; then
+    echo "soak verifier accepted invalid PostgreSQL lifecycle evidence: ${mutation}" >&2
+    exit 1
+  fi
+done
+cp "${TMP}/valid-events.jsonl" "${TMP}/soak/events.jsonl"
+cp "${TMP}/valid-manifest.json" "${TMP}/soak/manifest.json"
 jq '.configuration.security_surface_attempts = 4' "${TMP}/soak/manifest.json" >"${TMP}/soak/invalid-manifest.json"
 mv "${TMP}/soak/invalid-manifest.json" "${TMP}/soak/manifest.json"
 if bash test/verify/v160-soak-evidence.sh "${TMP}/soak" >/dev/null 2>&1; then

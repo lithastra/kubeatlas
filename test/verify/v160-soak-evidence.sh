@@ -142,6 +142,18 @@ jq -se --argjson otel_enabled "${otel_enabled}" --argjson start "${started_at}" 
   and passed("resource-storm")
   and passed("snapshot-write-storm")
   and recovery_passed("postgresql-interruption")
+  and any(.[]; .name == "postgresql-interruption"
+    and .details.injection == "cnpg-hibernation"
+    and .details.outage_observed == true
+    and (.details.original_primary_uid | type == "string" and length > 0)
+    and (.details.replacement_primary_uid | type == "string" and length > 0)
+    and .details.original_primary_uid != .details.replacement_primary_uid
+    and (.details.replacement_ready_seconds | type == "number" and . >= 0 and . <= 120)
+    and (.details.recovery_seconds | type == "number" and . >= 0 and . <= 120)
+    and .details.recovery_seconds == .recovery_seconds
+    and (.details.outage_observed_at_epoch | type == "number")
+    and .details.outage_observed_at_epoch >= $start
+    and .details.outage_observed_at_epoch <= .captured_at_epoch)
   and recovery_passed("api-server-interruption")
   and passed("final-upgrade-restore")
   and (length == 7)

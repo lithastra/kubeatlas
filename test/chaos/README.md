@@ -14,7 +14,7 @@ large burst of test resources.
 | Script | Scenario | Automation status |
 |---|---|---|
 | `snapshot-write-storm.sh` | Saturate the snapshot writer and expose dropped work. | **Required PR CI** through `e2e-kind-snapshots.yml` and `phase3.sh` with `KUBEATLAS_RUN_CHAOS=1`. |
-| `pg-disconnect.sh` | Delete the embedded CNPG primary; observe storage failure and recovery within 120 seconds. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`; also a manual production-readiness drill. |
+| `pg-disconnect.sh` | Hibernate a single-instance CNPG cluster; observe storage failure, resume it, and verify application recovery within 120 seconds of the replacement primary becoming Ready. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`; also a manual production-readiness drill. |
 | `rego-panic.sh` | Contain a panicking rule evaluation. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`. |
 | `rego-runaway.sh` | Bound a non-terminating rule evaluation. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`. |
 | `cert-manager-flap.sh` | Restart cert-manager and confirm certificate recovery. | **Opt-in suite** in `phase2.sh` when `KUBEATLAS_RUN_CHAOS=1`. |
@@ -71,9 +71,24 @@ kubectl port-forward -n kubeatlas service/kubeatlas 18080:80
 bash test/chaos/pg-disconnect.sh
 ```
 
-The script requires `kubeatlas_storage_reachable` to become `0`, a replacement
-CNPG primary to become Ready, storage reachability to return to `1`, and a graph
-read to succeed within 120 seconds. It never deletes the database PVC.
+The script requires a healthy single-instance CNPG cluster. It uses
+[declarative hibernation](https://cloudnative-pg.io/docs/1.25/declarative_hibernation/)
+to stop PostgreSQL while retaining its PVC, and waits for the configured
+`stopDelay` plus 120 seconds (supporting `stopDelay` up to 3600 seconds).
+Graceful shutdown can keep pooled connections alive for the 180-second smart
+shutdown interval; the outage clock must not start at the deletion request.
+
+Once hibernation is complete and no database Pods remain, the script requires
+`kubeatlas_storage_reachable` to become `0` within 60 seconds while `/healthz`
+continues to succeed. It then restores the original hibernation annotation,
+waits up to 120 seconds for a Ready primary with a **different UID** (CNPG can
+reuse the same Pod name), and requires storage reachability `1` and a successful
+graph read within 120 seconds of that Ready observation. HTTP and Kubernetes
+requests have timeouts. Application Pod replacement, container restarts, and
+missing or changed panic counters fail the drill. Exit and signal handlers
+attempt to undo hibernation even when a request fails; failed cleanup is
+reported explicitly and requires operator action. This tests storage loss and
+reconnection, not HA failover or crash recovery, and never deletes the PVC.
 
 ## Reporting a divergence
 
