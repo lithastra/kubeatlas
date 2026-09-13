@@ -228,7 +228,7 @@ Three composed queries that share the `Direction` enum on the
 The planned v1.6 release line focuses on production operability: a
 supported Kubernetes, CloudNativePG, and PostgreSQL baseline; one tested
 v1.5.2 upgrade and embedded Tier 2 restore path; scheduled clean-cluster
-evidence; performance and seven-day endurance gates; operator-visible
+evidence; performance and three-day endurance gates; operator-visible
 failure signals; and verifiable core OCI artifacts. It remains a
 single-application-replica, externally authenticated, read-only deployment.
 Generated clients are a non-blocking stretch goal and ecosystem packages keep
