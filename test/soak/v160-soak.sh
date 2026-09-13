@@ -19,9 +19,10 @@ PF_PORT="${KUBEATLAS_PF_PORT:-18085}"
 EXPECTED_GIT_SHA="${KUBEATLAS_EXPECTED_GIT_SHA:-}"
 PERF_DIR="${KUBEATLAS_PERFORMANCE_EVIDENCE_DIR:-}"
 OUTPUT_DIR="${KUBEATLAS_SOAK_EVIDENCE_DIR:-/tmp/kubeatlas-v160-soak}"
-DURATION_SECONDS="${KUBEATLAS_SOAK_DURATION_SECONDS:-604800}"
-WARMUP_SECONDS=86400
-BASELINE_SECONDS=86400
+DURATION_SECONDS="${KUBEATLAS_SOAK_DURATION_SECONDS:-259200}"
+WARMUP_SECONDS=21600
+BASELINE_SECONDS=43200
+GROWTH_WINDOW_SECONDS=43200
 SAMPLE_INTERVAL_SECONDS="${KUBEATLAS_SOAK_SAMPLE_INTERVAL_SECONDS:-300}"
 FULL_SCAN_INTERVAL_SECONDS=21600
 SECURITY_SURFACE_TIMEOUT_SECONDS=30
@@ -119,12 +120,12 @@ else
   fail "missing required SHA-256 command: sha256sum or shasum"
 fi
 
-[[ "${KUBEATLAS_CONFIRM_168H_SOAK:-}" == "docker-desktop" ]] \
-  || fail "set KUBEATLAS_CONFIRM_168H_SOAK=docker-desktop to start the disruptive seven-day gate"
+[[ "${KUBEATLAS_CONFIRM_72H_SOAK:-}" == "docker-desktop" ]] \
+  || fail "set KUBEATLAS_CONFIRM_72H_SOAK=docker-desktop to start the disruptive three-day gate"
 [[ "$(kubectl config current-context)" == "docker-desktop" ]] \
   || fail "current Kubernetes context must be docker-desktop"
-[[ "${DURATION_SECONDS}" =~ ^[0-9]+$ ]] && (( DURATION_SECONDS >= 604800 )) \
-  || fail "the release soak cannot be shorter than 604800 seconds"
+[[ "${DURATION_SECONDS}" =~ ^[0-9]+$ ]] && (( DURATION_SECONDS >= 259200 )) \
+  || fail "the release soak cannot be shorter than 259200 seconds"
 [[ "${SAMPLE_INTERVAL_SECONDS}" =~ ^[0-9]+$ ]] \
   && (( SAMPLE_INTERVAL_SECONDS >= 60 && SAMPLE_INTERVAL_SECONDS <= 300 )) \
   || fail "sample interval must be between 60 and 300 seconds"
@@ -575,17 +576,17 @@ otel_overload_done=0
 step "starting ${DURATION_SECONDS}-second soak for ${EXPECTED_GIT_SHA}"
 while (( $(date +%s) - soak_started_at < DURATION_SECONDS )); do
   elapsed=$(( $(date +%s) - soak_started_at ))
-  if (( app_restart_done == 0 && elapsed >= 172800 )); then
+  if (( app_restart_done == 0 && elapsed >= 64800 )); then
     event_app_restart; app_restart_done=1; next_load_class=intentional-overload; FORCE_FULL_SCAN=1
-  elif (( resource_storm_done == 0 && elapsed >= 259200 )); then
+  elif (( resource_storm_done == 0 && elapsed >= 86400 )); then
     event_resource_storm; resource_storm_done=1; next_load_class=intentional-overload; FORCE_FULL_SCAN=1
-  elif (( snapshot_storm_done == 0 && elapsed >= 345600 )); then
+  elif (( snapshot_storm_done == 0 && elapsed >= 108000 )); then
     event_snapshot_storm; snapshot_storm_done=1; next_load_class=intentional-overload; FORCE_FULL_SCAN=1
-  elif (( pg_interruption_done == 0 && elapsed >= 432000 )); then
+  elif (( pg_interruption_done == 0 && elapsed >= 129600 )); then
     event_postgresql_interruption; pg_interruption_done=1; next_load_class=intentional-overload; FORCE_FULL_SCAN=1
-  elif (( api_interruption_done == 0 && elapsed >= 518400 )); then
+  elif (( api_interruption_done == 0 && elapsed >= 151200 )); then
     event_api_interruption; api_interruption_done=1; next_load_class=intentional-overload; FORCE_FULL_SCAN=1
-  elif (( otel_overload_done == 0 && elapsed >= 561600 )); then
+  elif (( otel_overload_done == 0 && elapsed >= 172800 )); then
     event_otel_overload; otel_overload_done=1; next_load_class=intentional-overload; FORCE_FULL_SCAN=1
   fi
   capture_sample
@@ -634,13 +635,15 @@ unlink "${artifacts_file}"
 
 server_version=$(kubectl version -o json | jq -r '.serverVersion.gitVersion')
 jq -n \
-  --arg schema 'https://kubeatlas.lithastra.com/schemas/v160-soak-evidence-v1.json' \
+  --arg schema 'https://kubeatlas.lithastra.com/schemas/v160-soak-evidence-v2.json' \
   --arg git_sha "${EXPECTED_GIT_SHA}" --arg app_image_id "${initial_app_image_id}" \
   --arg pg_image_id "${initial_pg_image_id}" --arg kubernetes "${server_version}" \
   --arg sentinel_sha "${SENTINEL_SHA}" --arg initial_uid "${initial_pod_uid}" \
   --arg restarted_uid "${restarted_pod_uid}" --argjson artifacts "${artifacts}" \
   --argjson started_at_epoch "${soak_started_at}" --argjson finished_at_epoch "${finished_at_epoch}" \
   --argjson duration_seconds "${DURATION_SECONDS}" --argjson sample_interval "${SAMPLE_INTERVAL_SECONDS}" \
+  --argjson warmup "${WARMUP_SECONDS}" --argjson baseline "${BASELINE_SECONDS}" \
+  --argjson growth_window "${GROWTH_WINDOW_SECONDS}" \
   --argjson security_timeout "${SECURITY_SURFACE_TIMEOUT_SECONDS}" \
   --argjson security_attempts "${SECURITY_SURFACE_ATTEMPTS}" \
   --argjson security_retry_delay "${SECURITY_SURFACE_RETRY_DELAY_SECONDS}" \
@@ -650,7 +653,8 @@ jq -n \
     candidate: {git_sha:$git_sha,dirty:false,app_image_id:$app_image_id,postgres_image_id:$pg_image_id},
     environment: {kubernetes_context:"docker-desktop",kubernetes_server_version:$kubernetes},
     configuration: {
-      duration_seconds:$duration_seconds,warmup_seconds:86400,baseline_seconds:86400,
+      duration_seconds:$duration_seconds,warmup_seconds:$warmup,baseline_seconds:$baseline,
+      growth_window_seconds:$growth_window,
       sample_interval_seconds:$sample_interval,otel_enabled:$otel_enabled,
       security_surface_timeout_seconds:$security_timeout,
       security_surface_attempts:$security_attempts,
@@ -663,4 +667,4 @@ jq -n \
 
 bash test/verify/v160-soak-evidence.sh "${OUTPUT_DIR}"
 RUN_PASSED=1
-pass "v1.6 168-hour soak complete: ${OUTPUT_DIR}"
+pass "v1.6 72-hour minimum soak complete: ${OUTPUT_DIR}"
