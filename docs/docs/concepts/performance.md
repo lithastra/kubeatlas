@@ -98,6 +98,6 @@ rendered resource settings and Go memory limit, exact fixture counts, Kubernetes
 Desktop versions, host capacity, RSS, restarts, and OOM state.
 
 The scripts and synthetic CI contract are present on `main`; that is not a
-claim that the final v1.6 measurements or 168-hour run have completed. Follow
+claim that the final v1.6 measurements or 72-hour run have completed. Follow
 the [v1.6 performance and soak runbook](../operations/v160-performance-soak.md)
 and retain all three JSON rows for independent verification.

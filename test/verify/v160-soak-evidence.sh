@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Fail-closed verifier for one completed v1.6 168-hour soak directory.
+# Fail-closed verifier for one completed v1.6 72-hour minimum soak directory.
 
 set -euo pipefail
 
@@ -36,7 +36,7 @@ jq -e '
   def git_sha: type == "string" and test("^[0-9a-f]{40}$");
   def sha256: type == "string" and test("^[0-9a-f]{64}$");
   def image_id: type == "string" and test("@sha256:[0-9a-f]{64}$");
-  .["$schema"] == "https://kubeatlas.lithastra.com/schemas/v160-soak-evidence-v1.json"
+  .["$schema"] == "https://kubeatlas.lithastra.com/schemas/v160-soak-evidence-v2.json"
   and .status == "pass"
   and (.candidate.git_sha | git_sha)
   and .candidate.dirty == false
@@ -44,9 +44,10 @@ jq -e '
   and (.candidate.postgres_image_id | image_id)
   and .environment.kubernetes_context == "docker-desktop"
   and (.environment.kubernetes_server_version | test("^v1\\.(34|35|36)\\."))
-  and .configuration.duration_seconds >= 604800
-  and .configuration.warmup_seconds == 86400
-  and .configuration.baseline_seconds == 86400
+  and .configuration.duration_seconds >= 259200
+  and .configuration.warmup_seconds == 21600
+  and .configuration.baseline_seconds == 43200
+  and .configuration.growth_window_seconds == 43200
   and (.configuration.sample_interval_seconds >= 60 and .configuration.sample_interval_seconds <= 300)
   and .configuration.security_surface_timeout_seconds == 30
   and .configuration.security_surface_attempts == 3
@@ -65,6 +66,7 @@ finished_at=$(jq -r '.finished_at_epoch' "${MANIFEST}")
 duration=$(jq -r '.configuration.duration_seconds' "${MANIFEST}")
 warmup=$(jq -r '.configuration.warmup_seconds' "${MANIFEST}")
 baseline=$(jq -r '.configuration.baseline_seconds' "${MANIFEST}")
+growth_window=$(jq -r '.configuration.growth_window_seconds' "${MANIFEST}")
 interval=$(jq -r '.configuration.sample_interval_seconds' "${MANIFEST}")
 otel_enabled=$(jq -r '.configuration.otel_enabled' "${MANIFEST}")
 expected_uids=$(jq -c '.expected_app_pod_uids' "${MANIFEST}")
@@ -75,6 +77,7 @@ jq -se \
   --argjson duration "${duration}" \
   --argjson warmup "${warmup}" \
   --argjson baseline "${baseline}" \
+  --argjson growth_window "${growth_window}" \
   --argjson interval "${interval}" \
   --argjson expected_uids "${expected_uids}" '
   def p95:
@@ -103,8 +106,8 @@ jq -se \
   | (metric_p95($baseline_rows; ["process", "goroutines"])) as $goroutine_baseline
   | (metric_p95($baseline_rows; ["process", "queue_depth"])) as $queue_baseline
   | [$rows[] | select(.captured_at_epoch >= $baseline_end and .load_class == "normal")
-      | . + {day: (((.captured_at_epoch - $baseline_end) / 86400) | floor)}]
-    | group_by(.day) as $later_days
+      | . + {window: (((.captured_at_epoch - $baseline_end) / $growth_window) | floor)}]
+    | group_by(.window) as $later_windows
   | ($rows | length) >= (($duration / (2 * $interval)) | floor)
   and ($rows[0].captured_at_epoch <= $start + $interval)
   and ($rows[-1].captured_at_epoch >= $finish - (2 * $interval))
@@ -113,6 +116,7 @@ jq -se \
     and (($rows[.].captured_at_epoch - $rows[. - 1].captured_at_epoch) <= (2 * $interval)))
   and all($rows[];
     .["$schema"] == "https://kubeatlas.lithastra.com/schemas/v160-soak-sample-v1.json"
+    and .captured_at_epoch >= $start and .captured_at_epoch <= $finish
     and (.phase == "warmup" or .phase == "baseline" or .phase == "steady" or .phase == "event")
     and (.load_class == "normal" or .load_class == "intentional-overload")
     and (.process.rss_bytes | type == "number" and . > 0)
@@ -125,13 +129,19 @@ jq -se \
     and (if .load_class == "normal" then healthy_normal else true end))
   and ($baseline_rows | length) >= (($baseline / (2 * $interval)) | floor)
   and ($rss_baseline != null and $goroutine_baseline != null and $queue_baseline != null)
-  and all($later_days[];
+  and ($later_windows | length) == ((($finish - $baseline_end) / $growth_window) | ceil)
+  and all($later_windows[];
+    (length >= (([($finish - $baseline_end - (.[0].window * $growth_window)), $growth_window] | min) / (2 * $interval) | floor))
+    and
     (metric_p95(.; ["process", "rss_bytes"]) <= ($rss_baseline * 1.2))
     and (metric_p95(.; ["process", "goroutines"]) <= ($goroutine_baseline * 1.2))
     and (metric_p95(.; ["process", "queue_depth"]) <= (if $queue_baseline == 0 then 0 else ($queue_baseline * 1.2) end)))
 ' "${SAMPLES}" >/dev/null || fail "samples fail continuity, health, restart, loss, or sustained-growth checks"
 
 jq -se --argjson otel_enabled "${otel_enabled}" --argjson start "${started_at}" --argjson finish "${finished_at}" '
+  def scheduled_offset:
+    {"app-restart":64800,"resource-storm":86400,"snapshot-write-storm":108000,
+     "postgresql-interruption":129600,"api-server-interruption":151200,"otel-overload":172800}[.name];
   def passed($name): any(.[]; .name == $name and .status == "pass" and .sentinel_absent == true);
   def recovery_passed($name): any(.[]; .name == $name and .status == "pass" and .sentinel_absent == true and .recovery_seconds <= 120);
   all(.[];
@@ -158,7 +168,10 @@ jq -se --argjson otel_enabled "${otel_enabled}" --argjson start "${started_at}" 
   and passed("final-upgrade-restore")
   and (length == 7)
   and ([.[].name] | unique | length == 7)
-  and all(.[] | select(.name != "final-upgrade-restore"); .captured_at_epoch >= $start and .captured_at_epoch <= $finish)
+  and all(.[] | select(.name != "final-upgrade-restore");
+    .captured_at_epoch >= ($start + scheduled_offset)
+    and .captured_at_epoch < ($start + scheduled_offset + 21600)
+    and .captured_at_epoch <= $finish)
   and any(.[]; .name == "final-upgrade-restore" and .captured_at_epoch >= $finish)
   and (if $otel_enabled then passed("otel-overload") else any(.[]; .name == "otel-overload" and .status == "not-applicable") end)
 ' "${EVENTS}" >/dev/null || fail "required failure, overload, and final recovery events are incomplete"
@@ -174,4 +187,4 @@ while IFS=$'\t' read -r relative_path expected_hash; do
 done < <(jq -r '.artifacts[] | [.path, .sha256] | @tsv' "${MANIFEST}")
 
 candidate_sha=$(jq -r '.candidate.git_sha' "${MANIFEST}")
-pass "168-hour soak evidence for candidate ${candidate_sha}"
+pass "72-hour minimum soak evidence for candidate ${candidate_sha}"

@@ -82,7 +82,7 @@ The release evidence must describe each artifact independently:
   database-image SPDX SBOM and SLSA provenance statements.
 - Configuration is not public evidence. Do not call a v1.6 artifact signed or
   attested until its tag workflow and anonymous clean-cluster audit pass for
-  the exact candidate commit and digests that completed the 168-hour gate.
+  the exact candidate commit and digests that completed the 72-hour gate.
 - Binary archives remain checksum-verified but unsigned. Their contents are
   not covered by the OCI image signatures.
 
@@ -157,7 +157,7 @@ chart with the verified application-image digest on a clean kind cluster.
 
 1. Freeze the release workflow, runtime images, Chart, dependencies, recovery
    behavior, and instrumentation.
-2. Complete the performance gates and 168 continuous hours on that exact
+2. Complete the performance gates and 72 continuous hours on that exact
    candidate commit. A later change to those surfaces invalidates the run.
 3. Run the manual frozen candidate preflight on the same commit.
 4. Create the signed release tag. The tag workflow publishes the database and

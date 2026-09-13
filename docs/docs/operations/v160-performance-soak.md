@@ -1,9 +1,9 @@
 ---
 sidebar_position: 2
-title: v1.6 performance and 168-hour soak
+title: v1.6 performance and 72-hour soak
 ---
 
-# v1.6 performance and 168-hour soak
+# v1.6 performance and 72-hour soak
 
 This is the release-gating procedure for the unreleased v1.6 candidate. The
 repository contains the runner and verifier, but v1.6 must not be described as
@@ -20,7 +20,9 @@ Choose one clean 40-character Git commit after dependency, migration,
 instrumentation, resource-profile, recovery, and release-workflow changes are
 complete. Build and load the candidate application and PostgreSQL images, and
 record their immutable runtime image IDs. Any later change to those surfaces
-invalidates both the performance evidence and the 168-hour run.
+invalidates both the performance evidence and the 72-hour run. Changes to the
+runner or acceptance contract also require a newly frozen candidate and fresh
+evidence; never relabel or splice an earlier attempt.
 
 The gate requires:
 
@@ -80,14 +82,14 @@ Do not average rows, discard endpoint errors, or replace the distributed 10K
 namespace result with the pathological result. The verifier requires the
 complete set and one candidate SHA.
 
-## Start the 168-hour run
+## Start the 72-hour run
 
 Leave the production 10K distributed fixture and production resource profile
 running. Use local candidate image tags that the final v1.5.2 upgrade/restore
 drill can install with `imagePullPolicy=Never`.
 
 ```bash
-KUBEATLAS_CONFIRM_168H_SOAK=docker-desktop \
+KUBEATLAS_CONFIRM_72H_SOAK=docker-desktop \
 KUBEATLAS_EXPECTED_GIT_SHA="$KUBEATLAS_EXPECTED_GIT_SHA" \
 KUBEATLAS_PERFORMANCE_EVIDENCE_DIR="$KUBEATLAS_EVIDENCE_DIR" \
 KUBEATLAS_SOAK_EVIDENCE_DIR="$PWD/.evidence/v1.6-soak" \
@@ -96,14 +98,31 @@ KUBEATLAS_CANDIDATE_PG_IMAGE=local-postgres-age:16.15-age1.6.0-rc0.2 \
   bash test/soak/v160-soak.sh
 ```
 
-The runner samples every five minutes and fails closed. Hours 0–24 are warmup;
-hours 24–48 are the stable baseline. It continuously mutates a canary
+The runner samples every five minutes and fails closed. Hours 0–6 are warmup;
+hours 6–18 are the stable baseline. It continuously mutates a canary
 ConfigMap, queries cluster, namespace, and blast-radius endpoints, observes
 scheduled snapshots, and records only bounded numeric/status evidence. It
 schedules one application restart, resource storm, snapshot-writer storm,
 PostgreSQL interruption, Docker Desktop API-server interruption, and—only when
 OTel is enabled—receiver overload. The final event reruns the public v1.5.2 to
 candidate upgrade and destructive backup/delete/restore proof.
+
+| Elapsed time | Required activity |
+|---|---|
+| 0–6 hours | Warmup and initial synchronization. |
+| 6–18 hours | Normal-load baseline. |
+| 18 hours | Application restart. |
+| 24 hours | Resource storm. |
+| 30 hours | Snapshot-writer storm. |
+| 36 hours | PostgreSQL interruption and recovery. |
+| 42 hours | API-server interruption and recovery. |
+| 48 hours | OTel overload, or an explicit not-applicable event when disabled. |
+| After the last event through 72 hours | Continued post-recovery observation. |
+| After 72 hours | Final upgrade/restore drill and independent verification. |
+
+Each scheduled event must finish before the next six-hour slot. The final
+upgrade/restore and verifier add time beyond the 72-hour observation period.
+Longer runs are allowed, but runs shorter than 259,200 seconds are rejected.
 
 Security-surface scans allow a bounded recovery from transient transport
 failures: by default each request may take up to 30 seconds and is attempted no
@@ -129,12 +148,25 @@ EXIT trap.
 ## Pass conditions and retained evidence
 
 `test/verify/v160-soak-evidence.sh` requires continuous coverage for at least
-604,800 seconds, no sample gap over twice the configured interval, all planned
+259,200 seconds, no sample gap over twice the configured interval, all planned
 events, dependency recovery within 120 seconds, exactly one planned Pod
 replacement, no container restart or OOM, no normal-load event/snapshot/OTel
 drops, healthy normal samples, and no sustained p95 growth over the frozen 20%
-threshold. A failure is not resumable; fix the cause, freeze a new candidate,
-repeat all performance rows, and start a new seven-day run.
+threshold. Compare each 12-hour normal-load window after the baseline against
+the baseline, including the final partial window. Every window must have
+normal-load sample coverage; an empty window cannot pass vacuously. A zero
+queue baseline must remain zero outside intentional overload.
+A failure is not resumable; fix the cause, freeze a new candidate,
+repeat all performance rows, and start a new three-day run.
+
+The 72-hour contract was adopted before a new run on 2026-09-13 to reduce
+release iteration time while retaining every failure/recovery and security
+check. Its manifest uses `v160-soak-evidence-v2.json`; the verifier rejects the
+previous 168-hour v1 manifest. The shorter observation period provides less
+evidence for slow leaks, storage accumulation, and longer-cycle failures. A
+pass supports only a 72-hour soak claim, not seven-day endurance or a general
+production-reliability guarantee. Keep superseded and failed evidence as
+history, never as part of a passing run.
 
 A random Secret sentinel is kept only in the source Kubernetes Secret and in
 runner memory. Live API surfaces are scanned with every sample; logs,

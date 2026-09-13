@@ -2,7 +2,7 @@
 
 # Fast CI contract: construct synthetic bounded evidence, prove both verifiers
 # accept the complete shape, then prove a single failed gate is rejected.
-# Timestamps model 168 hours; this test does not pretend to run a real soak.
+# Timestamps model 72 hours; this test does not pretend to run a real soak.
 
 set -euo pipefail
 
@@ -37,7 +37,7 @@ if v160_soak_event_json app-restart pass 2 '{invalid-json}' >/dev/null 2>&1; the
   exit 1
 fi
 
-# A single transport timeout must not invalidate seven days of otherwise valid
+# A single transport timeout must not invalidate three days of otherwise valid
 # evidence, but a persistent timeout must still fail closed after the bounded
 # attempt count. The helper returns the complete body/status framing unchanged.
 mkdir -p "${TMP}/mock-bin"
@@ -158,7 +158,7 @@ grep -Fq \
   'start_port_forward_process' \
   test/verify/v152-secret-boundary.sh
 
-# The 168-hour runner must not attach its replacement tunnel to a terminating
+# The 72-hour runner must not attach its replacement tunnel to a terminating
 # Pod. Require an explicitly different Ready Pod, a Pod-specific tunnel, and
 # retry behavior when kubectl exits before the application becomes reachable.
 grep -Fq \
@@ -184,16 +184,16 @@ fi
 
 mkdir -p "${TMP}/soak/logs"
 START=2000000000
-FINISH=$((START + 604800))
+FINISH=$((START + 259200))
 jq -cn --argjson start "${START}" '
-  range(0; 2016) as $index
+  range(0; 864) as $index
   | ($start + ($index * 300)) as $captured
   | {
       "$schema":"https://kubeatlas.lithastra.com/schemas/v160-soak-sample-v1.json",
       captured_at_epoch:$captured,
-      phase:(if $index < 288 then "warmup" elif $index < 576 then "baseline" else "steady" end),
+      phase:(if $index < 72 then "warmup" elif $index < 216 then "baseline" else "steady" end),
       load_class:"normal",
-      process:{rss_bytes:104857600,goroutines:20,queue_depth:0,pod_uid:(if $index < 576 then "pod-before" else "pod-after" end),restart_count:0,oom_killed:false},
+      process:{rss_bytes:104857600,goroutines:20,queue_depth:0,pod_uid:(if $index < 216 then "pod-before" else "pod-after" end),restart_count:0,oom_killed:false},
       health:{ready:true,kubernetes_api_reachable:true,storage_reachable:true,graph_synced:true},
       endpoints:{cluster:{failure:false,latency_ms:200},namespace:{failure:false,latency_ms:300},blast_radius:{failure:false,latency_ms:50}},
       counter_deltas:{snapshot_queue_drop:0,snapshot_write_failed:0,otel_dropped:0},
@@ -201,7 +201,7 @@ jq -cn --argjson start "${START}" '
     }
 ' >"${TMP}/soak/samples.jsonl"
 
-jq -cn '
+jq -cn --argjson start "${START}" --argjson finish "${FINISH}" '
   [
     {name:"app-restart",recovery_seconds:30,status:"pass"},
     {name:"resource-storm",recovery_seconds:0,status:"pass"},
@@ -211,7 +211,8 @@ jq -cn '
     {name:"otel-overload",recovery_seconds:0,status:"not-applicable"},
     {name:"final-upgrade-restore",recovery_seconds:0,status:"pass"}
   ][]
-  | {"$schema":"https://kubeatlas.lithastra.com/schemas/v160-soak-event-v1.json",captured_at_epoch:(if .name == "final-upgrade-restore" then 2000604800 else 2000000000 end),name:.name,status:.status,recovery_seconds:.recovery_seconds,sentinel_absent:true,details:(if .name == "postgresql-interruption" then {injection:"cnpg-hibernation",outage_observed:true,original_primary_uid:"pg-before",replacement_primary_uid:"pg-after",replacement_ready_seconds:10,recovery_seconds:60,outage_observed_at_epoch:2000000000} else {} end)}
+  | ({"app-restart":64800,"resource-storm":86400,"snapshot-write-storm":108000,"postgresql-interruption":129600,"api-server-interruption":151200,"otel-overload":172800}[.name]) as $offset
+  | {"$schema":"https://kubeatlas.lithastra.com/schemas/v160-soak-event-v1.json",captured_at_epoch:(if .name == "final-upgrade-restore" then $finish else $start + $offset + 120 end),name:.name,status:.status,recovery_seconds:.recovery_seconds,sentinel_absent:true,details:(if .name == "postgresql-interruption" then {injection:"cnpg-hibernation",outage_observed:true,original_primary_uid:"pg-before",replacement_primary_uid:"pg-after",replacement_ready_seconds:10,recovery_seconds:60,outage_observed_at_epoch:($start + $offset)} else {} end)}
 ' >"${TMP}/soak/events.jsonl"
 
 if command -v sha256sum >/dev/null 2>&1; then
@@ -230,17 +231,17 @@ jq -n \
   --arg samples_hash "${samples_hash}" --arg events_hash "${events_hash}" \
   --argjson start "${START}" --argjson finish "${FINISH}" '
   {
-    "$schema":"https://kubeatlas.lithastra.com/schemas/v160-soak-evidence-v1.json",status:"pass",
+    "$schema":"https://kubeatlas.lithastra.com/schemas/v160-soak-evidence-v2.json",status:"pass",
     candidate:{git_sha:$sha,dirty:false,app_image_id:("example.invalid/kubeatlas@sha256:"+$digest),postgres_image_id:("example.invalid/postgres@sha256:"+$pg_digest)},
     environment:{kubernetes_context:"docker-desktop",kubernetes_server_version:"v1.36.1"},
     configuration:{
-      duration_seconds:604800,warmup_seconds:86400,baseline_seconds:86400,
+      duration_seconds:259200,warmup_seconds:21600,baseline_seconds:43200,growth_window_seconds:43200,
       sample_interval_seconds:300,otel_enabled:false,
       security_surface_timeout_seconds:30,security_surface_attempts:3,
       security_surface_retry_delay_seconds:2
     },
     started_at_epoch:$start,finished_at_epoch:$finish,
-    sentinel:{sha256:"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",raw_value_retained:false,scan_count:2016},
+    sentinel:{sha256:"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",raw_value_retained:false,scan_count:864},
     expected_app_pod_uids:["pod-before","pod-after"],
     artifacts:[
       {path:"samples.jsonl",sha256:$samples_hash,sentinel_absent:true},
@@ -252,6 +253,83 @@ bash test/verify/v160-soak-evidence.sh "${TMP}/soak"
 # Refresh the artifact hash so these failures test event semantics, not hashing.
 cp "${TMP}/soak/events.jsonl" "${TMP}/valid-events.jsonl"
 cp "${TMP}/soak/manifest.json" "${TMP}/valid-manifest.json"
+cp "${TMP}/soak/samples.jsonl" "${TMP}/valid-samples.jsonl"
+
+# Pin the runner independently of the synthetic verifier fixtures. In
+# particular, shortening the duration alone must not leave events after it.
+for contract in \
+  'DURATION_SECONDS="${KUBEATLAS_SOAK_DURATION_SECONDS:-259200}"' \
+  'WARMUP_SECONDS=21600' 'BASELINE_SECONDS=43200' 'GROWTH_WINDOW_SECONDS=43200' \
+  'DURATION_SECONDS >= 259200' 'KUBEATLAS_CONFIRM_72H_SOAK' \
+  'app_restart_done == 0 && elapsed >= 64800' \
+  'resource_storm_done == 0 && elapsed >= 86400' \
+  'snapshot_storm_done == 0 && elapsed >= 108000' \
+  'pg_interruption_done == 0 && elapsed >= 129600' \
+  'api_interruption_done == 0 && elapsed >= 151200' \
+  'otel_overload_done == 0 && elapsed >= 172800'; do
+  grep -Fq "${contract}" test/soak/v160-soak.sh
+done
+
+expect_soak_rejected() {
+  if bash test/verify/v160-soak-evidence.sh "${TMP}/soak" >/dev/null 2>&1; then
+    echo "soak verifier accepted weakened evidence: $1" >&2
+    exit 1
+  fi
+}
+
+for mutation in \
+  '.configuration.duration_seconds = 259199' \
+  '.finished_at_epoch = .started_at_epoch + 259199' \
+  '.configuration.warmup_seconds = 86400' \
+  '.configuration.baseline_seconds = 86400' \
+  '.configuration.growth_window_seconds = 86400' \
+  '.["$schema"] = "https://kubeatlas.lithastra.com/schemas/v160-soak-evidence-v1.json"'; do
+  jq "${mutation}" "${TMP}/valid-manifest.json" >"${TMP}/soak/manifest.json"
+  expect_soak_rejected "${mutation}"
+done
+
+for mutation in \
+  'select(.name != "postgresql-interruption")' \
+  'select(.name != "final-upgrade-restore")' \
+  'if .name == "api-server-interruption" then .captured_at_epoch = 2000000000 else . end' \
+  'if .name == "otel-overload" then .captured_at_epoch = 2000259200 else . end' \
+  'if .name == "final-upgrade-restore" then .captured_at_epoch = 2000259199 else . end'; do
+  jq -c "${mutation}" "${TMP}/valid-events.jsonl" >"${TMP}/soak/events.jsonl"
+  events_hash=$(shasum -a 256 "${TMP}/soak/events.jsonl" | awk '{print $1}')
+  jq --arg hash "${events_hash}" '(.artifacts[] | select(.path == "events.jsonl").sha256) = $hash' \
+    "${TMP}/valid-manifest.json" >"${TMP}/soak/manifest.json"
+  expect_soak_rejected "${mutation}"
+done
+cp "${TMP}/valid-events.jsonl" "${TMP}/soak/events.jsonl"
+
+# Rehash every mutation so rejection proves semantics, not checksum failure.
+# Include the last partial 12-hour window (hours 66-72), empty normal-load
+# windows, continuity, loss, sentinel, OOM and unexpected restarts.
+for mutation in \
+  'if .captured_at_epoch >= 2000237600 then .process.rss_bytes *= 1.21 else . end' \
+  'if .captured_at_epoch >= 2000064800 and .captured_at_epoch < 2000108000 then .process.goroutines = 25 else . end' \
+  'if .captured_at_epoch >= 2000237600 then .process.queue_depth = 1 else . end' \
+  'if .captured_at_epoch >= 2000237600 then .load_class = "intentional-overload" else . end' \
+  'select(.captured_at_epoch < 2000100000 or .captured_at_epoch > 2000100900)' \
+  '.counter_deltas.snapshot_queue_drop = 1' \
+  '.sentinel_absent = false' '.process.oom_killed = true' '.process.restart_count = 1'; do
+  jq -c "${mutation}" "${TMP}/valid-samples.jsonl" >"${TMP}/soak/samples.jsonl"
+  samples_hash=$(shasum -a 256 "${TMP}/soak/samples.jsonl" | awk '{print $1}')
+  jq --arg hash "${samples_hash}" '(.artifacts[] | select(.path == "samples.jsonl").sha256) = $hash' \
+    "${TMP}/valid-manifest.json" >"${TMP}/soak/manifest.json"
+  expect_soak_rejected "${mutation}"
+done
+
+# Exactly 20% RSS growth is permitted; the 21% case above must fail.
+jq -c 'if .captured_at_epoch >= 2000064800 then .process.rss_bytes *= 1.2 else . end' \
+  "${TMP}/valid-samples.jsonl" >"${TMP}/soak/samples.jsonl"
+samples_hash=$(shasum -a 256 "${TMP}/soak/samples.jsonl" | awk '{print $1}')
+jq --arg hash "${samples_hash}" '(.artifacts[] | select(.path == "samples.jsonl").sha256) = $hash' \
+  "${TMP}/valid-manifest.json" >"${TMP}/soak/manifest.json"
+bash test/verify/v160-soak-evidence.sh "${TMP}/soak"
+cp "${TMP}/valid-samples.jsonl" "${TMP}/soak/samples.jsonl"
+cp "${TMP}/valid-manifest.json" "${TMP}/soak/manifest.json"
+
 for mutation in \
   '.details.outage_observed = false' \
   '.details.replacement_primary_uid = .details.original_primary_uid' \
