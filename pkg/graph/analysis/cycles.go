@@ -147,7 +147,17 @@ func secretOwnsName(maybeSecret, owner graph.Resource) bool {
 // performance: a 5K-vertex / 5K-edge graph runs comfortably under
 // the 200ms playbook budget on commodity hardware.
 func DetectCycles(ctx context.Context, store graph.GraphStore) ([]CycleReport, error) {
-	snap, err := store.Snapshot(ctx)
+	// Classification and the public cycle report use structured metadata, never
+	// the private Raw payload. Do not decode the full cluster's object contents
+	// just to build adjacency. A wrapper lacking the capability retains its own
+	// Snapshot behavior, including any visibility restrictions it applies.
+	var snap *graph.Graph
+	var err error
+	if metadata, ok := store.(graph.MetadataSnapshotter); ok {
+		snap, err = metadata.SnapshotMetadata(ctx)
+	} else {
+		snap, err = store.Snapshot(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}

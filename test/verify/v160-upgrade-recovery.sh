@@ -48,6 +48,12 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
 }
 
+anonymous_helm() {
+  local timeout=$1
+  shift
+  python3 "${ROOT_DIR}/test/verify/anonymous_helm.py" --timeout "${timeout}" -- "$@"
+}
+
 stop_port_forward() {
   if [[ -n "${PF_PID}" ]] && kill -0 "${PF_PID}" 2>/dev/null; then
     kill "${PF_PID}" 2>/dev/null || true
@@ -115,7 +121,7 @@ collect_failure_diagnostics() {
       --all-containers=true --tail=300 || true
     kubectl logs -n cnpg-system deployment/cnpg-cloudnative-pg \
       --all-containers=true --tail=300 || true
-    helm status "${RELEASE}" -n "${NS}" || true
+    anonymous_helm 30 status "${RELEASE}" -n "${NS}" || true
   } 2>&1 | sanitize_stream >"${DIAGNOSTICS_LOG}"
 }
 
@@ -253,7 +259,7 @@ collect_security_surfaces() {
   done < <(kubectl get pods -n "${NS}" -o name)
 }
 
-for command_name in kubectl helm jq curl grep openssl; do
+for command_name in kubectl helm python3 jq curl grep openssl; do
   require_cmd "${command_name}"
 done
 if command -v sha256sum >/dev/null 2>&1; then
@@ -268,7 +274,7 @@ SECRET_SENTINEL=$(openssl rand -hex 32)
 SECRET_SENTINEL_B64=$(printf '%s' "${SECRET_SENTINEL}" | openssl base64 -A)
 
 step "verify the anonymous public v1.5.2 chart contract"
-public_chart_metadata=$(helm show chart "${PUBLIC_CHART}" --version "${PUBLIC_VERSION}")
+public_chart_metadata=$(anonymous_helm 120 show chart "${PUBLIC_CHART}" --version "${PUBLIC_VERSION}")
 grep -Fxq "version: ${PUBLIC_VERSION}" <<<"${public_chart_metadata}" \
   || fail "public chart version is not ${PUBLIC_VERSION}"
 grep -Fxq "appVersion: ${PUBLIC_VERSION}" <<<"${public_chart_metadata}" \
@@ -290,7 +296,7 @@ kubectl set env deployment/recovery-consumer -n "${NS}" \
 pass "fixture contains ConfigMap and Secret relationships"
 
 step "install the real public v1.5.2 chart, application, and database image"
-helm install "${RELEASE}" "${PUBLIC_CHART}" \
+anonymous_helm 720 install "${RELEASE}" "${PUBLIC_CHART}" \
   --version "${PUBLIC_VERSION}" \
   --namespace "${NS}" \
   --set persistence.enabled=true \
@@ -363,7 +369,7 @@ backup_sha=$(sha256_file "${BACKUP_FILE}")
 pass "backup is readable, sentinel-free, and protected by checksum ${backup_sha}"
 
 step "upgrade the database image and KubeAtlas application to the candidate"
-helm upgrade "${RELEASE}" helm/kubeatlas \
+anonymous_helm 720 upgrade "${RELEASE}" helm/kubeatlas \
   --namespace "${NS}" \
   --reuse-values \
   --set image.repository="${CANDIDATE_IMAGE%:*}" \
@@ -415,7 +421,7 @@ kubectl wait -n "${NS}" --for=delete pvc \
 pass "original database ${old_cluster_uid} and PVC ${old_pvc_uid} were deleted"
 
 step "create a fresh embedded target from the candidate chart contract"
-helm template "${RELEASE}" helm/kubeatlas \
+anonymous_helm 120 template "${RELEASE}" helm/kubeatlas \
   --namespace "${NS}" \
   --show-only templates/postgres-cluster.yaml \
   --set persistence.enabled=true \

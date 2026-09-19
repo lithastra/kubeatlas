@@ -11,6 +11,7 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "${ROOT_DIR}"
 source test/soak/lib/v160-soak-event.sh
 source test/soak/lib/v160-soak-http.sh
+source test/soak/lib/v160-soak-memory.sh
 
 NAMESPACE="${KUBEATLAS_NAMESPACE:-kubeatlas}"
 RELEASE="${KUBEATLAS_RELEASE:-kubeatlas}"
@@ -105,7 +106,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command_name in kubectl curl jq git awk sort sed grep openssl helm docker find date; do
+for command_name in kubectl curl jq git awk sort sed grep openssl helm python3 docker find date; do
   command -v "${command_name}" >/dev/null 2>&1 || fail "missing required command: ${command_name}"
 done
 if command -v sha256sum >/dev/null 2>&1; then
@@ -161,6 +162,15 @@ SOAK_TARGET_NAMESPACE=$(jq -r '.fixture.target_namespace' "${PERF_DIR}/productio
 mkdir -p "${LOG_DIR}"
 : >"${SAMPLES_FILE}"
 : >"${EVENTS_FILE}"
+
+step "preflight anonymous public v1.5.2 chart access before starting the soak"
+python3 test/verify/anonymous_helm.py --timeout 120 -- \
+  show chart oci://ghcr.io/lithastra/charts/kubeatlas --version 1.5.2 \
+  >"${LOG_DIR}/public-chart-preflight.log" 2>&1 \
+  || fail "anonymous public chart preflight failed; see public-chart-preflight.log"
+grep -Fxq 'version: 1.5.2' "${LOG_DIR}/public-chart-preflight.log" \
+  && grep -Fxq 'appVersion: 1.5.2' "${LOG_DIR}/public-chart-preflight.log" \
+  || fail "anonymous public chart preflight returned an unexpected version"
 
 start_port_forward() {
   local target=${1:-deployment/${RELEASE}}
@@ -405,6 +415,7 @@ sample_sequence=0
 next_load_class=normal
 capture_sample() {
   local now elapsed phase metrics pod_json pod_name pod_uid restart_count oom rss_kib
+  local go_memory
   local cluster_result namespace_result blast_result queue_drop write_failed otel_dropped
   now=$(date +%s)
   elapsed=$((now - soak_started_at))
@@ -418,6 +429,7 @@ capture_sample() {
     --from-literal="sequence=${sample_sequence}" --dry-run=client -o yaml \
     | kubectl apply -f - >/dev/null
   metrics=$(api /metrics)
+  go_memory=$(v160_soak_memory_json "${metrics}") || fail "Go memory diagnostics unavailable"
   pod_json=$(current_app_pod)
   pod_name=$(jq -r '.metadata.name // empty' <<<"${pod_json}")
   pod_uid=$(jq -r '.metadata.uid // empty' <<<"${pod_json}")
@@ -438,6 +450,7 @@ capture_sample() {
     --arg phase "${phase}" --arg load_class "${next_load_class}" --arg pod_uid "${pod_uid}" \
     --argjson captured_at_epoch "${now}" --argjson rss_bytes "$((rss_kib * 1024))" \
     --argjson goroutines "$(metric "${metrics}" kubeatlas_goroutines)" \
+    --argjson go_memory "${go_memory}" \
     --argjson queue_depth "$(metric "${metrics}" kubeatlas_snapshot_queue_depth)" \
     --argjson restart_count "${restart_count}" --argjson oom_killed "${oom}" \
     --argjson ready "$(curl -fsS --max-time 5 "http://127.0.0.1:${PF_PORT}/readyz" >/dev/null 2>&1 && printf true || printf false)" \
@@ -450,7 +463,7 @@ capture_sample() {
     --argjson otel_dropped_delta "$((otel_dropped - previous_otel_dropped))" '
     {
       "$schema": $schema, captured_at_epoch: $captured_at_epoch, phase: $phase, load_class: $load_class,
-      process: {rss_bytes: $rss_bytes, goroutines: $goroutines, queue_depth: $queue_depth, pod_uid: $pod_uid, restart_count: $restart_count, oom_killed: $oom_killed},
+      process: {rss_bytes: $rss_bytes, goroutines: $goroutines, queue_depth: $queue_depth, pod_uid: $pod_uid, restart_count: $restart_count, oom_killed: $oom_killed, go_memory: $go_memory},
       health: {ready: $ready, kubernetes_api_reachable: ($api_reachable == 1), storage_reachable: ($storage_reachable == 1), graph_synced: ($graph_synced == 1)},
       endpoints: {cluster: $cluster, namespace: $namespace_result, blast_radius: $blast},
       counter_deltas: {snapshot_queue_drop: $queue_drop_delta, snapshot_write_failed: $write_failed_delta, otel_dropped: $otel_dropped_delta},
