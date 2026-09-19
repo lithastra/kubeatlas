@@ -12,6 +12,19 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/graph/storetest"
 )
 
+func TestStore_MetadataSnapshot(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping testcontainers test in -short mode")
+	}
+	h := StartPostgresWithAGE(t)
+	s, err := New(context.Background(), Config{DSN: h.ConnStr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	storetest.RunMetadataSnapshot(t, func(_ *testing.T) graph.GraphStore { return s })
+}
+
 // TestStore_Contract runs the shared GraphStore contract suite against
 // the Postgres skeleton plus a small set of tier-2-specific subtests.
 // A single container is shared across all subtests (~13 today);

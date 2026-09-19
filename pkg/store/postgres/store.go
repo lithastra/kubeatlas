@@ -375,7 +375,18 @@ func (s *Store) ListEdges(ctx context.Context, id string, dir graph.Direction) (
 // Phase 2 traffic does not need stricter isolation; if it does, lift
 // to a repeatable-read tx in a follow-up.
 func (s *Store) Snapshot(ctx context.Context) (*graph.Graph, error) {
-	rRows, err := s.pool.Query(ctx, `SELECT data FROM resources`)
+	return s.snapshot(ctx, `SELECT data FROM resources`)
+}
+
+// SnapshotMetadata removes only the private Raw payload in PostgreSQL, before
+// transfer/JSON decoding. All structured metadata and edges remain identical
+// to Snapshot; analysis classifications and serialized reports are unchanged.
+func (s *Store) SnapshotMetadata(ctx context.Context) (*graph.Graph, error) {
+	return s.snapshot(ctx, `SELECT data - 'raw' FROM resources`)
+}
+
+func (s *Store) snapshot(ctx context.Context, resourcesSQL string) (*graph.Graph, error) {
+	rRows, err := s.pool.Query(ctx, resourcesSQL)
 	if err != nil {
 		return nil, fmt.Errorf("postgres.Snapshot: resources: %w", err)
 	}

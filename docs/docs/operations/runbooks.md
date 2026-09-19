@@ -30,6 +30,9 @@ exposing it.
 | Metric | Meaning |
 |---|---|
 | `kubeatlas_go_memory_limit_bytes` | Go's current soft runtime-managed-memory boundary. The chart derives it from the container limit; compare it with `resources.limits.memory` when investigating memory pressure. |
+| `kubeatlas_go_heap_alloc_bytes`, `kubeatlas_go_heap_live_bytes`, `kubeatlas_go_heap_goal_bytes` | Current object allocations (including uncollected objects), objects marked live by the previous GC, and the GC heap-size target. Live bytes are not a current heap dump. |
+| `kubeatlas_go_heap_free_bytes`, `kubeatlas_go_heap_released_bytes`, `kubeatlas_go_heap_unused_bytes` | Free heap not yet returned to the OS, free heap already returned, and space reserved for objects but unused. These help distinguish object retention from heap retention/fragmentation. |
+| `kubeatlas_go_heap_stacks_bytes`, `kubeatlas_go_runtime_total_bytes`, `kubeatlas_go_gc_cycles_total` | Stack reservation, total read-write memory mapped by Go, and completed GC cycles. Total mapped memory is not RSS; GC cycles reset with the process. |
 | `kubeatlas_informer_synced` | `1` after the initial informer cache sync. It does not return to `0` after a later API outage, so do not use it alone as a freshness signal. |
 | `kubeatlas_graph_observation_state{state="..."}` | One-hot graph state: `initializing`, `synced`, `degraded`, or `stale`. Exactly one series is `1`. |
 | `kubeatlas_kubernetes_api_reachable` | Result of the latest bounded, read-only Kubernetes API probe. In multi-cluster mode it is `1` only when every attached member responds. |
@@ -192,6 +195,30 @@ backup and restore path. High-availability coordination remains outside the
 v1.6 boundary; the application chart supports one KubeAtlas replica.
 
 ## Evidence gates
+
+When RSS exceeds its gate, retain the failed evidence and compare numerical
+heap/GC observations from the same Pod UID and workload. Rising RSS alone does
+not prove an object leak, and a later low reading does not invalidate a failed
+window. Check live heap across completed GC cycles, free/unreleased heap,
+stack reservation, and the workload timeline. Do not force GC, change GC or
+memory-limit settings, or raise the threshold merely to obtain a passing run.
+The runtime metrics expose only aggregate numbers; they do not expose heap
+contents or add a profiling endpoint.
+
+Include the security-check endpoints when reproducing allocation pressure, not
+just cluster, namespace, and blast-radius reads. Namespace SVG/PNG exports now
+read only the namespace subgraph, and orphan detection filters resource reads
+at the store while still checking incoming references across namespaces.
+Diagnose cycle detection intentionally remains cluster-wide to preserve cycles
+that cross namespace boundaries. On the built-in stores it uses a metadata-only
+snapshot: all structured resource metadata and edges remain available, while
+the private `Raw` payload is omitted before PostgreSQL decoding. The ordinary
+snapshot API and stored objects remain unchanged. Wrappers without the optional
+capability retain their own snapshot behavior, including visibility restrictions.
+A namespace filter is not permission to omit cross-namespace dependencies.
+Compare identical request mixes and allow natural GC and
+scavenging to run. A short reduction in peak RSS is diagnostic evidence, not a
+replacement for the complete 72-hour gate.
 
 - Pull requests run the required frozen Kubernetes 1.34, 1.35, and 1.36 Tier 2
   matrix, plus required snapshot-overload evidence.
