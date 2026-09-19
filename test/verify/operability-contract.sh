@@ -21,6 +21,19 @@ require_text() {
 }
 
 metrics_file=pkg/api/metrics.go
+require_text "${metrics_file}" 'writeRuntimeMemoryPrometheus(w)'
+require_text test/soak/v160-soak.sh 'go_memory=$(v160_soak_memory_json "${metrics}")'
+for metric in heap_alloc_bytes heap_live_bytes heap_goal_bytes heap_free_bytes \
+  heap_released_bytes heap_unused_bytes heap_stacks_bytes runtime_total_bytes gc_cycles_total; do
+  require_text pkg/api/runtime_metrics.go "kubeatlas_go_${metric}"
+  require_text test/soak/lib/v160-soak-memory.sh "${metric}"
+done
+require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 120 show chart'
+require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 720 install'
+require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 720 upgrade'
+require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 120 template'
+require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 30 status'
+require_text test/soak/v160-soak.sh 'python3 test/verify/anonymous_helm.py --timeout 120 --'
 for metric in \
   kubeatlas_go_memory_limit_bytes \
   kubeatlas_graph_observation_state \
@@ -120,5 +133,6 @@ require_text test/chaos/README.md '**Opt-in suite**'
 require_text test/chaos/README.md '**Manual**'
 
 python3 test/verify/pg_disconnect_test.py
+python3 test/verify/anonymous_helm_test.py
 
 printf 'operability contract: metrics, deployment, evidence, and runbooks aligned\n'

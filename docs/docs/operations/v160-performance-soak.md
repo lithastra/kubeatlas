@@ -156,6 +156,27 @@ threshold. Compare each 12-hour normal-load window after the baseline against
 the baseline, including the final partial window. Every window must have
 normal-load sample coverage; an empty window cannot pass vacuously. A zero
 queue baseline must remain zero outside intentional overload.
+Each new sample also records `process.go_memory`: numeric heap allocation,
+previous-GC live heap, GC goal, free/released/unused heap, stack reservation,
+total runtime-mapped bytes, and GC cycles. Missing or malformed runtime metrics
+stop the runner instead of being recorded as zero. These are diagnostic
+observations, not replacements for RSS or a relaxation of the release gate.
+Older samples without these fields cannot retrospectively establish a heap/GC
+cause. Scraping does not force collection or expose object contents.
+
+The final upgrade/recovery script uses an isolated empty Docker configuration
+and Helm registry configuration for every Helm call, so public OCI reads cannot
+inherit the caller's registry credential helpers. Metadata/render calls have a
+120-second wall-clock limit, install/upgrade calls 720 seconds (in addition to
+the existing 10-minute Kubernetes wait), and failure-status collection 30 seconds.
+Timeout or cancellation terminates the Helm process group, including helpers;
+the temporary configurations are removed without changing the user's files.
+Python 3 is required for this bounded anonymous Helm wrapper.
+Before the runner creates its canary or starts the timed observation period,
+it also checks anonymous public v1.5.2 Chart access with the same wrapper.
+This catches local credential/registry problems early; it does not replace
+the final upgrade/restore event or guarantee future registry availability.
+
 A failure is not resumable; fix the cause, freeze a new candidate,
 repeat all performance rows, and start a new three-day run.
 

@@ -17,6 +17,16 @@ type ResourceLister interface {
 	ListResources(ctx context.Context, filter Filter) ([]Resource, error)
 }
 
+// MetadataSnapshotter is an optional read optimization, not a change to the
+// GraphStore v2 method set. It has Snapshot's scope and consistency semantics,
+// preserving every resource field except Raw and every edge/attribute. Callers
+// requiring spec-level data must keep using Snapshot. Store wrappers that apply
+// visibility restrictions must not expose this capability unless they enforce
+// the same restrictions; callers otherwise fall back to the wrapper's Snapshot.
+type MetadataSnapshotter interface {
+	SnapshotMetadata(ctx context.Context) (*Graph, error)
+}
+
 // GraphStore is the persistence-agnostic interface for storing and
 // querying the dependency graph.
 //

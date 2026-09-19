@@ -17,6 +17,33 @@ PG_DIGEST=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 source test/soak/lib/v160-soak-event.sh
 source test/soak/lib/v160-soak-http.sh
+source test/soak/lib/v160-soak-memory.sh
+
+memory_fixture='kubeatlas_go_heap_alloc_bytes 100
+kubeatlas_go_heap_live_bytes 80
+kubeatlas_go_heap_goal_bytes 160
+kubeatlas_go_heap_free_bytes 20
+kubeatlas_go_heap_released_bytes 40
+kubeatlas_go_heap_unused_bytes 10
+kubeatlas_go_heap_stacks_bytes 5
+kubeatlas_go_runtime_total_bytes 200
+kubeatlas_go_gc_cycles_total 0
+unrelated_series{label="not-retained"} 42'
+memory_sample=$(v160_soak_memory_json "${memory_fixture}")
+jq -e '. == {heap_alloc_bytes:100,heap_live_bytes:80,heap_goal_bytes:160,
+  heap_free_bytes:20,heap_released_bytes:40,heap_unused_bytes:10,
+  heap_stacks_bytes:5,runtime_total_bytes:200,gc_cycles_total:0}' \
+  <<<"${memory_sample}" >/dev/null
+for invalid in \
+  "$(grep -v '^kubeatlas_go_heap_live_bytes ' <<<"${memory_fixture}")" \
+  "${memory_fixture}"$'\nkubeatlas_go_heap_live_bytes 80' \
+  "${memory_fixture/heap_live_bytes 80/heap_live_bytes NaN}" \
+  "${memory_fixture/heap_live_bytes 80/heap_live_bytes -1}"; do
+  if v160_soak_memory_json "${invalid}" >/dev/null 2>&1; then
+    echo 'soak memory observation accepted missing, duplicate, or invalid data' >&2
+    exit 1
+  fi
+done
 
 event_with_details=$(v160_soak_event_json app-restart pass 2 \
   '{"before_pod_uid":"pod-before","after_pod_uid":"pod-after"}')

@@ -58,7 +58,17 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	g, err := s.store.Snapshot(r.Context())
+	// Namespace exports must not materialize unrelated resource payloads.
+	// ToDOTOptions already excludes edges unless both endpoints are visible,
+	// exactly the GetNamespaceSubgraph contract. Cluster exports still use
+	// the complete snapshot and the existing rendering/node-limit guards.
+	var g *graph.Graph
+	var err error
+	if namespace == "" {
+		g, err = s.store.Snapshot(r.Context())
+	} else {
+		g, err = s.store.GetNamespaceSubgraph(r.Context(), namespace, nil)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
 		return

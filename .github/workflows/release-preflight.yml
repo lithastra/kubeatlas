@@ -37,6 +37,8 @@ on:
       - 'test/verify/image-attestations.sh'
       - 'test/verify/sign-core-artifact.sh'
       - 'test/verify/operability-contract.sh'
+      - 'test/verify/anonymous_helm*.py'
+      - 'test/verify/v160-upgrade-recovery.sh'
       - 'test/verify/public-clean-cluster.sh'
   push:
     branches: [main]
@@ -69,6 +71,8 @@ on:
       - 'test/verify/image-attestations.sh'
       - 'test/verify/sign-core-artifact.sh'
       - 'test/verify/operability-contract.sh'
+      - 'test/verify/anonymous_helm*.py'
+      - 'test/verify/v160-upgrade-recovery.sh'
       - 'test/verify/public-clean-cluster.sh'
 
 permissions:

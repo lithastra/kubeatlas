@@ -245,7 +245,17 @@ func (s *Store) ListEdges(_ context.Context, id string, dir graph.Direction) ([]
 // Snapshot returns a consistent point-in-time copy of the entire
 // graph. Resources and edges are copied; callers are free to mutate
 // the returned slices.
-func (s *Store) Snapshot(_ context.Context) (*graph.Graph, error) {
+func (s *Store) Snapshot(ctx context.Context) (*graph.Graph, error) {
+	return s.snapshot(ctx, true)
+}
+
+// SnapshotMetadata preserves all graph metadata without retaining Raw payloads
+// in the returned resource copies. It never clears Raw on the stored objects.
+func (s *Store) SnapshotMetadata(ctx context.Context) (*graph.Graph, error) {
+	return s.snapshot(ctx, false)
+}
+
+func (s *Store) snapshot(_ context.Context, includeRaw bool) (*graph.Graph, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	g := &graph.Graph{
@@ -253,6 +263,9 @@ func (s *Store) Snapshot(_ context.Context) (*graph.Graph, error) {
 		Edges:     make([]graph.Edge, 0),
 	}
 	for _, r := range s.resources {
+		if !includeRaw {
+			r.Raw = nil
+		}
 		g.Resources = append(g.Resources, r)
 	}
 	for _, peers := range s.outgoing {

@@ -88,8 +88,9 @@ var topLevelKinds = map[string]bool{
 
 // DetectOrphans walks the graph and returns every resource that is
 // either a non-top-level kind with zero incoming edges or a Pod
-// without an OwnerReference. Result order matches Snapshot's
-// resource order so reports stay diffable across runs.
+// without an OwnerReference. Resource enumeration is scoped at the store;
+// incoming-edge checks remain global so a cross-namespace reference still
+// prevents an object from being classified as orphaned.
 //
 // Tier 1 cost is O(R) where R is the resource count; the in-memory
 // store's ListIncoming is O(1) per call. On Tier 2 the same
@@ -98,16 +99,12 @@ var topLevelKinds = map[string]bool{
 // cluster sweeps is measured in single-digit milliseconds even on
 // a 5K-resource graph, well below the API request budget.
 func DetectOrphans(ctx context.Context, store graph.GraphStore, opts OrphanOptions) ([]OrphanReport, error) {
-	snap, err := store.Snapshot(ctx)
+	resources, err := store.ListResources(ctx, graph.Filter{Namespace: opts.Namespace})
 	if err != nil {
 		return nil, err
 	}
 	out := make([]OrphanReport, 0)
-	for _, r := range snap.Resources {
-		if opts.Namespace != "" && r.Namespace != opts.Namespace {
-			continue
-		}
-
+	for _, r := range resources {
 		// Pods are leaves — they are the *targets* of OWNS edges
 		// (their owner emits the edge), so a healthy Pod always
 		// has zero incoming OWNS edges. A no-owner Pod is its
