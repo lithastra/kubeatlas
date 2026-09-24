@@ -27,6 +27,11 @@ Before building, compare the final candidate with the completed-soak commit:
 - Only `version` and `appVersion` may change in `helm/kubeatlas/Chart.yaml`.
 - Release notes and documentation, including generated versioned documentation
   and documentation navigation/configuration, may change.
+- The release owner also approved the test-only correction in `phase2.sh`
+  and its Deployment-Pod selection helper/regression test: historical snapshot
+  Jobs must not be mistaken for replacement application Pods. Recovery
+  deadlines and runtime behavior remain unchanged. This is not a change to
+  the original 72-hour runner or its evidence verifier.
 - Application/CLI/frontend code, dependency locks, migrations, Chart templates
   and values, resource profiles, database recipe, build/publishing workflows,
   and the existing 72-hour runner/verifiers must remain byte-identical.

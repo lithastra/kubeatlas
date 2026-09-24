@@ -45,6 +45,10 @@
 
 set -euo pipefail
 
+VERIFY_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=test/verify/lib/deployment-pod.sh
+source "${VERIFY_DIR}/lib/deployment-pod.sh"
+
 NS="${KUBEATLAS_NAMESPACE:-kubeatlas}"
 RELEASE="${KUBEATLAS_RELEASE:-kubeatlas}"
 DEPLOY="${KUBEATLAS_RELEASE:-kubeatlas}"
@@ -137,10 +141,9 @@ kubeatlas_curl() {
 wait_for_pod_ready() {
   local timeout=$1
   local deadline=$((SECONDS + timeout))
+  local ready_pod
   while (( SECONDS < deadline )); do
-    if kubectl get pod -n "${NS}" -l "app.kubernetes.io/name=${RELEASE}" \
-        -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null \
-        | grep -qw "True"; then
+    if ready_pod=$(kubeatlas_ready_deployment_pod "${NS}" "${DEPLOY}") && [[ -n "${ready_pod}" ]]; then
       return 0
     fi
     sleep 1
@@ -158,17 +161,7 @@ wait_for_replacement_pod_ready() {
   local deadline=$((SECONDS + timeout))
   local replacement_pod
   while (( SECONDS < deadline )); do
-    replacement_pod=$(kubectl get pod -n "${NS}" \
-      -l "app.kubernetes.io/name=${RELEASE}" -o json 2>/dev/null \
-      | jq -r --arg old_pod "${old_pod}" '
-          [.items[]
-            | select(.metadata.name != $old_pod)
-            | select(any(.status.conditions[]?;
-                .type == "Ready" and .status == "True"))]
-          | sort_by(.metadata.creationTimestamp)
-          | last
-          | .metadata.name // empty')
-    if [[ -n "${replacement_pod}" ]]; then
+    if replacement_pod=$(kubeatlas_ready_deployment_pod "${NS}" "${DEPLOY}" "${old_pod}") && [[ -n "${replacement_pod}" ]]; then
       printf '%s\n' "${replacement_pod}"
       return 0
     fi
@@ -185,6 +178,7 @@ require_cmd helm
 require_cmd jq
 require_cmd curl
 pass "kubectl + helm + jq + curl on PATH"
+bash "${VERIFY_DIR}/deployment-pod-selection-test.sh"
 
 step "preflight: kubeatlas Pod is initially Ready"
 wait_for_pod_ready 30
@@ -233,8 +227,7 @@ else
   pass "pre-restart cluster resources: ${pre_resources}"
 
   step "persistence: delete kubeatlas Pod, measure restart budget"
-  old_pod=$(kubectl get pod -n "${NS}" -l "app.kubernetes.io/name=${RELEASE}" \
-    -o jsonpath='{.items[0].metadata.name}')
+  old_pod=$(kubeatlas_ready_deployment_pod "${NS}" "${DEPLOY}")
   [[ -n "${old_pod}" ]] || fail "no Pod found"
   # The port-forward we opened in preflight binds to the soon-to-be-
   # killed Pod. Stop it before deletion and reopen against the exact

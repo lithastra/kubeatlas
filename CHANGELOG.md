@@ -38,7 +38,8 @@ fixes bump the patch.
   v1.5.2 upgrade/restore/cleanup drill and independent v2 verification. Its
   three performance rows passed across 900 endpoint requests.
 - The release owner approved a separate one-hour functional validation for
-  the subsequent release-metadata/documentation-only promotion. That result
+  the subsequent release-metadata/documentation promotion and the explicitly
+  approved test-only Deployment-Pod selection correction. That result
   must identify its own commit and images; it must not be described as a
   72-hour run of the final metadata commit. See the release-functional
   procedure and release evidence for its actual status.
