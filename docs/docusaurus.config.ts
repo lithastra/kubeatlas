@@ -41,7 +41,10 @@ const config: Config = {
           lastVersion: 'current',
           versions: {
             current: {
-              label: 'Next (v1.6)',
+              label: 'Next',
+            },
+            '1.6.0': {
+              label: '1.6.0 (release candidate)',
             },
           },
         },
