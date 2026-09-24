@@ -60,6 +60,25 @@ The graph state is derived as follows:
 A quiet cluster remains `synced`: freshness comes from a read-only API probe,
 not from how recently a resource happened to change.
 
+### Resource processing lag
+
+`synced` and `/readyz` do not prove that every queued informer event has
+reached the graph. Zero snapshot drops or write failures do not prove this
+either: resource writes precede the asynchronous snapshot queue. When testing
+change visibility, check that a known resource version reaches the graph
+within the declared deadline, including across a resync cycle.
+
+By default, informers replay their local cache every ten minutes. A replay
+of an already-persisted UID and resource version no longer rewrites the
+resource or emits duplicate snapshot history. This is a per-process
+optimization, not durable event deduplication across application restarts.
+Failed resource writes remain eligible for retry, and unchanged resources
+still re-derive edges so late selector targets and failed edge writes can
+be reconciled. Resync is not an API relist and does not replace watch recovery.
+
+Retain delayed-change evidence separately from snapshot queue metrics. Do not
+disable resync or extend a failed visibility deadline merely to pass a test.
+
 ## Alert examples
 
 These are plain PromQL examples, not installed alert rules. Adjust durations
