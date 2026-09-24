@@ -9,6 +9,10 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 RELEASE_TAG=${KUBEATLAS_RELEASE_TAG:-}
 RELEASE_COMMIT=${KUBEATLAS_RELEASE_COMMIT:-}
+RELEASE_SOURCE_DIR=${KUBEATLAS_RELEASE_SOURCE_DIR:-$ROOT_DIR}
+EXPECTED_APP_DIGEST=${KUBEATLAS_EXPECTED_APP_DIGEST:-}
+EXPECTED_DATABASE_DIGEST=${KUBEATLAS_EXPECTED_DATABASE_DIGEST:-}
+EXPECTED_CHART_DIGEST=${KUBEATLAS_EXPECTED_CHART_DIGEST:-}
 EVIDENCE_FILE=${KUBEATLAS_ARTIFACT_EVIDENCE_FILE:-/tmp/kubeatlas-core-artifact-audit.json}
 RELEASE_REPOSITORY=ghcr.io/lithastra/kubeatlas
 CHART_REPOSITORY=ghcr.io/lithastra/charts/kubeatlas
@@ -34,13 +38,17 @@ done
 [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]] ||
   fail "invalid release tag"
 [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "invalid release commit"
+for expected_digest in "$EXPECTED_APP_DIGEST" "$EXPECTED_DATABASE_DIGEST" "$EXPECTED_CHART_DIGEST"; do
+  [[ -z "$expected_digest" || "$expected_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    fail "invalid expected digest"
+done
 
 RELEASE_VERSION=${RELEASE_TAG#v}
 RELEASE_REF="refs/tags/${RELEASE_TAG}"
 CERTIFICATE_IDENTITY="https://github.com/${EXPECTED_GITHUB_REPOSITORY}/.github/workflows/release.yml@${RELEASE_REF}"
 
 # shellcheck disable=SC1091
-source "$ROOT_DIR/images/postgres-age/image.env"
+source "$RELEASE_SOURCE_DIR/images/postgres-age/image.env"
 DATABASE_TAGGED_REF="${POSTGRES_AGE_REPOSITORY}:${POSTGRES_AGE_TAG}"
 APP_TAGGED_REF="${RELEASE_REPOSITORY}:${RELEASE_VERSION}"
 CHART_TAGGED_REF="${CHART_REPOSITORY}:${RELEASE_VERSION}"
@@ -53,6 +61,12 @@ write_evidence() {
     --arg status "$AUDIT_STATUS" \
     --arg releaseTag "$RELEASE_TAG" \
     --arg releaseCommit "$RELEASE_COMMIT" \
+    --arg draftReleaseID "${KUBEATLAS_DRAFT_RELEASE_ID:-}" \
+    --arg tagObject "${KUBEATLAS_RELEASE_TAG_OBJECT:-}" \
+    --arg auditToolsCommit "${GITHUB_SHA:-}" \
+    --arg expectedAppDigest "$EXPECTED_APP_DIGEST" \
+    --arg expectedDatabaseDigest "$EXPECTED_DATABASE_DIGEST" \
+    --arg expectedChartDigest "$EXPECTED_CHART_DIGEST" \
     --arg certificateIdentity "$CERTIFICATE_IDENTITY" \
     --arg oidcIssuer "$EXPECTED_ISSUER" \
     --arg githubRepository "$EXPECTED_GITHUB_REPOSITORY" \
@@ -65,7 +79,9 @@ write_evidence() {
     --arg chartDigest "$CHART_DIGEST" '
       {
         status: $status,
-        release: {tag: $releaseTag, commit: $releaseCommit},
+        release: {tag: $releaseTag, commit: $releaseCommit, draftReleaseID: $draftReleaseID, tagObject: $tagObject},
+        auditToolsCommit: $auditToolsCommit,
+        expectedDigests: {applicationImage: $expectedAppDigest, databaseImage: $expectedDatabaseDigest, helmChart: $expectedChartDigest},
         signer: {
           certificateIdentity: $certificateIdentity,
           oidcIssuer: $oidcIssuer,
@@ -124,6 +140,13 @@ for digest in "$APP_DIGEST" "$DATABASE_DIGEST" "$CHART_DIGEST"; do
 done
 write_evidence
 
+[[ -z "$EXPECTED_APP_DIGEST" || "$APP_DIGEST" == "$EXPECTED_APP_DIGEST" ]] ||
+  fail "application tag no longer resolves to the expected digest"
+[[ -z "$EXPECTED_DATABASE_DIGEST" || "$DATABASE_DIGEST" == "$EXPECTED_DATABASE_DIGEST" ]] ||
+  fail "database tag no longer resolves to the expected digest"
+[[ -z "$EXPECTED_CHART_DIGEST" || "$CHART_DIGEST" == "$EXPECTED_CHART_DIGEST" ]] ||
+  fail "chart tag no longer resolves to the expected digest"
+
 verify_signature() {
   local artifact_repository
   local artifact_digest
@@ -155,8 +178,7 @@ bash "$ROOT_DIR/test/verify/image-attestations.sh" \
 docker pull --platform linux/amd64 \
   "${POSTGRES_AGE_REPOSITORY}@${DATABASE_DIGEST}" >/dev/null
 
-helm pull "oci://${CHART_REPOSITORY}" \
-  --version "$RELEASE_VERSION" \
+helm pull "oci://${CHART_REPOSITORY}@${CHART_DIGEST}" \
   --destination "$WORK_DIR"
 mkdir -p "$WORK_DIR/chart"
 tar -xzf "$WORK_DIR/kubeatlas-${RELEASE_VERSION}.tgz" -C "$WORK_DIR/chart"

@@ -21,6 +21,7 @@ require_text() {
 }
 
 RELEASE_WORKFLOW=.github/workflows/release.yml
+RECOVERY_WORKFLOW=.github/workflows/release-artifact-audit.yml
 PREFLIGHT_WORKFLOW=.github/workflows/release-preflight.yml
 SIGN_SCRIPT=test/verify/sign-core-artifact.sh
 AUDIT_SCRIPT=test/verify/core-artifact-audit.sh
@@ -42,7 +43,25 @@ require_text "$RELEASE_WORKFLOW" 'name: Anonymous signed core artifacts on clean
 require_text "$RELEASE_WORKFLOW" 'if: always()'
 require_text "$RELEASE_WORKFLOW" 'bash test/verify/core-artifact-audit.sh'
 require_text "$RELEASE_WORKFLOW" 'retention-days: 30'
-require_text "$RELEASE_WORKFLOW" '.draft == true'
+require_text "$RELEASE_WORKFLOW" 'verifyDraftRelease'
+require_text "$RELEASE_WORKFLOW" 'test "$DRAFT_COMMIT" = "$RELEASE_COMMIT"'
+require_text "$RELEASE_WORKFLOW" '[[ "$DRAFT_RELEASE_ID" =~ ^[1-9][0-9]*$ ]]'
+require_text .github/scripts/release-draft.cjs 'github.paginate(github.rest.repos.listReleases'
+require_text .github/scripts/release-draft.cjs 'release_id: candidate.id'
+require_text .github/scripts/release-draft.cjs 'release.draft === true && release.published_at === null'
+if grep -Fq '/releases/tags/' "$RELEASE_WORKFLOW" "$RECOVERY_WORKFLOW"; then
+  fail "draft gates must not use the published-only release-by-tag endpoint"
+fi
+if grep -Eq 'packages: write|id-token: write|docker/login-action|cosign sign|helm push|goreleaser-action' "$RECOVERY_WORKFLOW"; then
+  fail "audit-only recovery must not publish or sign artifacts"
+fi
+require_text "$RECOVERY_WORKFLOW" "github.ref == 'refs/heads/main'"
+require_text "$RECOVERY_WORKFLOW" 'validateAuditInputs(inputs)'
+require_text "$RECOVERY_WORKFLOW" 'KUBEATLAS_EXPECTED_APP_DIGEST: ${{ inputs.app_digest }}'
+require_text "$RECOVERY_WORKFLOW" 'KUBEATLAS_EXPECTED_DATABASE_DIGEST: ${{ inputs.database_digest }}'
+require_text "$RECOVERY_WORKFLOW" 'KUBEATLAS_EXPECTED_CHART_DIGEST: ${{ inputs.chart_digest }}'
+require_text "$RECOVERY_WORKFLOW" 'bash test/verify/core-artifact-audit.sh'
+require_text "$PREFLIGHT_WORKFLOW" 'node --test .github/scripts/release-draft.test.cjs'
 
 require_text "$SIGN_SCRIPT" 'cosign sign --yes'
 require_text "$SIGN_SCRIPT" '--certificate-identity'
@@ -56,6 +75,10 @@ require_text "$SIGN_SCRIPT" 'release-commit='
 require_text "$AUDIT_SCRIPT" 'KUBEATLAS_REQUIRE_ANONYMOUS'
 require_text "$AUDIT_SCRIPT" 'oras resolve'
 require_text "$AUDIT_SCRIPT" 'cosign verify'
+require_text "$AUDIT_SCRIPT" '"$APP_DIGEST" == "$EXPECTED_APP_DIGEST"'
+require_text "$AUDIT_SCRIPT" '"$DATABASE_DIGEST" == "$EXPECTED_DATABASE_DIGEST"'
+require_text "$AUDIT_SCRIPT" '"$CHART_DIGEST" == "$EXPECTED_CHART_DIGEST"'
+require_text "$AUDIT_SCRIPT" 'helm pull "oci://${CHART_REPOSITORY}@${CHART_DIGEST}"'
 require_text "$AUDIT_SCRIPT" 'image.digest='
 require_text "$AUDIT_SCRIPT" 'docker pull --platform linux/amd64'
 require_text "$ATTESTATION_SCRIPT" 'https://spdx.dev/Document'

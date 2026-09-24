@@ -6,6 +6,19 @@ on:
     branches: [main]
 
 jobs:
+  release-workflow-tests:
+    name: Release workflow regression tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - run: node --test .github/scripts/release-draft.test.cjs
+      - run: bash test/verify/artifact-trust-contract.sh
+
   non-ascii-check:
     name: No non-ASCII in source
     runs-on: ubuntu-latest
