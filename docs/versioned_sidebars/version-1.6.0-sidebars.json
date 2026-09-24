@@ -26,9 +26,7 @@
       "label": "Operations",
       "collapsed": false,
       "items": [
-        "operations/runbooks",
-        "operations/v160-performance-soak",
-        "operations/v160-release-functional"
+        "operations/runbooks"
       ]
     },
     {

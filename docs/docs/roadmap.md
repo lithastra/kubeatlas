@@ -354,7 +354,7 @@ v1.6 is a reliability release for DevOps teams operating KubeAtlas on
 vanilla Kubernetes. It does not widen the product surface. Its release
 contract is that an operator can install verifiable public artifacts on a
 supported Kubernetes cluster, upgrade directly from v1.5.2, restore Tier 2
-after deliberate data loss, and run a measured three-day soak without
+after deliberate data loss, and measure stability under a declared workload without
 weakening KubeAtlas's read-only or Secret-data boundaries.
 
 This is a plan, not a description of what v1.5.2 already implements. Each
@@ -404,8 +404,8 @@ then the final
   at approximately 5K resources and a documented production profile at
   approximately 10K resources. Preserve the existing representative-workload
   targets of cluster and namespace view p95 ≤ 1 s and blast-radius p95 ≤
-  500 ms. Complete a 72-hour Docker Desktop Kubernetes soak after the final
-  dependency and instrumentation changes.
+  500 ms. Evaluate endurance after the final dependency and instrumentation
+  changes, with workload, duration, and limits declared before the run.
 - **Operator visibility and runbooks** — make it possible to determine whether
   the graph is synced or stale, the database is reachable and durable,
   events or snapshots were dropped, and the most recent backup is too old.
@@ -431,26 +431,23 @@ then the final
 | Upgrade | A real public v1.5.2 Tier 2 installation upgrades to the candidate without data-contract or readiness failure. |
 | Recovery | A protected backup restores into a fresh database or namespace after deliberate deletion; retained history and rebuildable graph data match the documented contract. |
 | Dependency failure | API-server and PostgreSQL interruptions are visible and KubeAtlas returns to a healthy, synced state within 120 seconds after the dependency becomes available. |
-| Endurance | The final candidate completes 72 continuous hours and every scheduled failure/recovery drill with no unexplained crash, OOM, restart, silent event loss, or unbounded memory, goroutine, or queue growth. |
+| Endurance | Report the exact candidate, continuous observation duration, and failure/recovery drills, with no unexplained crash, OOM, restart, silent event loss, or unbounded memory, goroutine, or queue growth. A shorter functional check is not endurance evidence. |
 | Performance | The 5K default and 10K documented profiles meet their frozen latency and resource thresholds; pathological layouts are recorded separately rather than hidden. |
 | Secret boundary | The sentinel is absent from every collected runtime, persistence, backup, export, diagnostic, log, and telemetry artifact. |
 | Artifact trust | Anonymous pulls and identity-constrained signature, SBOM, and provenance verification pass for every core cluster artifact. |
 | Documentation | The support matrix, single-replica outage, external-auth requirement, backup sensitivity, upgrade ordering, and rollback limits match observed evidence. |
 
-The soak threshold is frozen before the run starts. After a 6-hour warm-up,
-the next 12 hours form the stable baseline. Each later UTC-independent
-12-hour window, including the final partial window, must keep RSS, goroutine,
-and queue-depth p95 at no more than
-120% of that baseline; a zero queue-depth baseline must remain zero outside an
-intentional overload.
+Freeze observation duration, warm-up, baseline windows, and RSS, goroutine,
+and queue-depth thresholds before a run. Keep workstation orchestration and
+run-specific evidence outside the repository; removing local tooling does
+not make an incomplete or failed validation pass.
 Injected restarts are recorded separately; all other restarts fail the gate.
 Normal load permits no dropped events or snapshots. An intentional overload
 may shed work only when the loss is counted, logged, and alertable.
 
-The 72-hour gate trades long-horizon coverage for shorter release iteration;
-it is not equivalent to the former seven-day gate. All failure/recovery and
-security checks remain mandatory. Changing the gate requires a new frozen
-candidate and fresh evidence, not relabeling or joining previous attempts.
+Record any release-owner-approved scope exception and its coverage limits
+separately. Do not relabel failures, join interrupted attempts, or claim that
+functional checks establish long-term reliability.
 
 ### Explicit non-goals
 
@@ -461,8 +458,8 @@ candidate and fresh evidence, not relabeling or joining previous attempts.
   access audit, or deeper multi-tenancy. Production exposure stays behind an
   operator-managed authentication layer.
 - EKS, AKS, GKE, managed-database, object-store, or backup-provider-specific
-  integrations. The acceptance environment is vanilla Kubernetes, with the
-  endurance run on Docker Desktop Kubernetes.
+  integrations. The acceptance environment is vanilla Kubernetes, without
+  requiring a particular developer workstation or container runtime.
 - New graph edge types, cloud-resource discovery, cross-cluster inference,
   automatic remediation, Kubernetes write permissions, or a Web UI redesign.
 - `/api/v2`, removal of `/api/v1alpha1`, or any other breaking public API

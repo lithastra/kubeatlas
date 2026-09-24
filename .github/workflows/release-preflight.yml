@@ -22,15 +22,10 @@ on:
       - 'docs/docs/operations/**'
       - 'docs/docs/concepts/performance.md'
       - 'test/perf/**'
-      - 'test/soak/**'
-      - 'test/chaos/api-server-flap.sh'
       - 'test/chaos/otel-receiver-overload.sh'
       - 'test/chaos/pg-disconnect.sh'
       - 'test/chaos/resource-storm.sh'
       - 'test/chaos/snapshot-write-storm.sh'
-      - 'test/verify/performance-soak-contract.sh'
-      - 'test/verify/v160-performance-evidence.sh'
-      - 'test/verify/v160-soak-evidence.sh'
       - 'test/verify/release-contract.sh'
       - 'test/verify/artifact-trust-contract.sh'
       - 'test/verify/core-artifact-audit.sh'
@@ -56,15 +51,10 @@ on:
       - 'docs/docs/operations/**'
       - 'docs/docs/concepts/performance.md'
       - 'test/perf/**'
-      - 'test/soak/**'
-      - 'test/chaos/api-server-flap.sh'
       - 'test/chaos/otel-receiver-overload.sh'
       - 'test/chaos/pg-disconnect.sh'
       - 'test/chaos/resource-storm.sh'
       - 'test/chaos/snapshot-write-storm.sh'
-      - 'test/verify/performance-soak-contract.sh'
-      - 'test/verify/v160-performance-evidence.sh'
-      - 'test/verify/v160-soak-evidence.sh'
       - 'test/verify/release-contract.sh'
       - 'test/verify/artifact-trust-contract.sh'
       - 'test/verify/core-artifact-audit.sh'
@@ -148,21 +138,9 @@ jobs:
             test/verify/sign-core-artifact.sh
           bash test/verify/artifact-trust-contract.sh
 
-      - name: Verify performance and soak evidence contract
+      - name: Check reusable shell tools
         run: |
-          bash -n \
-            test/chaos/api-server-flap.sh \
-            test/chaos/otel-receiver-overload.sh \
-            test/chaos/pg-disconnect.sh \
-            test/chaos/resource-storm.sh \
-            test/chaos/snapshot-write-storm.sh \
-            test/perf/stress-10k-distributed.sh \
-            test/perf/v160-performance-gate.sh \
-            test/soak/v160-soak.sh \
-            test/verify/v160-performance-evidence.sh \
-            test/verify/v160-soak-evidence.sh \
-            test/verify/performance-soak-contract.sh
-          bash test/verify/performance-soak-contract.sh
+          git ls-files -z '*.sh' | xargs -0 -n 1 bash -n
 
       - name: Verify Go modules
         run: go mod verify

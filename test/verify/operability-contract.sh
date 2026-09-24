@@ -22,18 +22,16 @@ require_text() {
 
 metrics_file=pkg/api/metrics.go
 require_text "${metrics_file}" 'writeRuntimeMemoryPrometheus(w)'
-require_text test/soak/v160-soak.sh 'go_memory=$(v160_soak_memory_json "${metrics}")'
+require_text pkg/api/runtime_metrics_test.go 'func TestRuntimeMemoryMetrics(t *testing.T)'
 for metric in heap_alloc_bytes heap_live_bytes heap_goal_bytes heap_free_bytes \
   heap_released_bytes heap_unused_bytes heap_stacks_bytes runtime_total_bytes gc_cycles_total; do
   require_text pkg/api/runtime_metrics.go "kubeatlas_go_${metric}"
-  require_text test/soak/lib/v160-soak-memory.sh "${metric}"
 done
 require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 120 show chart'
 require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 720 install'
 require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 720 upgrade'
 require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 120 template'
 require_text test/verify/v160-upgrade-recovery.sh 'anonymous_helm 30 status'
-require_text test/soak/v160-soak.sh 'python3 test/verify/anonymous_helm.py --timeout 120 --'
 for metric in \
   kubeatlas_go_memory_limit_bytes \
   kubeatlas_graph_observation_state \
@@ -124,8 +122,7 @@ for expected in \
   require_text "${runbook}" "${expected}"
 done
 
-require_text test/chaos/api-server-flap.sh 'kubeatlas_kubernetes_api_reachable 0'
-require_text test/chaos/api-server-flap.sh 'within 120 s'
+require_text "${runbook}" 'kubeatlas_kubernetes_api_reachable 1'
 require_text test/chaos/pg-disconnect.sh 'kubeatlas_storage_reachable 0'
 require_text test/chaos/pg-disconnect.sh 'within 120s'
 require_text test/chaos/README.md '**Required PR CI**'

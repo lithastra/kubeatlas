@@ -37,8 +37,15 @@
 #   SKIP_FIXTURE     "1" to skip the stress-fixture load (clusters
 #                    are still created and kubeatlas still starts).
 #                    Useful for quick smoke runs.
+#
+# Prerequisites: Bash 4+, docker, kind, kubectl, curl, jq, and go on PATH.
 
 set -euo pipefail
+
+if (( BASH_VERSINFO[0] < 4 )); then
+  echo 'Bash 4 or later is required for this fixture.' >&2
+  exit 1
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATE_DIR="${STATE_DIR:-/tmp/kubeatlas-fixture}"
@@ -52,7 +59,6 @@ CLUSTERS=(prod staging)
 # "exposing port ... -> 127.0.0.1:0". The ports stay constant so the
 # kubeconfig exported in step 2 is stable across re-runs.
 declare -A CLUSTER_PORTS=( [prod]=16443 [staging]=16444 )
-
 
 for cmd in docker kind kubectl curl jq go; do
   command -v "${cmd}" >/dev/null || { echo "missing required tool: ${cmd}" >&2; exit 1; }

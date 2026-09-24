@@ -153,14 +153,10 @@ Operator response:
 4. Escalate if both signals have not recovered within 120 seconds after the
    API server is responsive.
 
-The disposable-kind drill is:
-
-```bash
-bash test/chaos/api-server-flap.sh
-```
-
-KubeAtlas must run outside the kind control-plane container so `/metrics`
-remains reachable while the container is stopped.
+For a drill, use the distribution's supported control-plane interruption
+procedure in a disposable environment. Confirm the target and recovery
+procedure first. Keep `/metrics` reachable independently of the API server;
+workstation-specific control-plane orchestration is not part of this repository.
 
 ## PostgreSQL interruption
 
@@ -218,7 +214,8 @@ capability retain their own snapshot behavior, including visibility restrictions
 A namespace filter is not permission to omit cross-namespace dependencies.
 Compare identical request mixes and allow natural GC and
 scavenging to run. A short reduction in peak RSS is diagnostic evidence, not a
-replacement for the complete 72-hour gate.
+replacement for a completed endurance evaluation under a frozen workload
+and declared limits.
 
 - Pull requests run the required frozen Kubernetes 1.34, 1.35, and 1.36 Tier 2
   matrix, plus required snapshot-overload evidence.

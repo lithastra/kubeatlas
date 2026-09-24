@@ -81,6 +81,20 @@ go run ./cmd/kubeatlas/ -once -level=namespace -namespace=petclinic            >
 bash test/verify/phase0.sh
 ```
 
+## Repository tooling
+
+Commit reusable build, test, fixture, and release tools with documented
+prerequisites and configurable inputs. Bash and Python are valid test tools,
+but a script must not depend on a contributor's home directory, private
+files, or a particular workstation. Install its declared tools on `PATH`;
+the multi-cluster fixture requires Bash 4 or later.
+
+Keep workstation launchers, one-off release procedures, and run evidence
+outside the repository. The root `.evidence/`, `release-evidence/`, and
+`.local-validation/` directories are ignored as a safety net, not as a place
+to publish private data. Never commit Secret values, kubeconfigs, credentials,
+or database backups. Run destructive fixtures only in disposable clusters.
+
 ## Run modes
 
 The CLI has four modes:

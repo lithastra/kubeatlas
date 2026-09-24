@@ -30,10 +30,9 @@ the tools above instead of replacing them.
 ## Project status
 
 **v1.6.0 is in release preparation, not yet published.** Its bounded target
-is production operability on vanilla Kubernetes 1.34–1.36. Candidate `1ad2ff4`
-completed performance, a 72-hour soak, and the final upgrade/restore drill;
-the final metadata candidate still needs its separately identified functional
-validation, manual preflight, and public artifact audit. See the
+is production operability on vanilla Kubernetes 1.34–1.36. Release approval
+requires exact-candidate validation, manual preflight, and a public artifact
+audit; local validation results do not establish public availability. See the
 [release process](./release-process.md). Use **1.5.2** for instructions that
 match the latest published artifacts; the 1.6.0 documentation snapshot is a
 release-candidate reference, not a claim of availability.

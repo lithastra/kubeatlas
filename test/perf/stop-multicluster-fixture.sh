@@ -15,7 +15,6 @@ set -euo pipefail
 STATE_DIR="${STATE_DIR:-/tmp/kubeatlas-fixture}"
 CLUSTERS=(prod staging)
 
-
 if [[ -f "${STATE_DIR}/kubeatlas.pid" ]]; then
   pid=$(cat "${STATE_DIR}/kubeatlas.pid")
   if kill -0 "${pid}" 2>/dev/null; then

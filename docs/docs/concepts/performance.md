@@ -94,10 +94,11 @@ All three rows gate cluster-view p95 at 1 second and blast-radius p95 at 500
 milliseconds. Each endpoint receives at least 100 samples, and any HTTP
 failure fails the row even when it would fall below the p95 rank. Evidence also
 records the clean Git commit, immutable application and PostgreSQL image IDs,
-rendered resource settings and Go memory limit, exact fixture counts, Kubernetes and Docker
-Desktop versions, host capacity, RSS, restarts, and OOM state.
+rendered resource settings and Go memory limit, exact fixture counts, Kubernetes
+and container-runtime versions, host capacity, RSS, restarts, and OOM state.
 
-The scripts and synthetic CI contract are present on `main`; that is not a
-claim that the final v1.6 measurements or 72-hour run have completed. Follow
-the [v1.6 performance and soak runbook](../operations/v160-performance-soak.md)
-and retain all three JSON rows for independent verification.
+The reusable benchmark tools and resource profiles are present on `main`;
+that is not a claim that final release validation has passed. Keep
+workstation-specific orchestration and run evidence outside the source tree.
+Retain all three measurements with their inputs, failures, and artifact
+identities so another reviewer can independently assess the results.

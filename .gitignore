@@ -51,6 +51,8 @@ bin/
 /dist/
 # Local release-gate evidence. Preserve it externally; never commit it.
 /.evidence/
+/release-evidence/
+/.local-validation/
 
 # Embedded Web UI bundle. The directory is populated only at release
 # time (Dockerfile / goreleaser before-hook) when building with

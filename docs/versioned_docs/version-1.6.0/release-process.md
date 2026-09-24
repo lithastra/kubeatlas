@@ -27,7 +27,7 @@ and Tier 2 installs. See [Signals, alerts, and recovery](./operations/runbooks.m
 | PostgreSQL + AGE image | `16.15-age1.6.0-rc0.2` | Immutable recipe, per-platform attestations, exact-release signing |
 | Helm chart | `1.6.0` | Matching release contract, anonymous pull and clean Tier 1/Tier 2 installs |
 | Documentation | `1.6.0` release-candidate snapshot | Production build without broken links; do not promote unpublished install commands |
-| Validation evidence | Historical `1ad2ff4` plus final metadata candidate | Separate 72-hour/performance and one-hour functional identities, as described below |
+| Validation evidence | Exact candidate and immutable runtime images | Independently reviewed functional, performance, and recovery results; record endurance duration and any approved scope limits separately |
 
 The rule packs, Action, Krew, Headlamp, and Backstage retain independent
 versioning. Record their v1.6 compatibility only after testing the real
@@ -99,9 +99,8 @@ The release evidence must describe each artifact independently:
   database-image SPDX SBOM and SLSA provenance statements.
 - Configuration is not public evidence. Do not call a v1.6 artifact signed or
   attested until its tag workflow and anonymous clean-cluster audit pass for
-  the exact final candidate commit and published digests. The historical
-  72-hour evidence and the explicitly approved metadata-promotion functional
-  evidence have separate identities; neither substitutes for this public audit.
+  the exact final candidate commit and published digests. Local functional,
+  performance, and endurance results do not substitute for this public audit.
 - Binary archives remain checksum-verified but unsigned. Their contents are
   not covered by the OCI image signatures.
 
@@ -176,12 +175,11 @@ chart with the verified application-image digest on a clean kind cluster.
 
 1. Freeze the release workflow, runtime images, Chart, dependencies, recovery
    behavior, and instrumentation.
-2. Complete the performance gates and 72 continuous hours on that exact
-   candidate commit. A later change to those surfaces invalidates the run.
-   The one-time v1.6.0 metadata-only exception approved on 2026-09-24 is
-   documented in [One-hour release functional validation](./operations/v160-release-functional.md).
-   It preserves the completed `1ad2ff4` evidence and requires a separate full
-   hour on the final metadata candidate; it does not relax the 72-hour verifier.
+2. Complete the agreed candidate validation and retain its exact commit,
+   images, workload, duration, and acceptance criteria outside the source
+   repository. Record any approved exception and untested scope explicitly.
+   A functional run does not establish endurance. Do not transfer an older
+   candidate's results to changed runtime or dependency surfaces.
 3. Run the manual frozen candidate preflight on the same commit.
 4. Create the signed release tag. The tag workflow publishes the database and
    application image indexes with attestations, creates a draft GitHub Release,

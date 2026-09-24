@@ -29,8 +29,6 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'operations/runbooks',
-        'operations/v160-performance-soak',
-        'operations/v160-release-functional',
       ],
     },
     {
