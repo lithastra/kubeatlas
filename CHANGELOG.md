@@ -5,6 +5,49 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
+## [v1.6.0] — Production operability
+
+### Added
+
+- A frozen vanilla Kubernetes 1.34/1.35/1.36 Tier 2 validation matrix,
+  CloudNativePG 1.30.0 baseline, and a pinned PostgreSQL 16.15 + Apache AGE
+  image recipe. AGE remains explicitly identified as upstream 1.6.0-rc0.
+- Operability evidence for Kubernetes and storage reachability, graph sync,
+  queues, memory, and garbage collection, with installation, diagnosis,
+  backup/restore, and upgrade runbooks.
+- Independent performance and 72-hour soak evidence verification, scheduled
+  failure/recovery exercises, Secret-value sentinel checks, and a destructive
+  restore proof in an isolated disposable namespace.
+- Core OCI signing, per-platform SBOM/provenance verification, and an anonymous
+  clean-cluster release audit. Public trust claims require successful checks
+  of the final published digests; standalone CLI archives remain
+  checksum-verified rather than OCI-signed.
+
+### Fixed
+
+- Reserve Go memory headroom and reduce graph-read allocation pressure.
+- Bound recovery operations and harden validation event serialization,
+  PostgreSQL interruption lifecycle checks, port-forward recovery, and
+  transient security-surface timeout handling.
+- Update affected frontend dependencies to resolve dependency advisories.
+
+### Validation and scope
+
+- Candidate `1ad2ff430b014cd9ddf67e996e448764ed0d3601` passed one complete
+  72-hour Docker Desktop run on September 21–24, 2026, including the final
+  v1.5.2 upgrade/restore/cleanup drill and independent v2 verification. Its
+  three performance rows passed across 900 endpoint requests.
+- The release owner approved a separate one-hour functional validation for
+  the subsequent release-metadata/documentation promotion and the explicitly
+  approved test-only Deployment-Pod selection correction. That result
+  must identify its own commit and images; it must not be described as a
+  72-hour run of the final metadata commit. See the release-functional
+  procedure and release evidence for its actual status.
+- Upgrade validation starts from v1.5.2. Single-replica operation remains the
+  supported scope; high-availability coordination is deferred. The recorded
+  soak had OTel disabled and is not a seven-day endurance or general
+  production-reliability guarantee.
+
 ## [v1.5.2] — Secret data boundary
 
 ### Security

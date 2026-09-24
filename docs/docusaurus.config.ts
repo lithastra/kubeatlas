@@ -43,6 +43,9 @@ const config: Config = {
             current: {
               label: 'Next (v1.6)',
             },
+            '1.6.0': {
+              label: '1.6.0 (release candidate)',
+            },
           },
         },
         blog: false,
