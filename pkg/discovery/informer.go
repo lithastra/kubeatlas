@@ -18,9 +18,8 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
-// DefaultResyncPeriod is the SharedInformerFactory resync interval.
-// Ten minutes is the client-go default: short enough to recover from
-// missed deletes, long enough to avoid hammering the apiserver.
+// DefaultResyncPeriod is KubeAtlas's local-cache replay interval. Resync
+// retries failed writes and re-derives edges; it does not relist the API.
 const DefaultResyncPeriod = 10 * time.Minute
 
 // MinimalCoreGVRs is a small bootstrap set used by the informer when
@@ -98,6 +97,13 @@ type InformerManager struct {
 	broadcaster  Broadcaster
 	snapshotSink SnapshotSink
 	gvrs         []schema.GroupVersionResource
+	resyncPeriod time.Duration
+
+	// Remember only successful resource writes, not merely informer delivery.
+	// Each GVR's handler is serial, but different GVRs run concurrently.
+	// Entries contain identity/version only and are removed on deletion.
+	persistedMu sync.RWMutex
+	persisted   map[resourceWriteKey]resourceWriteVersion
 
 	// kindCacheMu guards kindCache. Each watched GVR runs its own
 	// processorListener goroutine; every event upserts the GVR's
@@ -118,6 +124,17 @@ type InformerManager struct {
 	clusterID string
 }
 
+type resourceWriteKey struct {
+	gvr       schema.GroupVersionResource
+	namespace string
+	name      string
+}
+
+type resourceWriteVersion struct {
+	uid             string
+	resourceVersion string
+}
+
 // InformerOption configures an InformerManager.
 type InformerOption func(*InformerManager)
 
@@ -132,10 +149,10 @@ func WithExtractor(r ExtractorRegistry) InformerOption {
 	return func(m *InformerManager) { m.extractor = r }
 }
 
-// WithBroadcaster wires a Broadcaster (typically pkg/api.WatchHub)
-// that receives one event per K8s add/update/delete after the change
-// is committed to the store. Without this option the informer still
-// drives the store but emits no live updates.
+// WithBroadcaster wires a Broadcaster (typically pkg/api.WatchHub) for
+// resource changes and edge reconciliation. An unchanged resync with no
+// derived edges does not notify clients. Without this option the informer
+// still drives the store but emits no live updates.
 func WithBroadcaster(b Broadcaster) InformerOption {
 	return func(m *InformerManager) { m.broadcaster = b }
 }
@@ -166,45 +183,26 @@ func WithClusterID(id string) InformerOption {
 
 // WithResync overrides the default resync period.
 func WithResync(d time.Duration) InformerOption {
-	return func(m *InformerManager) {
-		m.factory = dynamicinformer.NewDynamicSharedInformerFactory(
-			factoryClient(m.factory), d,
-		)
-	}
-}
-
-// factoryClient pulls the dynamic client back out of an existing
-// factory; used only when WithResync rebuilds the factory after
-// construction.
-func factoryClient(f dynamicinformer.DynamicSharedInformerFactory) dynamic.Interface {
-	type clienter interface {
-		Client() dynamic.Interface
-	}
-	if c, ok := f.(clienter); ok {
-		return c.Client()
-	}
-	// Older controller-runtime versions don't expose Client(); the
-	// constructor path that uses WithResync passes a dynamic.Interface
-	// directly via the factory we just built, so this branch is only
-	// hit on a programming error.
-	return nil
+	return func(m *InformerManager) { m.resyncPeriod = d }
 }
 
 // NewInformerManager constructs an InformerManager using the dynamic
 // client from c. Pass options to override defaults.
 func NewInformerManager(dyn dynamic.Interface, store graph.GraphStore, opts ...InformerOption) *InformerManager {
 	m := &InformerManager{
-		factory:      dynamicinformer.NewDynamicSharedInformerFactory(dyn, DefaultResyncPeriod),
 		store:        store,
 		extractor:    noopRegistry{},
 		broadcaster:  noopBroadcaster,
 		snapshotSink: noopSnapshotSink{},
 		gvrs:         MinimalCoreGVRs,
+		resyncPeriod: DefaultResyncPeriod,
+		persisted:    make(map[resourceWriteKey]resourceWriteVersion),
 		kindCache:    make(map[schema.GroupVersionResource]string),
 	}
 	for _, o := range opts {
 		o(m)
 	}
+	m.factory = dynamicinformer.NewDynamicSharedInformerFactory(dyn, m.resyncPeriod)
 	return m
 }
 
@@ -239,7 +237,7 @@ func (m *InformerManager) Start(ctx context.Context) error {
 		_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc:    func(obj any) { m.handleUpsert(ctx, gvr, obj, graph.EventTypeAdd) },
 			UpdateFunc: func(_, obj any) { m.handleUpsert(ctx, gvr, obj, graph.EventTypeUpdate) },
-			DeleteFunc: func(obj any) { m.handleDelete(ctx, obj) },
+			DeleteFunc: func(obj any) { m.handleDelete(ctx, gvr, obj) },
 		})
 		if err != nil {
 			return fmt.Errorf("register handler for %s: %w", gvr, err)
@@ -267,8 +265,8 @@ func (m *InformerManager) Start(ctx context.Context) error {
 //
 // eventType is graph.EventTypeAdd for the informer's AddFunc (initial
 // list + genuinely-new objects) and graph.EventTypeUpdate for
-// UpdateFunc (modifications + resync re-deliveries) — handed straight
-// to the snapshot sink.
+// UpdateFunc (modifications + resync re-deliveries). Already-persisted
+// versions do not produce resource writes or duplicate history events.
 func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVersionResource, obj any, eventType graph.EventType) {
 	u, ok := toUnstructured(obj)
 	if !ok {
@@ -277,25 +275,44 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	}
 	r := UnstructuredToResource(u, m.kindFor(gvr, u))
 	r.ClusterID = m.clusterID
-	if err := m.store.UpsertResource(ctx, r); err != nil {
-		slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
-		return
+	key := resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name}
+	version := resourceWriteVersion{uid: string(r.UID), resourceVersion: r.ResourceVersion}
+	versioned := version.uid != "" && version.resourceVersion != ""
+	m.persistedMu.RLock()
+	previous, known := m.persisted[key]
+	m.persistedMu.RUnlock()
+	resourceChanged := !versioned || !known || previous != version
+	if resourceChanged {
+		if err := m.store.UpsertResource(ctx, r); err != nil {
+			slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
+			return
+		}
+		// Mark only successful writes. Comparing old/new informer objects
+		// alone would suppress the retry after a failed initial or update write.
+		m.persistedMu.Lock()
+		if versioned {
+			m.persisted[key] = version
+		} else {
+			delete(m.persisted, key)
+		}
+		m.persistedMu.Unlock()
+
+		// Enqueue is non-blocking by contract. A local-cache replay is not
+		// a resource change and must not create another history event.
+		m.snapshotSink.Enqueue(graph.ResourceEvent{
+			Namespace:       r.Namespace,
+			Kind:            r.Kind,
+			UID:             string(r.UID),
+			Name:            r.Name,
+			EventType:       eventType,
+			ResourceVersion: r.ResourceVersion,
+		})
 	}
 
-	// Record the change in the F-111 snapshot stream. Enqueue is
-	// non-blocking by contract — the snapshot writer absorbs store
-	// latency on its own goroutines, never on the informer's.
-	m.snapshotSink.Enqueue(graph.ResourceEvent{
-		Namespace:       r.Namespace,
-		Kind:            r.Kind,
-		UID:             string(r.UID),
-		Name:            r.Name,
-		EventType:       eventType,
-		ResourceVersion: r.ResourceVersion,
-	})
-
 	// Edge re-derivation: ask the extractor for edges rooted at this
-	// resource. Extractors query the store directly for the handful
+	// resource even if its version is unchanged: selector targets may
+	// have arrived later, or an earlier edge write may have failed.
+	// Extractors query the store directly for the handful
 	// of targets they need — the informer no longer Snapshots the
 	// whole graph on every event (the O(N²) cold-start the pushdown
 	// work removed from the view aggregators). Edges are upserted; we
@@ -323,12 +340,14 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 
 	// Notify subscribed clients. Best-effort: the broadcaster is
 	// expected to never block (the hub drops on slow subscribers).
-	m.broadcaster("upsert", r.Namespace, r.Kind, r.Name)
+	if resourceChanged || len(edges) > 0 {
+		m.broadcaster("upsert", r.Namespace, r.Kind, r.Name)
+	}
 }
 
 // handleDelete removes the resource from the store. The store cascades
 // to incident edges so we do not need to walk them here.
-func (m *InformerManager) handleDelete(ctx context.Context, obj any) {
+func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVersionResource, obj any) {
 	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 		obj = tombstone.Obj
 	}
@@ -336,10 +355,14 @@ func (m *InformerManager) handleDelete(ctx context.Context, obj any) {
 	if !ok {
 		return
 	}
+	m.persistedMu.Lock()
+	delete(m.persisted, resourceWriteKey{gvr: gvr, namespace: u.GetNamespace(), name: u.GetName()})
+	m.persistedMu.Unlock()
+	kind := m.kindFor(gvr, u)
 	// Reproduce graph.Resource.ID() — multi-cluster IDs carry a
 	// <clusterID>: prefix so two clusters' same-named objects do not
 	// collide in the shared store.
-	id := u.GetNamespace() + "/" + u.GetKind() + "/" + u.GetName()
+	id := u.GetNamespace() + "/" + kind + "/" + u.GetName()
 	if m.clusterID != "" {
 		id = m.clusterID + ":" + id
 	}
@@ -351,14 +374,14 @@ func (m *InformerManager) handleDelete(ctx context.Context, obj any) {
 	// the resource is gone, only its identity is recorded.
 	m.snapshotSink.Enqueue(graph.ResourceEvent{
 		Namespace:       u.GetNamespace(),
-		Kind:            u.GetKind(),
+		Kind:            kind,
 		UID:             string(u.GetUID()),
 		Name:            u.GetName(),
 		EventType:       graph.EventTypeDelete,
 		ResourceVersion: u.GetResourceVersion(),
 	})
 
-	m.broadcaster("delete", u.GetNamespace(), u.GetKind(), u.GetName())
+	m.broadcaster("delete", u.GetNamespace(), kind, u.GetName())
 }
 
 func toUnstructured(obj any) (*unstructured.Unstructured, bool) {

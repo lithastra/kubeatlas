@@ -24,6 +24,9 @@ fixes bump the patch.
 
 ### Fixed
 
+- Avoid rewriting successfully persisted, unchanged resource versions during
+  informer resync, without suppressing failed-write retries or edge repair.
+  Custom resync periods now retain the configured Kubernetes client.
 - Reserve Go memory headroom and reduce graph-read allocation pressure.
 - Bound recovery operations and strengthen PostgreSQL interruption
   lifecycle checks.
