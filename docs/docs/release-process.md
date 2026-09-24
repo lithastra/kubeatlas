@@ -18,6 +18,28 @@ weekly public clean-cluster workflow anonymously verifies the current GitHub
 binary/checksum, public OCI Chart, versioned documentation, and clean Tier 1
 and Tier 2 installs. See [Signals, alerts, and recovery](./operations/runbooks.md).
 
+## Source-history maintenance (2026-09-24)
+
+Repository history was rewritten to remove workstation-specific validation
+tools and personal checkout paths. This is source maintenance, not a new
+release. Existing downloaded binaries, checksums, container images, and Helm
+packages were not rebuilt or replaced. They retain their original build
+identities. GitHub's automatically generated source archives now reflect
+the rewritten tags and must not be confused with those published binaries.
+
+The rewritten historical tags are unsigned; old commit and tag signatures
+cannot authenticate the new history. This does not retroactively sign or
+revalidate any release artifact. For example, the original v1.5.2 build
+commit is `acb0ced4479f2d4ac3f0509ace1d5717ab4111b1`, while its rewritten
+source commit is `8686f3f8d3367fbbe818ab11b95dd280c6e7179f`.
+Continue verifying published archives against their published checksums and
+images against their recorded immutable digests.
+
+Contributors with an older clone should preserve uncommitted work separately
+and clone the repository again. Do not merge old history back into the new
+main branch. Existing PR views, forks, and cached commits may still reference
+the previous history.
+
 ## v1.6.0 release matrix — publication pending
 
 | Component | Target | Required evidence |
