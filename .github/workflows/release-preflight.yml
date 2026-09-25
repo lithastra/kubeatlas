@@ -12,6 +12,7 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/release-artifact-audit.yml'
       - '.github/scripts/release-*'
+      - '.github/scripts/core-artifact-audit.test.cjs'
       - '.github/workflows/release-preflight.yml'
       - '.github/workflows/e2e-kind-tier2.yml'
       - '.github/workflows/scheduled-clean-cluster.yml'
@@ -43,6 +44,7 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/release-artifact-audit.yml'
       - '.github/scripts/release-*'
+      - '.github/scripts/core-artifact-audit.test.cjs'
       - '.github/workflows/release-preflight.yml'
       - '.github/workflows/e2e-kind-tier2.yml'
       - '.github/workflows/scheduled-clean-cluster.yml'
@@ -136,6 +138,7 @@ jobs:
       - name: Verify core artifact trust contract
         run: |
           node --test .github/scripts/release-draft.test.cjs
+          node --test .github/scripts/core-artifact-audit.test.cjs
           bash -n \
             test/verify/artifact-trust-contract.sh \
             test/verify/core-artifact-audit.sh \
