@@ -180,8 +180,15 @@ docker pull --platform linux/amd64 \
 
 helm pull "oci://${CHART_REPOSITORY}@${CHART_DIGEST}" \
   --destination "$WORK_DIR"
+# Helm derives archive names from the OCI reference; digest pulls need not
+# produce <name>-<version>.tgz. Accept exactly one real archive in this fresh
+# directory, then check the embedded chart metadata before installation.
+chart_archives=("$WORK_DIR"/*.tgz)
+[[ "${#chart_archives[@]}" -eq 1 && -f "${chart_archives[0]}" ]] ||
+  fail "expected exactly one downloaded chart archive"
+CHART_ARCHIVE=${chart_archives[0]}
 mkdir -p "$WORK_DIR/chart"
-tar -xzf "$WORK_DIR/kubeatlas-${RELEASE_VERSION}.tgz" -C "$WORK_DIR/chart"
+tar -xzf "$CHART_ARCHIVE" -C "$WORK_DIR/chart"
 
 CHART_FILE="$WORK_DIR/chart/kubeatlas/Chart.yaml"
 VALUES_FILE="$WORK_DIR/chart/kubeatlas/values.yaml"
@@ -197,7 +204,7 @@ chart_database_image=$(awk '
   fail "chart database image does not match the audited dependency"
 
 helm lint "$WORK_DIR/chart/kubeatlas"
-helm install "$AUDIT_RELEASE" "$WORK_DIR/kubeatlas-${RELEASE_VERSION}.tgz" \
+helm install "$AUDIT_RELEASE" "$CHART_ARCHIVE" \
   --namespace "$AUDIT_NAMESPACE" --create-namespace \
   --set-string "image.digest=${APP_DIGEST}" \
   --wait --timeout 5m
