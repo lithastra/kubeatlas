@@ -1,0 +1,162 @@
+name: Audit existing release artifacts
+
+# Recovery for an audit failure after publishing: never build, push, sign,
+# move a tag, or promote a Release. The original failed run remains evidence.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing signed release tag (vX.Y.Z)
+        required: true
+        type: string
+      commit:
+        description: Original release commit (40 lowercase hex characters)
+        required: true
+        type: string
+      tag_object:
+        description: Original annotated tag object (40 lowercase hex characters)
+        required: true
+        type: string
+      app_digest:
+        description: Published application index digest (sha256)
+        required: true
+        type: string
+      database_digest:
+        description: Published PostgreSQL index digest (sha256)
+        required: true
+        type: string
+      chart_digest:
+        description: Published Helm chart digest (sha256)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-artifact-audit-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  draft-gate:
+    name: Verify existing signed tag and draft metadata
+    if: github.repository == 'lithastra/kubeatlas' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # GitHub only lists drafts for callers with push access. This job uses
+      # GET endpoints only; no registry credentials or signing permissions.
+      contents: write
+    outputs:
+      release_id: ${{ steps.draft.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify immutable identity and locate the draft by ID
+        id: draft
+        uses: actions/github-script@v9
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          RELEASE_TAG_OBJECT: ${{ inputs.tag_object }}
+          APP_DIGEST: ${{ inputs.app_digest }}
+          DATABASE_DIGEST: ${{ inputs.database_digest }}
+          CHART_DIGEST: ${{ inputs.chart_digest }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const { validateAuditInputs, verifyDraftRelease } = require('./.github/scripts/release-draft.cjs');
+            const inputs = {
+              tag: process.env.RELEASE_TAG, commit: process.env.RELEASE_COMMIT,
+              tagObject: process.env.RELEASE_TAG_OBJECT, appDigest: process.env.APP_DIGEST,
+              databaseDigest: process.env.DATABASE_DIGEST, chartDigest: process.env.CHART_DIGEST,
+            };
+            const evidence = { status: 'failed', auditToolsCommit: context.sha, inputs };
+            try {
+              validateAuditInputs(inputs);
+              evidence.release = await verifyDraftRelease({ github, ...context.repo, ...inputs });
+              core.setOutput('release_id', evidence.release.release_id);
+              evidence.status = 'passed';
+            } finally {
+              fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'release-draft-gate.json'),
+                JSON.stringify(evidence, null, 2) + '\n');
+            }
+      - name: Retain draft identity evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-draft-gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-draft-gate.json
+          if-no-files-found: error
+          retention-days: 30
+
+  audit:
+    name: Anonymous audit of pinned existing artifacts
+    needs: draft-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      KUBEATLAS_RELEASE_TAG: ${{ inputs.tag }}
+      KUBEATLAS_RELEASE_COMMIT: ${{ inputs.commit }}
+      KUBEATLAS_RELEASE_TAG_OBJECT: ${{ inputs.tag_object }}
+      KUBEATLAS_DRAFT_RELEASE_ID: ${{ needs.draft-gate.outputs.release_id }}
+      KUBEATLAS_EXPECTED_APP_DIGEST: ${{ inputs.app_digest }}
+      KUBEATLAS_EXPECTED_DATABASE_DIGEST: ${{ inputs.database_digest }}
+      KUBEATLAS_EXPECTED_CHART_DIGEST: ${{ inputs.chart_digest }}
+      KUBEATLAS_RELEASE_SOURCE_DIR: ${{ github.workspace }}/released-source
+      KUBEATLAS_ARTIFACT_EVIDENCE_FILE: /tmp/kubeatlas-core-artifact-audit.json
+      KUBEATLAS_REQUIRE_ANONYMOUS: 'true'
+    steps:
+      - name: Initialize failure evidence before setup
+        run: |
+          jq -n --arg tag "$KUBEATLAS_RELEASE_TAG" --arg commit "$KUBEATLAS_RELEASE_COMMIT" \
+            --arg toolsCommit "$GITHUB_SHA" \
+            '{status: "failed", release: {tag: $tag, commit: $commit}, auditToolsCommit: $toolsCommit}' \
+            >"$KUBEATLAS_ARTIFACT_EVIDENCE_FILE"
+      - name: Check out reviewed audit tools
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check out original release dependency contract
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit }}
+          path: released-source
+          persist-credentials: false
+      - uses: oras-project/setup-oras@v2.0.1
+        with:
+          version: 1.3.3
+      - uses: sigstore/cosign-installer@v4.1.2
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.20.0
+      - name: Create an isolated CI Kubernetes cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.32.0
+          node_image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+          cluster_name: kubeatlas-core-artifact-audit
+          wait: 120s
+      - name: Configure deliberately anonymous registry clients
+        run: |
+          set -euo pipefail
+          anonymous_config="$RUNNER_TEMP/anonymous-docker"
+          mkdir -p "$anonymous_config"
+          printf '{"auths":{}}\n' >"$anonymous_config/config.json"
+          printf '{"auths":{}}\n' >"$anonymous_config/helm-registry.json"
+          echo "DOCKER_CONFIG=$anonymous_config" >>"$GITHUB_ENV"
+          echo "HELM_REGISTRY_CONFIG=$anonymous_config/helm-registry.json" >>"$GITHUB_ENV"
+      - name: Audit existing signatures, attestations, pulls, and chart install
+        run: bash test/verify/core-artifact-audit.sh
+      - name: Retain supplemental evidence without replacing the original failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-artifact-audit-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/kubeatlas-core-artifact-audit.json
+          if-no-files-found: error
+          retention-days: 30

@@ -188,10 +188,10 @@ helm upgrade --install kubeatlas \
   --set-string "image.digest=${app_digest}"
 ```
 
-The Helm chart is still selected by version for Helm client compatibility, but
-the operator should verify its resolved OCI digest immediately before the
-install. The release audit performs the same resolution, then installs the
-chart with the verified application-image digest on a clean kind cluster.
+The operator example selects the Helm chart by version; verify its resolved
+OCI digest immediately before installation. The release audit uses Helm 3.20
+to pull the chart by its verified OCI digest, then installs that local archive
+with the verified application-image digest on a clean kind cluster.
 
 ## v1.6 trust-gate order
 
@@ -213,6 +213,39 @@ chart with the verified application-image digest on a clean kind cluster.
    the digest-pinned application on clean Kubernetes.
 6. Preserve the bounded JSON audit artifact even on failure. Publish the draft
    release only when the clean audit and every other core row are green.
+
+### Recovering an audit-only failure
+
+Draft releases are not returned by GitHub's published-release-by-tag endpoint.
+The existing Release writer verifies the signed tag, lists releases with push
+access, and re-reads the matching draft by numeric ID. The independent artifact
+audit consumes that gate and retains only `contents: read`; it has no package
+write or OIDC signing permission.
+
+If publishing succeeded but the audit failed, preserve the failed run and keep
+the Release draft. Do not move the signed tag or rerun producer jobs just to
+pick up a workflow fix. After reviewing and merging the fix, manually dispatch
+**Audit existing release artifacts** (`release-artifact-audit.yml`) on `main`,
+supplying all six immutable identity inputs from the original publication:
+`tag`, `commit`, `tag_object`, `app_digest`, `database_digest`, and `chart_digest`.
+The three digests must include their `sha256:` prefix.
+
+This recovery workflow checks the signed tag and draft in a separate metadata
+job. Only that job has `contents: write`, solely because GitHub requires push
+access to list drafts; its API calls are read-only. The audit job uses current
+reviewed verification tools and the original release's database dependency
+contract, rejects any tag-to-digest mismatch, verifies the original tag
+workflow's signatures and attestations, and performs anonymous pulls and a
+Tier 1 chart installation in an ephemeral CI cluster. It does not build, push,
+sign, modify tags, or promote the Release.
+
+Retain both `release-draft-gate-<run>-<attempt>` and
+`core-artifact-audit-recovery-<run>-<attempt>` alongside the original failure.
+The evidence distinguishes `auditToolsCommit` from the release commit. Passing
+this supplemental audit does not retroactively turn the failed tag run green,
+verify binary archive payloads, establish Tier 2 recovery or endurance, or
+authorize publication. Recheck the draft and remaining release gates before
+requesting promotion.
 
 ## v1.5.2 release order (historical)
 
