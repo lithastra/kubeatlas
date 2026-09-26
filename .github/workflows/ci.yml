@@ -91,6 +91,23 @@ jobs:
           fi
           echo "OK: all commits are signed off."
 
+  docs-check:
+    name: Documentation typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: docs/package-lock.json
+      - working-directory: docs
+        run: npm ci
+      - working-directory: docs
+        run: npm run typecheck
+      - working-directory: docs
+        run: npm run build
+
   go-test:
     name: Go tests + coverage
     runs-on: ubuntu-latest
