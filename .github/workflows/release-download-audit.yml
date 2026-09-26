@@ -1,0 +1,66 @@
+name: Audit public release downloads
+
+# Post-publication consumer check. No producer jobs, cluster or signing access.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable release tag (vX.Y.Z)
+        required: true
+        type: string
+      commit:
+        description: Original release commit (40 lowercase hex characters)
+        required: true
+        type: string
+      tag_object:
+        description: Original signed annotated tag object
+        required: true
+        type: string
+      release_id:
+        description: Existing published Release numeric ID
+        required: true
+        type: string
+      checksums_digest:
+        description: Previously reviewed checksums.txt SHA-256 (including sha256 prefix)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-download-audit-${{ inputs.release_id }}
+  cancel-in-progress: false
+
+jobs:
+  public-downloads:
+    name: Anonymous complete archives and immutable identity
+    if: github.repository == 'lithastra/kubeatlas' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: Run offline regression tests
+        run: node --test .github/scripts/release-download-audit.test.cjs
+      - name: Verify every archive through anonymous public endpoints
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          RELEASE_TAG_OBJECT: ${{ inputs.tag_object }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          CHECKSUMS_DIGEST: ${{ inputs.checksums_digest }}
+          DOWNLOAD_EVIDENCE_FILE: ${{ runner.temp }}/release-download-audit.json
+        run: node .github/scripts/release-download-audit.cjs
+      - name: Retain evidence including partial transfer failures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-download-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-download-audit.json
+          if-no-files-found: error
+          retention-days: 30

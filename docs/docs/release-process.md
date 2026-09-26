@@ -271,6 +271,38 @@ after its signed-tag/draft and OCI signature gates succeed. Pull-request tests
 use isolated command/HTTP doubles and are not live installation evidence.
 An earlier Tier 1-only audit does not retroactively include this job.
 
+### Verifying public binary downloads after promotion
+
+Authenticated draft downloads do not prove anonymous public downloads. Once the
+existing Release has been promoted, dispatch **Audit public release downloads**
+(`release-download-audit.yml`) on reviewed `main`. Supply the original `tag`,
+`commit`, signed `tag_object`, numeric `release_id`, and the previously reviewed
+`checksums_digest` (including `sha256:`). Do not replace the expected checksum
+digest with a newly observed value to make a failed audit pass.
+
+This separate, `contents: read` workflow uses public HTTP GET requests without
+authorization or cookies. It validates the signed tag and published Release,
+downloads the complete checksum file, then streams all ten archives through
+SHA-256 and byte-count checks. It requires the exact current platform inventory:
+server binaries for Linux/macOS and CLI binaries for Linux/macOS/Windows, each
+on AMD64 and ARM64. The checksum contents must match both the frozen checksum
+digest and every asset's metadata. Tag, Release and asset identities are checked
+again after all downloads, so mid-run replacement cannot pass unnoticed.
+
+Downloads have bounded response sizes, allowlisted HTTPS redirect hosts, three
+workers and a 180-second deadline per request including redirects and the body.
+There are no automatic retries. Retain
+`release-download-audit-<run>-<attempt>` even on failure; partial-byte counts and
+failure codes are evidence, not successful full-file verification. Signed CDN
+URLs and raw response/error bodies are not retained.
+
+The audit does not rebuild, sign, replace, publish, extract or execute artifacts,
+and does not create or access a Kubernetes cluster. It adds full anonymous
+download integrity evidence, not all-platform native execution, OCI signatures,
+endurance or production-reliability guarantees. Keep failed local or CI attempts
+separate. After a passing run, recheck the original Release identity and update
+only the pending download-verification statement in its notes.
+
 ## v1.5.2 release order (historical)
 
 1. Run `Release preflight` for `v1.5.2` on the exact `main` commit. It
