@@ -172,6 +172,13 @@ jobs:
       - name: Check reusable shell tools
         run: |
           git ls-files -z '*.sh' | xargs -0 -n 1 bash -n
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - name: Test lifecycle port-forward helpers without a cluster
+        run: |
+          bash test/verify/deployment-pod-selection-test.sh
+          node --test test/verify/tier2-lifecycle.test.cjs
       - name: Keep workstation state out of source control
         run: |
           set -euo pipefail

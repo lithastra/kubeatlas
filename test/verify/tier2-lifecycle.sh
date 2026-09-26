@@ -9,11 +9,16 @@
 
 set -euo pipefail
 
+VERIFY_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=test/verify/lib/deployment-pod.sh
+source "${VERIFY_DIR}/lib/deployment-pod.sh"
+
 NS="${KUBEATLAS_NAMESPACE:-kubeatlas}"
 RELEASE="${KUBEATLAS_RELEASE:-kubeatlas}"
 PG_CLUSTER="${KUBEATLAS_PG_CLUSTER:-${RELEASE}-pg}"
 PF_PORT="${KUBEATLAS_PF_PORT:-18081}"
 PF_PID=""
+PF_LOG="${TMPDIR:-/tmp}/kubeatlas-tier2-lifecycle-pf.log"
 
 red()    { printf '\033[31m%s\033[0m\n' "$*" >&2; }
 green()  { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -37,18 +42,37 @@ stop_port_forward() {
 }
 
 start_port_forward() {
-  kubectl port-forward -n "${NS}" "deploy/${RELEASE}" \
-    "${PF_PORT}:8080" >/tmp/kubeatlas-tier2-lifecycle-pf.log 2>&1 &
+  local pod
+  pod=$(kubeatlas_ready_deployment_pod "${NS}" "${RELEASE}") \
+    || fail "could not select the Ready application Pod for ${RELEASE}"
+  [[ -n "${pod}" ]] || fail "no Ready application Pod found for ${RELEASE}"
+  # A Deployment label selector can also match historical snapshot Job Pods.
+  # Bind to the Ready, ReplicaSet-owned application Pod instead.
+  kubectl port-forward -n "${NS}" "pod/${pod}" \
+    "${PF_PORT}:8080" >"${PF_LOG}" 2>&1 &
   PF_PID=$!
   trap stop_port_forward EXIT
 
   for _ in $(seq 1 60); do
+    if ! kill -0 "${PF_PID}" 2>/dev/null; then
+      cat "${PF_LOG}" >&2
+      fail "port-forward to pod/${pod} exited before becoming ready"
+    fi
     if curl -fsS --max-time 1 \
       "http://127.0.0.1:${PF_PORT}/healthz" >/dev/null 2>&1; then
+      if ! kill -0 "${PF_PID}" 2>/dev/null; then
+        cat "${PF_LOG}" >&2
+        fail "port-forward to pod/${pod} exited during the health check"
+      fi
       return 0
+    fi
+    if ! kill -0 "${PF_PID}" 2>/dev/null; then
+      cat "${PF_LOG}" >&2
+      fail "port-forward to pod/${pod} exited before becoming ready"
     fi
     sleep 1
   done
+  cat "${PF_LOG}" >&2
   fail "KubeAtlas API did not become reachable on :${PF_PORT}"
 }
 
@@ -62,6 +86,11 @@ pvc_uids() {
     -o json \
     | jq -r '.items | sort_by(.metadata.name) | map(.metadata.uid) | join(",")'
 }
+
+# Sourcing exposes helpers for synthetic tests without touching a cluster.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+  return 0
+fi
 
 for cmd in kubectl helm jq curl; do
   require_cmd "${cmd}"
