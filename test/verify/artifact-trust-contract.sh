@@ -61,8 +61,22 @@ require_text "$RECOVERY_WORKFLOW" 'KUBEATLAS_EXPECTED_APP_DIGEST: ${{ inputs.app
 require_text "$RECOVERY_WORKFLOW" 'KUBEATLAS_EXPECTED_DATABASE_DIGEST: ${{ inputs.database_digest }}'
 require_text "$RECOVERY_WORKFLOW" 'KUBEATLAS_EXPECTED_CHART_DIGEST: ${{ inputs.chart_digest }}'
 require_text "$RECOVERY_WORKFLOW" 'bash test/verify/core-artifact-audit.sh'
+require_text "$RECOVERY_WORKFLOW" 'needs: [draft-gate, audit]'
+require_text "$RECOVERY_WORKFLOW" 'KUBEATLAS_PRIOR_AUDIT_RESULT: ${{ needs.audit.result }}'
+require_text "$RECOVERY_WORKFLOW" 'node .github/scripts/core-artifact-tier2.cjs'
+require_text "$RECOVERY_WORKFLOW" 'cluster_name: kubeatlas-core-tier2-audit'
+require_text "$RECOVERY_WORKFLOW" 'kind delete cluster --name kubeatlas-core-tier2-audit'
+require_text "$RECOVERY_WORKFLOW" "evidence.clusterCleanupPassed = process.env.CLEANUP_OUTCOME === 'success'"
 require_text "$PREFLIGHT_WORKFLOW" 'node --test .github/scripts/release-draft.test.cjs'
 require_text "$PREFLIGHT_WORKFLOW" 'node --test .github/scripts/core-artifact-audit.test.cjs'
+require_text "$PREFLIGHT_WORKFLOW" 'node --test .github/scripts/core-artifact-tier2.test.cjs'
+require_text .github/scripts/core-artifact-tier2.cjs 'validateAuditInputs(inputs)'
+require_text .github/scripts/core-artifact-tier2.cjs "env.KUBEATLAS_PRIOR_AUDIT_RESULT === 'success'"
+require_text .github/scripts/core-artifact-tier2.cjs 'image.digest=${inputs.appDigest}'
+require_text .github/scripts/core-artifact-tier2.cjs 'persistence.embedded.image=${databaseImage}'
+require_text .github/scripts/core-artifact-tier2.cjs "'--wait', '--timeout', '5m'"
+require_text .github/scripts/core-artifact-tier2.cjs "'--wait', '--timeout', '10m'"
+require_text .github/scripts/core-artifact-tier2.cjs "current.metadata.uid === resource.uid"
 
 require_text "$SIGN_SCRIPT" 'cosign sign --yes'
 require_text "$SIGN_SCRIPT" '--certificate-identity'
