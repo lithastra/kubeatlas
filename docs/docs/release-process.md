@@ -239,13 +239,37 @@ workflow's signatures and attestations, and performs anonymous pulls and a
 Tier 1 chart installation in an ephemeral CI cluster. It does not build, push,
 sign, modify tags, or promote the Release.
 
-Retain both `release-draft-gate-<run>-<attempt>` and
-`core-artifact-audit-recovery-<run>-<attempt>` alongside the original failure.
+After both jobs pass, a separate contents-read job creates a new Kubernetes
+1.36.1 AMD64 cluster for the public Tier 2 installation. It rechecks all three
+tag-to-digest mappings, verifies the downloaded OCI manifest and Chart bytes,
+and installs the original Chart with both application and database images
+pinned by digest. The external prerequisite stays CloudNativePG chart 0.29.0 /
+operator 1.30.0. Operator and application installation deadlines remain five
+and ten minutes, respectively; failures are retained, not retried automatically.
+
+The bounded smoke check requires Ready Pods, unchanged runtime identities,
+zero restarts/OOM, durable storage, a bound PVC, and three real ConfigMap
+updates with exact-version API/history visibility within 30 seconds each.
+It also checks operational metrics, zero queue/drop/write errors, and a
+synthetic Secret-value sentinel. It never reads existing Secret values or
+database backups, and retains only bounded metadata, aggregate database
+counts and endpoint results, not response bodies or raw application logs.
+Namespace cleanup is ownership-checked; the workflow additionally deletes the
+disposable cluster. Neither cleanup failure can produce a passing audit.
+
+Retain `release-draft-gate-<run>-<attempt>`,
+`core-artifact-audit-recovery-<run>-<attempt>` and
+`core-artifact-tier2-<run>-<attempt>` alongside the original failure.
 The evidence distinguishes `auditToolsCommit` from the release commit. Passing
 this supplemental audit does not retroactively turn the failed tag run green,
 verify binary archive payloads, establish Tier 2 recovery or endurance, or
 authorize publication. Recheck the draft and remaining release gates before
 requesting promotion.
+
+The new Tier 2 job is only executed by manual dispatch on reviewed `main`,
+after its signed-tag/draft and OCI signature gates succeed. Pull-request tests
+use isolated command/HTTP doubles and are not live installation evidence.
+An earlier Tier 1-only audit does not retroactively include this job.
 
 ## v1.5.2 release order (historical)
 

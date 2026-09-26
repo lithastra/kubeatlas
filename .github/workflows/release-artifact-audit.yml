@@ -92,6 +92,106 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  audit-tier2:
+    name: Anonymous pinned Tier 2 installation
+    needs: [draft-gate, audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      KUBEATLAS_RELEASE_TAG: ${{ inputs.tag }}
+      KUBEATLAS_RELEASE_COMMIT: ${{ inputs.commit }}
+      KUBEATLAS_RELEASE_TAG_OBJECT: ${{ inputs.tag_object }}
+      KUBEATLAS_DRAFT_RELEASE_ID: ${{ needs.draft-gate.outputs.release_id }}
+      KUBEATLAS_EXPECTED_APP_DIGEST: ${{ inputs.app_digest }}
+      KUBEATLAS_EXPECTED_DATABASE_DIGEST: ${{ inputs.database_digest }}
+      KUBEATLAS_EXPECTED_CHART_DIGEST: ${{ inputs.chart_digest }}
+      KUBEATLAS_PRIOR_AUDIT_RESULT: ${{ needs.audit.result }}
+      KUBEATLAS_RELEASE_SOURCE_DIR: ${{ github.workspace }}/released-source
+      KUBEATLAS_TIER2_EVIDENCE_FILE: /tmp/kubeatlas-core-artifact-tier2.json
+    steps:
+      - name: Initialize bounded failure evidence
+        run: |
+          jq -n --arg commit "$KUBEATLAS_RELEASE_COMMIT" --arg toolsCommit "$GITHUB_SHA" \
+            '{status: "failed", phase: "setup", release: {commit: $commit}, auditToolsCommit: $toolsCommit}' \
+            >"$KUBEATLAS_TIER2_EVIDENCE_FILE"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check out the original release dependency contract
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit }}
+          path: released-source
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+      - uses: oras-project/setup-oras@v2.0.1
+        with:
+          version: 1.3.3
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.20.0
+      - name: Create a separate clean Tier 2 CI cluster
+        uses: helm/kind-action@v1
+        with:
+          version: v0.32.0
+          node_image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+          cluster_name: kubeatlas-core-tier2-audit
+          wait: 120s
+      - name: Configure anonymous registry clients
+        run: |
+          set -euo pipefail
+          anonymous_config="$RUNNER_TEMP/tier2-anonymous"
+          mkdir -p "$anonymous_config"
+          printf '{"auths":{}}\n' >"$anonymous_config/config.json"
+          printf '{"auths":{}}\n' >"$anonymous_config/helm-registry.json"
+          echo "DOCKER_CONFIG=$anonymous_config" >>"$GITHUB_ENV"
+          echo "HELM_REGISTRY_CONFIG=$anonymous_config/helm-registry.json" >>"$GITHUB_ENV"
+      - name: Verify the pinned public Tier 2 installation
+        id: tier2
+        run: node .github/scripts/core-artifact-tier2.cjs
+      - name: Delete only the disposable Tier 2 cluster
+        id: cleanup
+        if: always()
+        run: |
+          set -euo pipefail
+          kind delete cluster --name kubeatlas-core-tier2-audit
+          remaining_clusters=$(kind get clusters)
+          if grep -Fxq kubeatlas-core-tier2-audit <<<"$remaining_clusters"; then
+            echo 'Tier 2 audit cluster still exists' >&2
+            exit 1
+          fi
+      - name: Bind the final evidence to audit and cluster cleanup outcomes
+        if: always()
+        uses: actions/github-script@v9
+        env:
+          AUDIT_OUTCOME: ${{ steps.tier2.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const file = process.env.KUBEATLAS_TIER2_EVIDENCE_FILE;
+            const evidence = JSON.parse(fs.readFileSync(file, 'utf8'));
+            evidence.clusterCleanupPassed = process.env.CLEANUP_OUTCOME === 'success';
+            evidence.runID = context.runId;
+            evidence.runAttempt = process.env.GITHUB_RUN_ATTEMPT;
+            if (process.env.AUDIT_OUTCOME !== 'success' || !evidence.clusterCleanupPassed) {
+              evidence.status = 'failed';
+            }
+            fs.writeFileSync(file, JSON.stringify(evidence, null, 2) + '\n');
+            if (evidence.status !== 'passed') core.setFailed('Public Tier 2 audit or cleanup failed');
+      - name: Retain bounded Tier 2 evidence, including failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-artifact-tier2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/kubeatlas-core-artifact-tier2.json
+          if-no-files-found: error
+          retention-days: 30
+
   audit:
     name: Anonymous audit of pinned existing artifacts
     needs: draft-gate
