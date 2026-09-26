@@ -140,6 +140,7 @@ jobs:
       - name: Verify core artifact trust contract
         run: |
           node --test .github/scripts/release-draft.test.cjs
+          node --test .github/scripts/release-download-audit.test.cjs
           node --test .github/scripts/core-artifact-audit.test.cjs
           node --test .github/scripts/core-artifact-tier2.test.cjs
           bash -n \

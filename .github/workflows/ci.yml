@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: '20'
       - run: node --test .github/scripts/release-draft.test.cjs
+      - run: node --test .github/scripts/release-download-audit.test.cjs
       - run: node --test .github/scripts/core-artifact-audit.test.cjs
       - run: node --test .github/scripts/core-artifact-tier2.test.cjs
       - run: bash test/verify/artifact-trust-contract.sh
