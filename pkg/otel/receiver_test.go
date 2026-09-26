@@ -15,6 +15,9 @@ import (
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
@@ -123,6 +126,64 @@ func TestExport_TranslatesAndEnqueues(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected one batch on the queue")
+	}
+}
+
+// Exercise OTLP marshaling and gRPC dispatch over an in-memory transport.
+// No cluster, database, or fixed network port is required.
+func TestExport_GRPCWireContract(t *testing.T) {
+	lis := bufconn.Listen(1024 * 1024)
+	r := NewReceiver("", &fakeSink{}, 1, nil)
+	server := grpc.NewServer()
+	coltracepb.RegisterTraceServiceServer(server, r)
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(lis) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = lis.Close()
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				t.Errorf("Serve: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("gRPC server did not stop")
+		}
+	})
+	conn, err := grpc.NewClient("passthrough:///otlp-fixture",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	client := coltracepb.NewTraceServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, req := range []*coltracepb.ExportTraceServiceRequest{
+		{}, sampleRequest(), sampleRequest(),
+	} {
+		response, err := client.Export(ctx, req)
+		if err != nil {
+			t.Fatalf("gRPC Export: %v", err)
+		}
+		if response.GetPartialSuccess() != nil {
+			t.Fatalf("unexpected partial success: %v", response.GetPartialSuccess())
+		}
+	}
+	metrics := r.metrics.Snapshot()
+	if metrics.Received != 4 || metrics.Dropped != 2 {
+		t.Fatalf("received/dropped = %d/%d, want 4/2", metrics.Received, metrics.Dropped)
+	}
+	if len(r.queue) != 1 {
+		t.Fatalf("queue depth = %d, want 1", len(r.queue))
+	}
+	batch := <-r.queue
+	if len(batch) != 2 || batch[0].SpanID != "a1a2a3a4a5a6a7a8" ||
+		batch[0].ServiceName != "petclinic-api" {
+		t.Fatalf("unexpected translated batch: %+v", batch)
 	}
 }
 
