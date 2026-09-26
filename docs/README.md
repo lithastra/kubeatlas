@@ -26,7 +26,7 @@ from filesystem order — add new pages there.
 
 ```bash
 cd docs
-npm install                 # first run only
+npm ci                      # install the reviewed lockfile
 npm run start               # http://localhost:3000, hot reload
 ```
 
@@ -56,8 +56,45 @@ npm run serve               # serves docs/build/ at http://localhost:3000
 ```
 
 `npm run build` fails on broken internal links and emits warnings
-on broken markdown links — same behaviour as the deploy build, so
-"build clean locally" means "deploys clean".
+on broken markdown links. A successful local build validates the build output,
+not deployment, hosting configuration, or security by itself.
+
+## Toolchain dependency checks
+
+Use Node 20 or later and run these checks before changing the documentation
+toolchain or its lockfile:
+
+```bash
+npm ci
+npm audit --audit-level=low
+npm run test:dependencies
+npm run typecheck
+npm run build
+```
+
+Docusaurus remains on 3.10.2. Its current build/development dependencies require
+three narrowly scoped overrides, declared in `package.json`:
+
+- `copy-webpack-plugin@11.0.0` and `css-minimizer-webpack-plugin@5.0.1` use
+  `serialize-javascript` 7.1.2 or later in the 7.x line. This addresses
+  [expression injection](https://github.com/advisories/GHSA-5c6j-r48x-rmvq) and
+  [array-like input CPU exhaustion](https://github.com/advisories/GHSA-qj8w-gfj5-8c6v),
+  and the 7.1.1 [function-body escaping regression](https://github.com/yahoo/serialize-javascript/security/advisories/GHSA-gfhx-hw2g-v5hg).
+  Version 7 requires Node 20, which is already the documentation baseline.
+- `sockjs@0.3.24` uses the patched 11.x `uuid` line, starting at 11.1.1, which
+  retains the CommonJS `v4()` contract used by SockJS and fixes
+  [output-buffer bounds checks](https://github.com/advisories/GHSA-w5hq-g745-h8pq).
+  Do not replace it with an ESM-only major without reviewing the caller.
+
+Express is updated within webpack-dev-server's existing 4.x range to resolve a
+patched `qs`; it does not need an override. No npm peer checks are bypassed.
+
+The regression tests resolve packages from their actual consumers, exercise CSS
+worker serialization and SockJS connection IDs, and bound the security fixtures
+without contacting a cluster. These checks and the audit run in documentation CI.
+When an upstream parent adopts patched dependencies, remove the corresponding
+override and rerun the full checks above. Do not broaden overrides, suppress audit
+findings, or downgrade Docusaurus to obtain a green audit.
 
 ## Adding or editing a page
 

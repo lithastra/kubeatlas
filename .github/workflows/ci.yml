@@ -103,6 +103,11 @@ jobs:
           cache-dependency-path: docs/package-lock.json
       - working-directory: docs
         run: npm ci
+      - name: Audit documentation dependencies
+        working-directory: docs
+        run: npm audit --audit-level=low
+      - working-directory: docs
+        run: npm run test:dependencies
       - working-directory: docs
         run: npm run typecheck
       - working-directory: docs
