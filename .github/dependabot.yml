@@ -7,14 +7,21 @@ updates:
     groups:
       github-actions:
         patterns: ['*']
+        update-types: ['minor', 'patch']
 
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
     groups:
+      # Kubernetes 0.x minor releases can break APIs. Review the SDK and
+      # controller-runtime as one compatible train, separate from other Go deps.
+      kubernetes-sdk:
+        patterns: ['k8s.io/*', 'sigs.k8s.io/controller-runtime']
       go-dependencies:
         patterns: ['*']
+        exclude-patterns: ['k8s.io/*', 'sigs.k8s.io/controller-runtime']
+        update-types: ['minor', 'patch']
 
   - package-ecosystem: npm
     directory: /web
@@ -23,6 +30,9 @@ updates:
     groups:
       web-dependencies:
         patterns: ['*']
+        # Major migrations stay in separate PRs; do not bundle them with
+        # routine updates or bypass npm peer-dependency checks.
+        update-types: ['minor', 'patch']
 
   - package-ecosystem: npm
     directory: /docs
@@ -31,6 +41,7 @@ updates:
     groups:
       docs-dependencies:
         patterns: ['*']
+        update-types: ['minor', 'patch']
 
   - package-ecosystem: docker
     directory: /
