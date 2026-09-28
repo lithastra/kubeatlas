@@ -17,7 +17,7 @@ const config = {
   // ts-jest with the ESM-aware transformer covers the TypeScript +
   // JSX cases the rest of the codebase uses.
   transform: {
-    '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
+    '^.+\\.tsx?$': ['<rootDir>/test-stubs/ts-jest-transformer.cjs', { tsconfig: 'tsconfig.json' }],
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
 
