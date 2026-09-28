@@ -143,7 +143,7 @@ then enable both persistence and snapshots:
 
 ```bash
 helm upgrade --install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.2 \
+  --version 1.6.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \

@@ -47,9 +47,8 @@ KubeAtlas chart. Keeping the cluster-scoped operator in its own Helm release
 prevents one KubeAtlas uninstall from removing control-plane resources shared
 by other databases.
 
-The command below deliberately installs the published KubeAtlas v1.5.2 chart.
-It is also the fresh-install starting point while v1.6 remains under
-development. Do not install the old CloudNativePG 0.22.1 prerequisite for a
+The command below installs the published KubeAtlas v1.6.0 chart.
+Do not install the old CloudNativePG 0.22.1 prerequisite for a
 new cluster: its operator is end-of-life.
 
 ```bash
@@ -65,7 +64,7 @@ kubectl wait --for=condition=Established \
   --timeout=2m
 
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.2 \
+  --version 1.6.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true
@@ -77,11 +76,10 @@ What this does:
 2. KubeAtlas renders a namespaced `Cluster` custom resource called
    `<release>-pg`. The operator reconciles it into a PostgreSQL Pod,
    PVC, Services, and a `<release>-pg-app` Secret.
-3. The published v1.5.2 chart uses
-   `ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1`. Current `main`, for
-   the planned v1.6 baseline, uses
-   `ghcr.io/lithastra/postgres-age:16.15-age1.6.0-rc0.2`. Both keep PostgreSQL
-   major 16 and the same pinned Apache AGE PG16 1.6.0 release commit, load AGE
+3. The published v1.6.0 chart uses
+   `ghcr.io/lithastra/postgres-age:16.15-age1.6.0-rc0.2`. The historical
+   v1.5.2 chart used `16.6-age1.6.0-rc0.1`. Both keep PostgreSQL
+   major 16 and the same pinned Apache AGE PG16 1.6.0-rc0 commit, load AGE
    at server start, and run `CREATE EXTENSION IF NOT EXISTS age` during
    bootstrap.
 4. The KubeAtlas Pod points at the `<release>-pg-rw` Service. Its
@@ -90,17 +88,19 @@ What this does:
 
 ### Published release versus current main
 
-The documentation site follows repository `main`, while the public OCI chart
-remains v1.5.2 until v1.6 is released. Keep those two facts separate:
+The default documentation describes the published v1.6.0 chart. The
+**Next (unreleased)** documentation follows repository `main`; later source
+commits do not replace published artifacts. Keep the release baselines separate:
 
 | Artifact | Kubernetes contract | CNPG prerequisite | Default PostgreSQL + AGE image |
 |---|---|---|---|
 | Published KubeAtlas v1.5.2 chart | Chart metadata allows Kubernetes 1.26 and newer; it predates the bounded v1.6 production matrix. | Use chart 0.29.0 / operator 1.30.0 for a fresh cluster. Existing 0.22.1 installations must follow the staged upgrade below. | `16.6-age1.6.0-rc0.1` |
-| Current `main` / planned v1.6 | Vanilla Kubernetes 1.34, 1.35, and 1.36 only. | Chart 0.29.0 / operator 1.30.0. | `16.15-age1.6.0-rc0.2` |
+| Published KubeAtlas v1.6.0 chart | Vanilla Kubernetes 1.34, 1.35, and 1.36 source-validation matrix. | Chart 0.29.0 / operator 1.30.0. | `16.15-age1.6.0-rc0.2` |
 
-The `main` row is an implementation baseline, not a claim that v1.6 has been
-released. Its production contract becomes effective only after the v1.6
-release gates pass and the signed artifacts are published.
+The final public Tier 2 artifact smoke check covered Linux AMD64 on Kubernetes
+1.36.1. It is separate from the source-validation matrix and the one-hour local
+functional run. See the [release evidence](../release-process.md) for the exact
+immutable digests, verification instructions, and remaining validation limits.
 
 ### Tunable values
 
@@ -133,6 +133,9 @@ marker availability and age, and keep restore drills as the actual recovery
 evidence. See [Signals, alerts, and recovery](../operations/runbooks.md).
 
 ### Upgrade from v1.5.0
+
+This historical first step targets v1.5.2, not v1.6.0. Complete the operator
+and Kubernetes prerequisites below before the separate v1.6.0 upgrade.
 
 v1.5.0 bundled the operator inside the KubeAtlas release. Install
 the external operator first and let Helm transfer ownership of the
@@ -235,9 +238,9 @@ It is deliberately portable across vanilla Kubernetes storage providers. CNPG
 physical backups remain valid operator choices, but KubeAtlas does not ship an
 object-store or CSI-specific backup integration in v1.6.
 
-The commands below describe the planned v1.6 contract on repository `main`.
-Do not run them with `TARGET_VERSION=1.6.0` until that signed chart has been
-published. Before the maintenance window, require all of the following:
+The commands below target the published v1.6.0 chart. Verify its
+[signature and immutable identity](../release-process.md#verifying-a-v16-core-candidate)
+before the maintenance window, and require all of the following:
 
 - KubeAtlas is already on v1.5.2/schema v11 and the staged CNPG prerequisite
   upgrade above is complete.
@@ -437,6 +440,7 @@ For shops that already run a managed PG (with AGE installed) or want fine-graine
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version 1.6.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.connection.host=postgres.example.com \

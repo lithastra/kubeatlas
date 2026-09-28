@@ -13,6 +13,14 @@ For the current state, see [What is KubeAtlas](./).
 
 ## Where we are
 
+**v1.6.0 was released on September 26, 2026.** Its operability signals,
+runbooks, exact-source platform preflight, and public OCI artifact audits are
+documented in the [release matrix](./release-process.md). Validation was
+narrowed to one-hour functional observation plus a separate public-artifact
+smoke check; dedicated performance and endurance acceptance are not claimed.
+The original v1.6 planning targets below are retained as history, not a report
+that every target passed. New installations should use v1.6.0.
+
 **v1.5.2 is released.** It closes the Secret data boundary:
 KubeAtlas retains reference-only dependency nodes without collecting Secret
 objects or persisting their values and identifying metadata. Existing Tier 2
@@ -37,7 +45,7 @@ minor: an opt-in OpenTelemetry runtime overlay (`CALLS_AT_RUNTIME`),
 read-side multi-cluster RBAC visibility (F-206), and an internal
 GraphStore v2 clean-up that surfaces `graphstore_version` on
 `/api/v1/info`. Install with
-`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.5.2`
+`helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas --version 1.6.0`
 — see the [Quick Start](./quick-start.md).
 
 | Milestone | Status | What it delivered |
@@ -49,7 +57,7 @@ GraphStore v2 clean-up that surfaces `graphstore_version` on
 | **v1.4 / v1.5** | ✅ Released | Offline diagnostic report, Gatekeeper/Kyverno policy visibility, opt-in anonymous telemetry, v1alpha1 usage counters (v1.4). v1.5 (a non-breaking minor): OpenTelemetry runtime overlay (`CALLS_AT_RUNTIME`), read-side multi-cluster RBAC visibility (F-206), an internal GraphStore v2 clean-up, and the Backstage plugin reaching GA at Headlamp parity. `v1alpha1` stays frozen — there is no v2.0 on the committed roadmap. |
 | **v1.5.1** | ✅ Released | Explicit CloudNativePG prerequisite, retained Tier 2 data by default, reproducible PostgreSQL + AGE image, and enforced upgrade, recovery, uninstall-retention, and snapshot release evidence. |
 | **v1.5.2** | ✅ Released | Secret relationships remain reference-only while Secret objects, values, identifying metadata, and historical event payloads are excluded or scrubbed. |
-| **v1.6** | 🎯 Planned | Production operability: supported dependency baselines, a tested v1.5.2 upgrade and Tier 2 restore path, scheduled clean-cluster evidence, performance and soak gates, operator runbooks, and verifiable core cluster artifacts. |
+| **v1.6.0** | ✅ Released | Production-operability signals and runbooks, source platform/upgrade/restore validation, and verified public OCI artifacts. One-hour functional scope; no endurance or dedicated performance acceptance claim. |
 | **Further out** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference; a possible future `v1alpha1` retirement (which would version a v2.0). |
 
 ## Related tools
@@ -348,7 +356,7 @@ frozen, and there is **no v2.0** on the committed roadmap.
   Backstage plugin reaches v1.0.0 GA at Headlamp parity, adding an
   Admission-policies card (F-205) and a Runtime-calls card (F-204).
 
-## v1.6 (planned) — production operability
+## v1.6.0 — production operability {/* #v16-planned--production-operability */}
 
 v1.6 is a reliability release for DevOps teams operating KubeAtlas on
 vanilla Kubernetes. It does not widen the product surface. Its release
@@ -357,9 +365,10 @@ supported Kubernetes cluster, upgrade directly from v1.5.2, restore Tier 2
 after deliberate data loss, and measure stability under a declared workload without
 weakening KubeAtlas's read-only or Secret-data boundaries.
 
-This is a plan, not a description of what v1.5.2 already implements. Each
-capability below must produce the listed public or CI evidence before v1.6.0
-can claim it.
+The following is the **original planning contract**, preserved for context.
+The released outcome and approved observation-scope reduction are recorded
+above and in the [release matrix](./release-process.md). In particular,
+performance and endurance targets below are not passing v1.6.0 evidence.
 
 Tracking lives in the
 [v1.6 Production Operability milestone](https://github.com/lithastra/kubeatlas/milestone/2).
@@ -371,7 +380,7 @@ The implementation order is the supported
 then the final
 [core artifact audit](https://github.com/lithastra/kubeatlas/issues/27).
 
-### Committed scope
+### Original planning scope (historical) {/* #committed-scope */}
 
 - **Supported platform baseline** — at the v1.6 code freeze, support and test
   only the three Kubernetes minor branches still maintained upstream. The
@@ -423,7 +432,7 @@ then the final
   exports, rule inputs, and telemetry. A random sentinel scan gates every
   upgrade, restore, and soak run.
 
-### v1.6.0 release gates
+### Original acceptance targets (historical, not a pass report) {/* #v160-release-gates */}
 
 | Gate | Required evidence |
 |---|---|
@@ -486,7 +495,7 @@ published API schema on their independent release cadence.
 
 - v1.6 supports a direct upgrade from the latest v1.5.2 release only. Older
   installations move to v1.5.2 first.
-- After v1.6.0 is released, only the latest v1.6 patch is maintained; the
+- Only the latest v1.6 patch is maintained; the
   project does not run parallel v1.5 and v1.6 maintenance branches.
 - Database downgrade is not promised. Recovery from a failed irreversible
   migration uses the protected pre-upgrade backup and documented restore path,

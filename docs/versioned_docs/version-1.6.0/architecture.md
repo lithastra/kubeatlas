@@ -225,15 +225,18 @@ Three composed queries that share the `Direction` enum on the
   corresponding release workflow and public artifact provide
   verifiable evidence.
 
-The planned v1.6 release line focuses on production operability: a
+The published v1.6.0 release focuses on production operability: a
 supported Kubernetes, CloudNativePG, and PostgreSQL baseline; one tested
 v1.5.2 upgrade and embedded Tier 2 restore path; scheduled clean-cluster
-evidence; performance and three-day endurance gates; operator-visible
+toolchain; operator-visible
 failure signals; and verifiable core OCI artifacts. It remains a
 single-application-replica, externally authenticated, read-only deployment.
-Generated clients are a non-blocking stretch goal and ecosystem packages keep
-their independent release cadence. See the [v1.6 scope and release
-gates](./roadmap.md#v16-planned--production-operability).
+Its accepted observation scope is one-hour functional validation and a
+separate short public-artifact smoke check, not dedicated performance or
+endurance acceptance. Generated clients remain a non-blocking stretch goal
+and ecosystem packages keep their independent release cadence. See the
+[release matrix](./release-process.md) and the
+[original v1.6 planning targets](./roadmap.md#v16-planned--production-operability).
 
 The v0.1.0 API surface and the `graph.Resource`/`graph.Edge`
 shapes stay frozen across v1.x: only additive changes. CI's

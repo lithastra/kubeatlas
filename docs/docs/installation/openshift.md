@@ -7,7 +7,7 @@ title: OpenShift / OpenShift Local (CRC)
 
 :::warning Integration guide, not a v1.6 support gate
 
-The planned v1.6 production matrix covers vanilla Kubernetes 1.34–1.36.
+The v1.6.0 source-validation matrix covers vanilla Kubernetes 1.34–1.36.
 OpenShift is not a release-gating environment. This page preserves the shipped
 OpenShift integration and local CRC workflow; it is not a provider-specific
 production-support claim.
@@ -67,7 +67,7 @@ pull-secret from
      --wait --timeout 5m
 
    helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-     --version 1.5.2 \
+     --version 1.6.0 \
      --namespace kubeatlas --create-namespace \
      --set persistence.enabled=true \
      --set persistence.embedded.enabled=true \
@@ -110,10 +110,10 @@ sourcing. If your cluster pulls from a mirror, override
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.5.2 \
+  --version 1.6.0 \
   --namespace kubeatlas --create-namespace \
   --set image.repository=registry.example.com/mirror/lithastra/kubeatlas \
-  --set image.tag=1.5.2
+  --set image.tag=1.6.0
 ```
 
 If you intend to expose the UI via an OCP Route, the chart does not

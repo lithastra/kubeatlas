@@ -29,12 +29,13 @@ blast-radius mode directly inside Headlamp's cluster console:
 
 ## Can I run this in production today?
 
-The published v1.5.2 release can be used for read-only introspection within its
-documented single-replica, authentication, and persistence boundaries. Select
-**1.5.2** in the documentation version menu for instructions that match those
-artifacts. Current `main` is the unreleased v1.6 development line; its new
-vanilla-Kubernetes production matrix is not a released support claim until all
-v1.6 gates pass.
+The published **v1.6.0** release is available for read-only introspection
+within its documented single-replica, external-authentication, and persistence
+boundaries. The default **1.6.0** documentation matches those artifacts;
+**Next (unreleased)** follows development and is not another published release.
+Review the [release evidence and limits](./release-process.md) before deployment:
+one-hour functional validation and a short public-install smoke check do not
+establish long-term reliability or dedicated performance acceptance.
 
 From v1.0 the chart ships an
 opt-in Tier 2 backend (PostgreSQL + Apache AGE via a CNPG-managed
@@ -51,7 +52,7 @@ exposing the UI.
 
 ## Does it work on OpenShift / EKS / AKS / GKE?
 
-The planned v1.6 production support matrix is vanilla Kubernetes
+The v1.6.0 source-validation matrix is vanilla Kubernetes
 1.34–1.36, matching the three upstream-maintained minor branches at
 code freeze. Discovery is GVR-driven, so platform-specific add-ons may
 work when their CRDs and explicit read-only RBAC are present, but EKS,

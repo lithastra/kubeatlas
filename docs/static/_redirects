@@ -1,0 +1,5 @@
+# Preserve version-qualified links while 1.6.0 is the default stable version.
+# Remove these temporary aliases when a newer stable version takes the root:
+# Docusaurus will then serve the historical 1.6.0 pages at their original paths.
+/1.6.0 / 302
+/1.6.0/* /:splat 302

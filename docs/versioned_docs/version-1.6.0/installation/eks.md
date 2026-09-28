@@ -7,7 +7,7 @@ title: Amazon EKS
 
 :::warning Integration guide, not a v1.6 support gate
 
-The planned v1.6 production matrix covers vanilla Kubernetes 1.34–1.36. EKS is
+The v1.6.0 source-validation matrix covers vanilla Kubernetes 1.34–1.36. EKS is
 not a release-gating environment. This page preserves the optional EKS rule-pack
 integration and is not a claim of provider-specific production support.
 
@@ -75,7 +75,7 @@ exist:
      --wait --timeout 5m
 
    helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-     --version 1.5.2 \
+     --version 1.6.0 \
      --namespace kubeatlas --create-namespace \
      --set persistence.enabled=true \
      --set persistence.embedded.enabled=true \
