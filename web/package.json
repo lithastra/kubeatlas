@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "lint": "eslint .",
+    "pretest": "node --test test-stubs/ts-jest-transformer.check.cjs",
     "test": "jest",
     "test:e2e": "playwright test"
   },
