@@ -38,13 +38,15 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/lithastra/kubeatlas/tree/main/docs/',
           routeBasePath: '/',
-          lastVersion: 'current',
+          lastVersion: '1.6.0',
           versions: {
             current: {
-              label: 'Next (v1.6)',
+              label: 'Next (unreleased)',
+              path: 'next',
             },
             '1.6.0': {
-              label: '1.6.0 (release candidate)',
+              label: '1.6.0',
+              path: '',
             },
           },
         },
@@ -68,6 +70,10 @@ const config: Config = {
           sidebarId: 'docsSidebar',
           position: 'left',
           label: 'Docs',
+        },
+        {
+          type: 'docsVersionDropdown',
+          position: 'right',
         },
         {
           href: 'https://github.com/lithastra/kubeatlas',

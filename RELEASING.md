@@ -1,337 +1,157 @@
 # Releasing KubeAtlas
 
-Generic step-by-step for cutting a tagged release. Replace `vX.Y.Z`
-with the actual version (`v1.4.0`, `v1.3.1`, etc.) throughout.
+Maintainer checklist for future releases and post-release documentation.
+Use the actual candidate version throughout; the published v1.6.0 source is
+`69609e320045cbd943185dfa7900c3302359999e`. Its artifacts, evidence, and limits
+are recorded in the [release matrix](docs/docs/release-process.md).
+Later `main` commits and documentation corrections do not change that release.
 
-Originally derived from a one-time `RELEASING-v1.3.0.md` that
-covered the Phase 3 wrap-up; this file is the steady-state recipe
-used for every subsequent release.
+## 1. Prepare and freeze the candidate
 
----
+1. Prepare version, Chart, dependency-recipe, and CHANGELOG changes in a PR.
+   Use Conventional Commits with DCO sign-off; do not bypass review by pushing
+   release changes directly to `main`.
+2. State the supported Kubernetes matrix, authentication and replica limits,
+   validation duration, and explicitly untested areas before validation.
+   A one-hour functional check does not establish endurance, performance
+   acceptance, HA, or general production reliability.
+3. Check the release contract, Chart metadata, documentation, and all CI gates.
+   A changed database image recipe needs a new immutable recipe tag.
+   Candidate docs must not promote installation commands for unpublished
+   artifacts. Retain historical version snapshots and upgrade paths.
+4. Merge the approved PR, freeze the exact source SHA, and run the full manual
+   [Release preflight](.github/workflows/release-preflight.yml) on that SHA.
+   Record the resolved workflow SHA and all job results; a PR build-only
+   preflight is not the complete release rehearsal.
+5. Confirm the working tree is clean, the intended source equals the reviewed
+   commit, and validation evidence belongs to it. Do not combine observations
+   from failed or superseded candidates. Any source change requires reviewing
+   which gates must run again.
 
-## 0. Pre-flight (must all be true before you tag)
-
-Run from the repo root.
+Run checks from this repository, not a parent multi-repository workspace:
 
 ```bash
-cd "$(git rev-parse --show-toplevel)"
-
-# 0.1 Working tree clean, on main, in sync with origin
-git fetch origin
-git status -sb                       # ## main...origin/main, nothing dirty
-git rev-parse --abbrev-ref HEAD      # main
-
-# 0.2 Full test sweep
 go test ./...
-( cd web && npm run typecheck && npm run lint && npm test && npm run build )
-
-# 0.3 Helm chart unit tests + API compatibility (frozen v1alpha1 surface)
-helm unittest helm/kubeatlas
 go run ./tools/api-compat-check
-
-# 0.4 Helm chart version + appVersion match the tag you're about to push
-grep -E "^(version|appVersion)" helm/kubeatlas/Chart.yaml
-# Expect: version: X.Y.Z  /  appVersion: "X.Y.Z"   (no leading 'v')
-
-# 0.5 CHANGELOG has a vX.Y.Z section (the release workflow extracts
-#     it via `make changelog-extract VERSION=vX.Y.Z`)
-make changelog-extract VERSION=vX.Y.Z && head -5 /tmp/release-notes.md
-
-# 0.6 README + current docs describe vX.Y.Z truthfully as a candidate;
-#     installation examples remain on the last publicly verified version.
-grep -n "vX.Y.Z" README.md docs/docs/intro.md docs/docs/roadmap.md | head
-
-# 0.7 Current documentation builds. Patch releases keep one maintained
-#     current-docs line; do not create another historical snapshot here.
-( cd docs && npm ci && npm run build )
-
-# 0.8 The no-publish release rehearsal succeeds on this exact main SHA.
-#     This uses Go 1.26, Node 20, Helm 3.20, GoReleaser v2, and Docker
-#     Buildx in GitHub Actions; it does not log in to a registry.
-gh workflow run release-preflight.yml --ref main -f version=vX.Y.Z
-gh run watch --exit-status
+helm unittest helm/kubeatlas
+(cd web && npm ci && npm run typecheck && npm run lint && npm test && npm run build)
+(cd docs && npm ci && npm run typecheck && npm run test:dependencies && npm run build)
+make changelog-extract VERSION=vX.Y.Z
 ```
 
-Any failure → fix in `main` first; do not proceed. The release
-workflow runs its own gates but does not undo a bad tag.
+Use the workflow's pinned toolchain and explicit candidate ref for the manual
+preflight. Confirm the run's `headSha` matches the frozen source, not simply that
+the latest run is green. Keep workstation-specific runners, credentials,
+database backups, and private evidence outside the public repository.
 
-Historical version snapshots are not a patch-release gate. KubeAtlas maintains
-the latest documentation line; existing snapshots remain historical evidence,
-not copies that must be regenerated for every patch.
+## 2. Authorize and push the signed tag
 
----
+Tag creation and publication require an explicit release decision. Create an
+annotated, cryptographically signed tag at the frozen commit, verify its
+signature and target, then push only that tag. DCO sign-off is not a tag
+signature; do not silently downgrade to an unsigned tag.
 
-## 1. Bump the Helm chart version
+The [release workflow](.github/workflows/release.yml) publishes OCI artifacts
+before the GitHub Release becomes public. Pushing the tag is therefore a
+publication action, not a reversible draft preview.
 
-```bash
-sed -i 's/^version:.*/version: X.Y.Z/'          helm/kubeatlas/Chart.yaml
-sed -i 's/^appVersion:.*/appVersion: "X.Y.Z"/'  helm/kubeatlas/Chart.yaml
-grep -E "^(version|appVersion)" helm/kubeatlas/Chart.yaml
+The workflow:
 
-git add helm/kubeatlas/Chart.yaml
-git commit -s -m "chore: bump Helm chart to X.Y.Z for release"
-git push origin main
+1. Enforces release metadata and the immutable database-recipe contract.
+2. Reuses and verifies an existing PostgreSQL + AGE recipe image, or publishes
+   it once if absent. Registry errors fail closed; they are not absence.
+3. Builds the server and CLI archives, checksums, application image, and draft
+   GitHub Release through GoReleaser.
+4. Publishes the Helm OCI chart after the image jobs succeed.
+5. Keyless-signs the application, database, and Chart by immutable digest.
+   Both runtime images have per-platform SPDX SBOM and SLSA provenance checks.
+6. Independently audits anonymous pulls, exact-release signatures and
+   attestations, and a clean-cluster install.
 
-# Wait for CI on main to go green before tagging
-gh run watch --exit-status
-```
+Match each signature's workflow identity, issuer, repository, tag, source SHA,
+annotations, and digest. A valid signature from an unrelated identity is not
+sufficient. The standalone archives remain checksum-verified but unsigned;
+OCI signatures do not cover their contents.
 
----
+## 3. Audit and publish the draft
 
-## 2. Tag and push
+Inspect every publishing and audit job for the exact tag. Record the signed
+tag object, source SHA, numeric Release ID, immutable OCI digests, asset names,
+checksums, and validation limits. Draft lookup must use an authorized draft
+listing or numeric ID; a published-tag endpoint returning 404 does not prove
+the draft is missing.
 
-```bash
-# Annotated, signed tag. Drop -s if you don't have a GPG key.
-git tag -s -a vX.Y.Z -m "vX.Y.Z — <headline>"
-git push origin vX.Y.Z
-```
+Before promoting the draft:
 
-`<headline>` matches the second half of the CHANGELOG header so the
-GitHub release card title reads sensibly.
+- Verify archive inventories, embedded versions and source identities,
+  platform architectures, and checksums. Distinguish static inspection from
+  executing a binary on its target operating system.
+- Verify anonymous Chart/image access and the digest-bound trust policy.
+  Use fresh temporary registry configuration; never delete or log out the
+  operator's ordinary Helm/Docker credentials to simulate anonymity.
+- Verify the declared install and recovery scope in an explicitly selected,
+  disposable cluster. Record its context and ownership before creating or
+  cleaning resources; never assume the current kubeconfig context is disposable.
+- Review the public release notes against actual evidence. Local source-build
+  validation does not substitute for testing the distributed artifacts.
+- Obtain approval to publish the draft. After publication, independently
+  download every archive anonymously and verify its recorded checksum.
 
----
+Use [the artifact verification policy](https://docs.kubeatlas.lithastra.com/release-process#verifying-a-v16-core-candidate)
+and [recovery guidance](docs/docs/installation/persistence.md), not a successful
+workflow status alone. A published release may still need a clearly reported
+post-publication download or deployment check.
 
-## 3. Wait for the release workflow
+Do not delete, move, or overwrite a published tag or artifact. Investigate a
+failure before retrying any publishing job. If source or artifact bytes must
+change, fix forward through review and a new semantic patch release, not a
+retag or a build-metadata suffix that reuses an existing version.
 
-[.github/workflows/release.yml](.github/workflows/release.yml)
-triggers on the tag push and runs:
+## 4. Deliver independently versioned integrations
 
-1. `make changelog-extract VERSION=vX.Y.Z OUT=/tmp/release-notes.md`
-   — pulls the matching CHANGELOG section.
-2. `goreleaser release --clean --release-notes=/tmp/release-notes.md`
-   — multi-platform binaries (`kubeatlas`, `kubectl-atlas`),
-   checksums, the multi-architecture application image, and a draft
-   GitHub Release whose body is the extracted CHANGELOG section.
-3. The PostgreSQL + AGE job checks its recipe-version image tag. An
-   existing tag is verified and reused without a push; a missing tag
-   is published once with BuildKit SBOM and provenance attestations.
-   Registry errors fail closed, and changing the Dockerfile without
-   changing the image tag fails the release contract.
-4. `helm package` + `helm push` publishes the chart to
-   `oci://ghcr.io/lithastra/charts/kubeatlas:X.Y.Z` after both image
-   jobs succeed.
+- **Krew:** update `plugins/atlas.yaml` with all six published CLI URLs and
+  checksums. Validate it in an isolated `KREW_ROOT` without replacing the
+  operator's installed plugin. Submit the upstream index PR and distinguish
+  submission from merge and official-index availability.
+- **Headlamp:** verify the standalone plugin release separately from upstream
+  catalog availability. A pending catalog PR is not a published catalog entry.
+- **Action and rule packs:** retain their own versions and record which core
+  version their compatibility evidence actually exercises.
+- **Backstage:** follow the current delivery decision. v1.6.0 closeout uses the
+  fixed 1.0.1 source-only delivery; do not imply npm 1.0.0 contains that fix or
+  publish a package without a separate decision.
 
-The workflow does not currently create Cosign signatures for the
-application image, Helm chart, or binary archives. It also does not
-make an explicit, release-audited SBOM/provenance guarantee for the
-application image or binaries. Do not describe those artifacts as
-signed, SBOM-attached, or provenance-attested until matching jobs and
-public verification evidence are present. This limitation is separate
-from the signed OCI Rego rule-pack pipeline.
+Core release success does not automatically publish or validate these products.
+Use the [integration matrix](docs/docs/release-process.md#independently-versioned-integrations)
+to record facts, deferred work, and compatibility gaps independently.
 
-The GitHub Release remains a draft, but the tag-triggered workflow has
-already published the application image, updated its moving `latest`
-tag, and pushed the Helm chart. Treat `git push origin vX.Y.Z` as the
-production publication decision, not as a reversible preview.
+## 5. Close out documentation after public verification
 
-Watch + verify:
+1. Update README, CHANGELOG, current docs, and the relevant release snapshot
+   to the actual publication date, source identity, verified artifacts, and
+   accepted validation scope. Keep `Unreleased` changes separate from the
+   already published tag.
+2. Promote the verified stable version in `docs/docusaurus.config.ts`.
+   The stable version serves at `/`; development docs serve at `/next/`
+   with an unreleased banner. Keep the version dropdown available.
+3. Pin fresh-install examples to the published stable version. Do not blindly
+   replace older versions in migration sequences, historical releases, or
+   CloudNativePG/Kubernetes prerequisites. Do not create a historical snapshot
+   for every patch release.
+4. Preserve inbound links. While 1.6.0 occupies the root, temporary Cloudflare
+   Pages aliases in `docs/static/_redirects` map `/1.6.0/*` to the same stable
+   page. When the next stable version takes the root, remove those aliases:
+   Docusaurus must then serve historical 1.6.0 content at its original paths.
+5. Run the docs typecheck, dependency tests, and production build. The build
+   runs portable regression tests against generated release routes and
+   content. Review the stable, next, historical, and upgrade pages in a browser.
+6. Merge the reviewed docs PR after its final checks pass. Verify the existing
+   Cloudflare Pages deployment at
+   [docs.kubeatlas.lithastra.com](https://docs.kubeatlas.lithastra.com):
+   version labels, installation pins, old links, and release evidence must
+   match the merged content. CI build success is not deployment proof.
 
-```bash
-gh run watch --exit-status
-
-# Assets exist
-gh release view vX.Y.Z --json assets --jq '.assets[].name'
-
-# Chart pulls anonymously (means the package is public + token endpoint works)
-helm registry logout ghcr.io 2>/dev/null
-rm -f ~/.config/helm/registry/config.json
-helm pull oci://ghcr.io/lithastra/charts/kubeatlas --version X.Y.Z -d /tmp
-
-# Image manifest is reachable
-docker pull ghcr.io/lithastra/kubeatlas:X.Y.Z
-docker inspect ghcr.io/lithastra/kubeatlas:X.Y.Z | jq '.[0].Config.Labels'
-```
-
-If any check fails: **do not delete the tag.** Investigate the run
-log, fix forward in `main`, and either re-run failed jobs from the
-Actions UI or cut a `vX.Y.Z+post1`-style patch tag.
-
-If `helm pull` returns 403, the ghcr.io package is private —
-flip both packages to public via the GitHub UI:
-
-- `https://github.com/orgs/lithastra/packages/container/charts%2Fkubeatlas/settings`
-- `https://github.com/orgs/lithastra/packages/container/kubeatlas/settings`
-
-The chart and the image are independent packages.
-
----
-
-## 4. Promote the draft release to public
-
-Goreleaser leaves the release in **draft** state. Edit the title /
-notes if needed (the body is auto-filled from the CHANGELOG via
-`--release-notes`), then publish:
-
-```bash
-gh release view vX.Y.Z --web    # opens the editor
-# Verify body looks right, hit "Publish release".
-```
-
----
-
-## 5. Smoke-test the published artifacts
-
-In a throwaway namespace on a kind cluster:
-
-```bash
-kind create cluster --name release-smoke
-kubectl create deploy nginx --image=nginx
-kubectl expose deploy nginx --port=80
-kubectl create configmap demo --from-literal=k=v
-kubectl autoscale deploy nginx --min=2 --max=4 --cpu-percent=99
-
-helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version X.Y.Z \
-  --namespace kubeatlas --create-namespace
-kubectl -n kubeatlas rollout status deploy/kubeatlas --timeout=120s
-kubectl -n kubeatlas port-forward svc/kubeatlas 8080:80 >/tmp/pf.log 2>&1 &
-PF_PID=$!
-sleep 2
-
-# API sanity
-curl -fsS localhost:8080/healthz
-curl -fsS localhost:8080/readyz
-curl -s "localhost:8080/api/v1alpha1/graph?level=cluster" | jq '.nodes | length'
-curl -s "localhost:8080/api/v1alpha1/resources/default/HorizontalPodAutoscaler/nginx" | jq '.outgoing'
-#   ↑ should show one SCALES edge to default/Deployment/nginx
-
-# UI sanity — open in browser
-xdg-open http://localhost:8080 || open http://localhost:8080
-# - Topology canvas renders
-# - ⌘K palette finds "nginx"
-# - Theme switcher cycles 5 themes
-# - Resources page Kind column shows "HorizontalPodAutoscaler" in full
-# - Click nginx Deployment → "↯ Show blast radius" highlights HPA + Service
-
-# Tear down
-kill $PF_PID
-helm -n kubeatlas uninstall kubeatlas
-kind delete cluster --name release-smoke
-```
-
-Anything broken → cut `vX.Y.(Z+1)` with the fix; don't try to
-reissue `vX.Y.Z`.
-
----
-
-## 6. Update the kubectl plugin index (krew)
-
-The `kubectl atlas` plugin ships separately via krew-index. The
-manifest is [plugins/atlas.yaml](plugins/atlas.yaml).
-
-```bash
-# 6.1 Compute SHA256 of every released kubectl-atlas asset
-URL="https://github.com/lithastra/kubeatlas/releases/download/vX.Y.Z"
-for os in linux darwin windows; do
-  for arch in amd64 arm64; do
-    file="kubectl-atlas_X.Y.Z_${os}_${arch}.tar.gz"
-    sha=$(curl -fsSL "$URL/$file" | sha256sum | cut -d' ' -f1)
-    printf "%-60s %s\n" "$file" "$sha"
-  done
-done | tee /tmp/vX.Y.Z-shas.txt
-
-# 6.2 Edit plugins/atlas.yaml — replace every prior version with
-#     vX.Y.Z and update every `sha256:` from /tmp/vX.Y.Z-shas.txt.
-#     Six platforms (linux/darwin/windows × amd64/arm64).
-${EDITOR:-vi} plugins/atlas.yaml
-
-# 6.3 Validate locally
-kubectl krew install --manifest=plugins/atlas.yaml
-kubectl atlas --version             # should print "X.Y.Z (commit ..., built ...)"
-kubectl krew uninstall atlas
-
-# 6.4 Commit the updated manifest to kubeatlas
-git add plugins/atlas.yaml
-git commit -s -m "chore(krew): bump atlas plugin manifest to vX.Y.Z"
-git push origin main
-
-# 6.5 Open the upstream krew-index PR
-KUBEATLAS_ROOT=$(git rev-parse --show-toplevel)
-mkdir -p /tmp/krew-work && cd /tmp/krew-work
-git clone https://github.com/kubernetes-sigs/krew-index || (cd krew-index && git pull)
-cd krew-index
-git checkout -b atlas-vX.Y.Z
-cp "$KUBEATLAS_ROOT/plugins/atlas.yaml" plugins/atlas.yaml
-git add plugins/atlas.yaml
-git commit -s -m "atlas: upgrade to vX.Y.Z" \
-  -m "Bumps URIs and sha256 across all six platforms." \
-  -m "Release notes: https://github.com/lithastra/kubeatlas/releases/tag/vX.Y.Z"
-gh repo set-default kubernetes-sigs/krew-index
-gh pr create --title "atlas: upgrade to vX.Y.Z" \
-  --body "Upgrades the atlas plugin to vX.Y.Z. SHAs verified locally with kubectl krew install --manifest."
-cd "$KUBEATLAS_ROOT"
-```
-
-Krew-index PRs merge on the maintainers' cadence (often days);
-the GitHub release is already public so users can still
-`curl -L .../kubectl-atlas_X.Y.Z_*.tar.gz`.
-
----
-
-## 7. Publish the docs site
-
-```bash
-cd "$(git rev-parse --show-toplevel)/docs"
-npm ci
-npm run build
-
-# After every vX.Y.Z artifact and install command resolves publicly, update the
-# current documentation label and version-pinned examples to X.Y.Z, rebuild,
-# review the diff, and publish. Do not create a patch-version snapshot.
-grep -R "X.Y.Z" docusaurus.config.ts docs | head
-
-# Push to your hosting (pick the matching path):
-#   GitHub Pages via a workflow:  on tag push the docs workflow
-#     deploys; just verify https://docs.kubeatlas.lithastra.com.
-#   Manual / Cloudflare Pages:    wrangler pages deploy build
-cd "$(git rev-parse --show-toplevel)"
-```
-
----
-
-## 8. Post-release housekeeping
-
-```bash
-# 8.1 Add an Unreleased buffer back to CHANGELOG (if not still present)
-${EDITOR:-vi} CHANGELOG.md
-#     Insert above "## [vX.Y.Z]":
-#       ## [Unreleased]
-#
-#       ### Added / Changed / Fixed
-#
-#       _(none yet)_
-
-git add CHANGELOG.md
-git commit -s -m "chore(changelog): open Unreleased section after vX.Y.Z"
-git push origin main
-
-# 8.2 File any follow-up issues for known polish items.
-# Use the project's vX.Y.x label so they sort with the line they target.
-```
-
----
-
-## Rollback checklist (if something is on fire after release)
-
-1. **Don't delete the tag or the GitHub release.** Operators may
-   have pinned `X.Y.Z` already.
-2. **Cut a `vX.Y.(Z+1)` patch.** Even a chart-only fix bumps the
-   patch.
-3. **Add a deprecation note** to the bad release's GitHub page if
-   the bug is severe enough to recommend skipping.
-
----
-
-## Why each step exists
-
-- **0.5 / 3.1** — `make changelog-extract` populates the GitHub
-  release body from `CHANGELOG.md` automatically. Without it every
-  release card carries the same static header (the
-  Phase 1 boilerplate problem that hit v0.1.0 through v1.3.0).
-- **3 + 5** — separating "workflow finished" from "smoke tested"
-  keeps the `gh release publish` step gated on a real e2e check, not
-  just "CI green".
-- **6** — krew-index is a separate Kubernetes-SIG repo; it doesn't
-  watch our releases, so the PR is manual every time.
-- **8.1** — leaves the next release's section pre-opened so the
-  first PR after the cut doesn't have to wonder where to add notes.
+Do not assume a tag deploys the docs or create a separate hosting project.
+If the existing deployment fails, report that boundary and diagnose it before
+changing hosting configuration. Documentation-only closeout does not rebuild
+images, replace release assets, create a new tag, or require a new core release.
