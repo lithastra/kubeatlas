@@ -78,11 +78,16 @@ baseline, regresses by more than 20 %:
 bash test/verify/perf-regression.sh
 ```
 
-## Planned v1.6 release gate
+## v1.6.0 validation scope and benchmark targets {/* #planned-v16-release-gate */}
 
-The historical baselines above remain useful regression signals, but they do
-not prove the unreleased v1.6 production contract. v1.6 adds three bounded,
-fail-closed measurements on one exact candidate commit:
+The published v1.6.0 release used one-hour functional validation and a separate
+short public-install smoke check. **It does not claim dedicated performance
+acceptance or endurance.** See the [release matrix](../release-process.md)
+for the exact source, artifacts, evidence, and limits.
+
+The historical baselines above and the original benchmark protocol below are
+retained as regression tools, not final-release acceptance results. A future
+performance claim requires all three measurements on the exact tested commit:
 
 | Evidence row | Kubernetes fixture | Resources | Namespace p95 |
 |---|---|---|---|
@@ -98,7 +103,7 @@ rendered resource settings and Go memory limit, exact fixture counts, Kubernetes
 and container-runtime versions, host capacity, RSS, restarts, and OOM state.
 
 The reusable benchmark tools and resource profiles are present on `main`;
-that is not a claim that final release validation has passed. Keep
+that is not a claim that final-release performance validation passed. Keep
 workstation-specific orchestration and run evidence outside the source tree.
 Retain all three measurements with their inputs, failures, and artifact
 identities so another reviewer can independently assess the results.

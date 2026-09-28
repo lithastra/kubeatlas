@@ -29,22 +29,27 @@ the tools above instead of replacing them.
 
 ## Project status
 
-**v1.6.0 is in release preparation, not yet published.** Its bounded target
-is production operability on vanilla Kubernetes 1.34–1.36. Release approval
-requires exact-candidate validation, manual preflight, and a public artifact
-audit; local validation results do not establish public availability. See the
-[release process](./release-process.md). Use **1.5.2** for instructions that
-match the latest published artifacts; the 1.6.0 documentation snapshot is a
-release-candidate reference, not a claim of availability.
+**v1.6.0 was released on September 26, 2026.** New installations should pin
+**1.6.0**. It improves production operability on vanilla Kubernetes 1.34–1.36
+with health signals, operator runbooks, and verifiable public OCI artifacts.
+The [release matrix](./release-process.md) links the exact-source validation,
+public artifacts, and independently versioned integrations.
+
+The supported deployment remains single-replica and requires external
+authentication. One-hour local functional validation and a separate short
+public-install smoke check do not establish endurance, dedicated performance
+acceptance, or a general production-reliability guarantee. The signed release
+source is `69609e320045cbd943185dfa7900c3302359999e`; later `main` commits
+do not change the published v1.6.0 artifacts.
 
 **v1.5.2 is released.** The dependency graph keeps Secret references but
 KubeAtlas no longer lists or watches Secret objects. Defensive inputs are
 reduced to reference-only nodes before rule evaluation or storage, existing
 Tier 2 Secret rows and historical event payloads are scrubbed during migration,
 and snapshot history is metadata-only for every resource. The public release
-artifacts and production install path are verified; new installations should
-pin v1.5.2. See the [release matrix](./release-process.md) for the evidence and
-the independently reviewed integration status.
+artifacts and production install path were verified for that release.
+These protections remain in v1.6.0; v1.5.2 is the supported upgrade starting
+point, not the recommended version for a new installation.
 
 **v1.5.1.** The v1.5.0 feature set is unchanged, but the Tier 2
 installation and release lifecycle are hardened:

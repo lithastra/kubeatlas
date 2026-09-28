@@ -5,7 +5,12 @@ KubeAtlas uses [Semantic Versioning](https://semver.org/) — breaking
 changes bump the major number, additive changes bump the minor,
 fixes bump the patch.
 
-## [v1.6.0] — Production operability
+## [Unreleased]
+
+Changes merged after the signed v1.6.0 source commit are not included in its
+published artifacts. Documentation corrections do not rebuild those artifacts.
+
+## [v1.6.0] — Production operability — 2026-09-26
 
 ### Added
 
@@ -34,10 +39,15 @@ fixes bump the patch.
 
 ### Validation and scope
 
-- v1.6.0 is in release preparation, not yet published. Validation reports
-  must identify the exact candidate, immutable images, workload, and tested
-  duration. Maintainer-local orchestration and evidence are kept outside
-  the source repository; their presence is not proof of a passing release.
+- [v1.6.0 is published](https://github.com/lithastra/kubeatlas/releases/tag/v1.6.0)
+  from signed-tag source `69609e320045cbd943185dfa7900c3302359999e`.
+  Exact-source CI/preflight, public OCI audits, and anonymous archive-download
+  checks passed. See the release notes for immutable digests and evidence links.
+- A separate short public Tier 2 check covered Linux AMD64 on Kubernetes
+  1.36.1. Validation does not establish 72-hour endurance or dedicated
+  performance acceptance. Other platform archives were statically checked;
+  runtime execution coverage was limited to native macOS ARM64 standalone
+  binaries.
 - Upgrade validation starts from v1.5.2. Single-replica operation remains the
   supported scope; high-availability coordination is deferred. Functional
   validation alone is not an endurance or general production-reliability

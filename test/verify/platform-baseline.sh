@@ -90,10 +90,10 @@ for workflow in \
 done
 
 require_text docs/docs/quick-start.md 'Kubernetes 1.34–1.36'
-require_text docs/docs/installation/persistence.md 'Current `main` / planned v1.6'
+require_text docs/docs/installation/persistence.md 'Published KubeAtlas v1.6.0 chart'
 require_text docs/docs/installation/persistence.md '0.29.0→1.30.0'
 require_text docs/docs/installation/helm.md "CloudNativePG chart ${EXPECTED_CNPG_CHART} / operator ${EXPECTED_CNPG_OPERATOR}"
-require_text docs/docusaurus.config.ts "label: 'Next (v1.6)'"
+require_text docs/docusaurus.config.ts "label: 'Next (unreleased)'"
 require_text docs/versions.json '"1.5.2"'
 
 for kubernetes_version in 1.34.0 1.35.0 1.36.0; do

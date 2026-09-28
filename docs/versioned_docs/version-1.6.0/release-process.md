@@ -10,7 +10,7 @@ A core Git tag is therefore the start of a release, not proof that the
 whole release is usable. The release owner closes the matrix below with
 public-download evidence before announcing the version.
 
-For the planned v1.6 release, the manual `Release preflight` has two required
+For the v1.6 release line, the manual `Release preflight` has two required
 parts: build all candidate artifacts without publishing, and run the exact
 candidate across the frozen vanilla Kubernetes 1.34, 1.35, and 1.36 Tier 2
 matrix. A build-only result is not a release result. After publication, the
@@ -40,22 +40,62 @@ and clone the repository again. Do not merge old history back into the new
 main branch. Existing PR views, forks, and cached commits may still reference
 the previous history.
 
-## v1.6.0 release matrix — publication pending
+## v1.6.0 release matrix — published
 
-| Component | Target | Required evidence |
+[KubeAtlas v1.6.0](https://github.com/lithastra/kubeatlas/releases/tag/v1.6.0)
+was published on **September 26, 2026**, from signed-tag source
+`69609e320045cbd943185dfa7900c3302359999e`. Later commits on `main` and
+documentation corrections do not rebuild, replace, or re-sign those artifacts.
+
+| Component | Published version | Verified evidence |
 |---|---|---|
-| Core server and CLI | `v1.6.0` | Exact-commit manual preflight, correct binary versions, archive checksums |
-| Application image | `1.6.0` | Anonymous multi-architecture pull, digest-bound signing and attestations |
-| PostgreSQL + AGE image | `16.15-age1.6.0-rc0.2` | Immutable recipe, per-platform attestations, exact-release signing |
-| Helm chart | `1.6.0` | Matching release contract, anonymous pull and clean Tier 1/Tier 2 installs |
-| Documentation | `1.6.0` release-candidate snapshot | Production build without broken links; do not promote unpublished install commands |
-| Validation evidence | Exact candidate and immutable runtime images | Independently reviewed functional, performance, and recovery results; record endurance duration and any approved scope limits separately |
+| Core server and CLI | `v1.6.0` | Ten platform archives and checksums; [exact-source CI](https://github.com/lithastra/kubeatlas/actions/runs/35991313372), [full manual preflight](https://github.com/lithastra/kubeatlas/actions/runs/35991450060), and [anonymous complete downloads](https://github.com/lithastra/kubeatlas/actions/runs/36227051229) passed. |
+| Application image | `1.6.0` | Public linux/amd64 and linux/arm64 index; digest-bound signature, per-platform SBOM and provenance verified by the [artifact audit](https://github.com/lithastra/kubeatlas/actions/runs/36222619795). |
+| PostgreSQL + AGE image | `16.15-age1.6.0-rc0.2` | Both architectures, immutable recipe, exact-release signing and attestations verified by the same audit. Apache AGE is still the upstream `1.6.0-rc0` dependency, not GA 1.6.0. |
+| Helm chart | `1.6.0` | Public digest and signature verified; Tier 1 audit and a separate public Tier 2 smoke check passed. |
+| Documentation | `1.6.0` stable | Default release instructions, with historical versions preserved and development isolated under `/next/`. Build success is separate from checking deployed content. |
 
-The rule packs, Action, Krew, Headlamp, and Backstage retain independent
-versioning. Record their v1.6 compatibility only after testing the real
-artifacts; upstream Headlamp catalog follow-up remains deferred. The current
-public release is still v1.5.2. No row in this table is a claim that v1.6.0
-has already been published or publicly verified.
+### Immutable core artifact identities
+
+| Artifact | Verified OCI reference |
+|---|---|
+| Application | `ghcr.io/lithastra/kubeatlas@sha256:ff185a897c10f244de6b014a868af4fecaa1f15c300c1de9a7b58a62a3b338c8` |
+| PostgreSQL + AGE | `ghcr.io/lithastra/postgres-age@sha256:412ae56754e71aac96e8cb6327f70782c50bd4aeff75ff0ddf32eb4ee7400936` |
+| Helm chart | `oci://ghcr.io/lithastra/charts/kubeatlas@sha256:1ba4fe34276337f70d5a5d160dea1a3f225c9d3950b6e869691219a7c528fce3` |
+
+### Validation scope and limits
+
+- The exact-source preflight passed all 12 jobs, including Kubernetes
+  1.34/1.35/1.36, both database architectures, CloudNativePG upgrade windows,
+  and public v1.5.2 upgrade/restore.
+- The separate final-public-artifact Tier 2 smoke check covered **Linux AMD64
+  on Kubernetes 1.36.1**, with digest matching, real updates, health/queue
+  checks, Secret sentinel, and cleanup. It was not another one-hour run.
+- All ten standalone archives passed checksum, inventory, architecture, and
+  embedded-build-identity checks. Runtime execution coverage was limited to
+  the macOS ARM64 standalone executables. Anonymous complete downloads passed for all
+  archives; OCI signatures do not cover these binary archives.
+- Published validation scope was limited to one-hour functional checks.
+  **No 72-hour endurance test, dedicated performance acceptance, HA, or
+  general production-reliability guarantee is claimed for v1.6.0.** Earlier
+  failed or superseded runs are not time credit. Single-replica operation and
+  external authentication remain required.
+
+See the [release notes](https://github.com/lithastra/kubeatlas/releases/tag/v1.6.0)
+for the complete audit provenance and validation limits.
+
+### Independently versioned integrations
+
+Distribution status checked September 28, 2026; publication is not a new
+core-version compatibility claim.
+
+| Integration | Distribution state | Compatibility / delivery boundary |
+|---|---|---|
+| Krew `atlas` | Official index at `v1.6.0`; [upstream PR #6366](https://github.com/kubernetes-sigs/krew-index/pull/6366) merged. | Six platform URLs and checksums match the published CLI archives. |
+| Headlamp plugin | [Standalone v1.2.2](https://github.com/lithastra/kubeatlas-headlamp-plugin/releases/tag/v1.2.2) with archive and checksums. | Manual release installation is separate from upstream catalog availability; catalog follow-up remains deferred. |
+| GitHub Action | [v1.0.1](https://github.com/lithastra/kubeatlas-action/releases/tag/v1.0.1), also selected by `@v1`. | Existing [kind compatibility CI](https://github.com/lithastra/kubeatlas-action/actions/runs/32686038064) pins core v1.5.2; do not claim a new v1.6.0 pairing test. |
+| Rule packs | 14 formal OCI packs at `0.1.0`; [distribution audit](https://github.com/lithastra/kubeatlas-rules/actions/runs/35586284112) passed. | Signed OCI distribution, not GitHub Releases; the audit's CLI is v1.5.2, not a v1.6.0 compatibility result. |
+| Backstage plugin | [1.0.1 source-only delivery](https://github.com/lithastra/kubeatlas-backstage-plugin#install). | Intentionally not published to npm. npm `1.0.0` lacks the packaging fix; build the pinned source as documented. New host/server compatibility is not claimed. |
 
 ## v1.5.2 release matrix (historical)
 
@@ -98,8 +138,9 @@ Recorded v1.5.2 evidence:
 
 Apache AGE does not publish a GA `1.6.0` tag for PostgreSQL 16. The
 database image therefore names the upstream `1.6.0-rc0` dependency
-explicitly and pins its Git commit in the Dockerfile. The final `.1`
-is the KubeAtlas image recipe revision. Reusing this tag for different
+explicitly and pins its Git commit in the Dockerfile. The final suffix
+is the KubeAtlas image recipe revision: `.1` for v1.5.2 and `.2` for
+v1.6.0. Reusing a recipe tag for different
 bytes is not allowed. The release workflow first inspects the registry:
 if the tag already exists, it verifies and reuses its amd64, arm64, and
 attestation manifests. It builds only when the tag is absent. A registry
@@ -131,16 +172,16 @@ limitation, not evidence that signature verification for separately
 distributed Rego rule packs is disabled. Those are different release
 pipelines.
 
-## Verifying a v1.6 core candidate
+## Verifying the published v1.6.0 artifacts {/* #verifying-a-v16-core-candidate */}
 
 The release audit runs these checks from a fresh job with an empty registry
-credential configuration. An operator can repeat them after replacing the
-example tag and commit with the values in the retained
-`core-artifact-audit-<tag>` workflow artifact:
+credential configuration. The values below identify the published v1.6.0
+release; compare the resolved digests with the immutable identities above and
+the retained `core-artifact-audit-v1.6.0` workflow artifact before deployment:
 
 ```bash
 tag=v1.6.0
-commit=<40-character-commit-from-the-audit-evidence>
+commit=69609e320045cbd943185dfa7900c3302359999e
 version=${tag#v}
 issuer=https://token.actions.githubusercontent.com
 identity="https://github.com/lithastra/kubeatlas/.github/workflows/release.yml@refs/tags/${tag}"
