@@ -24,7 +24,7 @@ import (
 )
 
 func TestImpactEncodingExactBudgetAndStandardJSON(t *testing.T) {
-	for _, name := range []string{"plain", "\x00\t\n\r\b\f<&>\"\\", "日本語😀\u2028\u2029", string([]byte{0xff, 0xfe}), ""} {
+	for _, name := range []string{"plain", "\x00\t\n\r\b\f<&>\"\\", "\u65e5\u672c\u8a9e\U0001f600\u2028\u2029", string([]byte{0xff, 0xfe}), ""} {
 		t.Run(name, func(t *testing.T) {
 			response := ImpactResponse{SchemaVersion: "1", GeneratedAt: time.Now(), Analysis: &analysis.ImpactResult{
 				Root: analysis.ImpactIdentity{Name: name}, Resources: []analysis.ImpactMatch{},
