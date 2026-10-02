@@ -58,7 +58,93 @@ GraphStore v2 clean-up that surfaces `graphstore_version` on
 | **v1.5.1** | ✅ Released | Explicit CloudNativePG prerequisite, retained Tier 2 data by default, reproducible PostgreSQL + AGE image, and enforced upgrade, recovery, uninstall-retention, and snapshot release evidence. |
 | **v1.5.2** | ✅ Released | Secret relationships remain reference-only while Secret objects, values, identifying metadata, and historical event payloads are excluded or scrubbed. |
 | **v1.6.0** | ✅ Released | Production-operability signals and runbooks, source platform/upgrade/restore validation, and verified public OCI artifacts. One-hour functional scope; no endurance or dedicated performance acceptance claim. |
+| **v1.7.0** | In development; M3 delivery review | Bounded paths, reference explanations, RBAC associations, observation continuity, cached availability, and an authorized v1-only impact API have local tests. Six synthetic desktop Web/CLI/export scenarios agree; focused narrow-screen repair is locally verified. Delivery review and candidate validation remain pending; not released. |
 | **Further out** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference; a possible future `v1alpha1` retirement (which would version a v2.0). |
+
+## v1.7.0 — explainable impact analysis (in development)
+
+The accepted direction is one bounded DevOps workflow: select a resource,
+inspect its observed dependents and relationship paths, understand missing or
+stale data, and export the same result for review. It is not an outage predictor
+or an arbitrary manifest simulator. The [M0 contract and acceptance catalog](./development/impact-analysis.md)
+define semantics, API direction, limits, and implementation stages.
+
+The four work packages are shared analysis semantics, path explanations,
+observation-coverage warnings, and consistent Web/CLI/JSON/HTML presentation.
+Existing v1alpha1 responses remain frozen; new analysis uses an additive v1
+surface. Single-replica operation, external authentication, read-only Kubernetes
+access, and the reference-only Secret boundary remain unchanged.
+
+Implementation proceeds through M0 contract, M1 core, M2 observation/API,
+M3 clients/reports, and M4 candidate acceptance. M1 currently implements the
+internal core, consistent memory/PostgreSQL projections, reference evidence,
+and a separate bounded RBAC association facet. M2 records per-resource-type
+initial delivery, list/watch failures, and processing/write gaps, and now
+connects that evidence to internal analysis with before/after continuity checks.
+Requirements are independent of query matches; dynamic source scope remains
+explicitly unverified instead of claiming complete ordinary coverage.
+Cached storage health and history-writer status are now separate from current
+graph success. New informer history now preserves its cluster identity, with an
+optional bounded metadata-only event reader shared by memory and PostgreSQL.
+Standalone Tier 2 history now checks retained event bounds and marker existence
+in a bounded background read; analysis consumes the expiring cache. These
+metadata observations do not establish continuous history or a recoverable
+snapshot. Per-member recording/retention evidence, verified recovery points,
+and legacy history API visibility remain pending.
+The unreleased v1 impact API now authorizes cluster scope before reads and
+combines the evidence under a five-second deadline and 2 MiB response cap.
+Standalone CRD and Gatekeeper discovery now contribute separate bounded
+list/watch, handler, and write-gap evidence, including registration continuity.
+Gatekeeper also records its existing supported-template API check, with explicit
+unknown, advertised, not-advertised, denied, failed, and stale qualification;
+this is not installation or complete-inventory proof. Standalone background
+discovery now enumerates bounded API metadata across advertised versions,
+reports optional API presence, and identifies endpoints lacking captured
+registration evidence. Discovery errors, stale data, and limits cannot prove
+absence. CRD registration now follows selected endpoint/kind/scope/UID changes,
+with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
+handoff. Unserved CRDs stop collection; retired evidence and graph data remain
+available without claiming version equivalence or missed-delete repair.
+Complete collector coverage, version equivalence, and per-member
+dynamic/inventory discovery remain pending; healthy registered types do not
+close those gaps.
+The first Web slice now connects resource-detail and concrete topology nodes to
+the server impact API, with explicit dependents/dependencies, bounded depth,
+server counts and path highlights, separate authorization, and observation/history
+warnings. Cluster switches and abandoned requests cannot reuse old results.
+The CLI now reads the same API envelope and exports text, JSON, or self-contained
+HTML, with exact query/identity checks, bounded reads, private non-overwriting
+file output, and no local fallback. Portable actual-handler tests establish
+API/CLI/report capture parity. Web JSON/HTML downloads now retain the exact
+validated response behind the visible result, without a new query or upload.
+Each capture requires an explicit sensitive-topology acknowledgement; refresh,
+selection changes, loading, and errors cannot export a stale result. Complete
+wire-schema validation is locked to the Go API by a portable contract test.
+Local browser checks against the real Go API with synthetic storage verify
+downloads, capture fidelity, truncation/empty-result qualification, and closed
+failure states. A shared six-case matrix now verifies desktop Web, actual CLI,
+and complete reports against real Go API results, including reference-only
+Secrets, separate authorization, and federated scope isolation. Canvas edge
+filters do not narrow returned counts or trigger another analysis. A real
+390-by-844 browser check exposed overlapping topology controls and horizontal
+overflow. The responsive slice moves analysis controls into the result panel, uses a
+narrow-screen overlay with focus/inert handling, and bounds or wraps shared
+chrome and filters. Local browser checks now cover widths 320/390/768/1280,
+including unchanged captures and query counts. The observed responsive defect
+is repaired for these checks; M3 delivery review and M4 candidate acceptance
+remain separate from local UI validation.
+These local tests do not prove real-cluster watch reliability,
+real-environment authorization configuration, effective permissions, or release delivery.
+The M0 synthetic tests document
+legacy behavior; they are not passing v1.7 feature acceptance. A final frozen
+candidate is planned for one complete 72-hour observation, not 168 hours;
+the protocol must be frozen before launch and interrupted runs never combine.
+No long-running experiment is started by this roadmap update.
+
+HA, built-in authentication, attack paths, GitOps drift/remediation, cloud
+resource discovery, LLM diagnosis, and blanket dependency-major upgrades remain
+outside this release. Older phase guides do not override this scope. Ecosystem
+repositories retain independent release cadences; Backstage remains source-only.
 
 ## Related tools
 

@@ -73,6 +73,9 @@ type Writer struct {
 	// closed guards against a send on the closed queue: once Stop has
 	// run, a late Enqueue is counted as a drop instead of panicking.
 	closed atomic.Bool
+	// Analysis reads lifecycle/delivery status without inspecting queued events.
+	observation atomic.Pointer[writerObservation]
+	inFlight    atomic.Int64
 }
 
 // New builds a Writer. The Metrics pointer is shared with the
@@ -95,6 +98,7 @@ func New(sink EventSink, cfg Config, m *Metrics) *Writer {
 // retry backoff sleeps return early; the clean shutdown path is
 // Stop, which drains the queue first.
 func (w *Writer) Start(ctx context.Context) {
+	w.observation.CompareAndSwap(nil, &writerObservation{startedAt: time.Now(), done: ctx.Done()})
 	for i := 0; i < w.workers; i++ {
 		w.wg.Add(1)
 		go w.worker(ctx)
@@ -166,7 +170,9 @@ func (w *Writer) Metrics() *Metrics { return w.metrics }
 func (w *Writer) worker(ctx context.Context) {
 	defer w.wg.Done()
 	for e := range w.queue {
+		w.inFlight.Add(1)
 		w.writeWithRetry(ctx, e)
+		w.inFlight.Add(-1)
 	}
 }
 

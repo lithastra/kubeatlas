@@ -28,6 +28,10 @@ export function LevelTabs({
       value={value}
       onChange={(_, v) => onChange(v as Level)}
       aria-label="aggregation level"
+      variant="scrollable"
+      scrollButtons="auto"
+      allowScrollButtonsMobile
+      sx={{ maxWidth: '100%', minWidth: 0 }}
     >
       <Tab value="cluster" label={t('level.cluster')} />
       <Tab value="namespace" label={t('level.namespace')} />

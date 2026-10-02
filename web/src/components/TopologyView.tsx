@@ -5,7 +5,8 @@ import type { Core, EventObject, NodeSingular } from 'cytoscape';
 import type { EdgeType, View } from '../api/types';
 import { RadialMenu, type RadialMenuOption } from '../design';
 import { applyAtlasPalette, createCytoscape, paletteFor, updateCytoscape } from '../lib/cytoscape';
-import { computeBlastRadius } from '../lib/blastRadius';
+import { applyImpactHighlight } from '../lib/impactHighlight';
+import type { ImpactResponse } from '../api/impactTypes';
 import { useSnapshotDiff } from '../api/snapshots';
 import { useBlastRadius, useDiffMode, useSearchOverlay } from '../shell';
 import { useAtlasTheme } from '../theme';
@@ -34,6 +35,7 @@ export interface TopologyControls {
 
 export interface TopologyViewProps {
   view: View | undefined;
+  impactResponse?: ImpactResponse;
   height?: number | string;
   onSelect?: (nodeId: string | null) => void;
   onZoom?: (zoom: number) => void;
@@ -48,6 +50,7 @@ const ZOOM_ANIM_MS = 400;
 
 export function TopologyView({
   view,
+  impactResponse,
   height = '100%',
   onSelect,
   onZoom,
@@ -98,6 +101,7 @@ export function TopologyView({
       cy.on('cxttap', 'node', (ev: EventObject) => {
         const me = ev.originalEvent as MouseEvent | undefined;
         if (!me) return;
+        if (ev.target.data('type') !== 'resource') return;
         me.preventDefault?.();
         setRadial({
           x: me.clientX,
@@ -206,29 +210,18 @@ export function TopologyView({
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
+    if (blast.active && blast.rootId && view) {
+      applyImpactHighlight(cy, impactResponse);
+      return;
+    }
     cy.batch(() => {
-      if (blast.active && blast.rootId && view) {
-        const result = computeBlastRadius(view, blast.rootId, blast.direction, blast.depth);
-        const reachable = result.reachable;
-        cy.nodes().forEach((n) => {
-          if (reachable.has(String(n.id()))) n.removeData('dimmed');
-          else n.data('dimmed', true);
-        });
-        cy.edges().forEach((e) => {
-          const inSet =
-            reachable.has(String(e.source().id())) && reachable.has(String(e.target().id()));
-          if (inSet) e.removeData('dimmed');
-          else e.data('dimmed', true);
-        });
-        return;
-      }
       if (visibleEdgeTypes) {
         const visibleNodeIds = new Set<string>();
         cy.edges().forEach((e) => {
           const t = e.data('type') as EdgeType | undefined;
           const ok = t != null && visibleEdgeTypes.has(t);
           if (ok) {
-            e.removeData('dimmed');
+            e.data('dimmed', false);
             visibleNodeIds.add(String(e.source().id()));
             visibleNodeIds.add(String(e.target().id()));
           } else {
@@ -236,15 +229,15 @@ export function TopologyView({
           }
         });
         cy.nodes().forEach((n) => {
-          if (visibleNodeIds.has(String(n.id()))) n.removeData('dimmed');
+          if (visibleNodeIds.has(String(n.id()))) n.data('dimmed', false);
           else n.data('dimmed', true);
         });
         return;
       }
-      cy.nodes().removeData('dimmed');
-      cy.edges().removeData('dimmed');
+      cy.nodes().data('dimmed', false);
+      cy.edges().data('dimmed', false);
     });
-  }, [blast.active, blast.rootId, blast.depth, blast.direction, view, visibleEdgeTypes]);
+  }, [blast.active, blast.rootId, impactResponse, view, visibleEdgeTypes]);
 
   // Keyboard traversal. The canvas is focusable (tabIndex 0) so a
   // screen-reader / keyboard-only operator can land on it via Tab.
@@ -315,7 +308,7 @@ export function TopologyView({
 
   // Options for the right-click radial: pick a blast-radius depth.
   // Selecting any option enters blast-radius mode on the right-
-  // clicked node at that depth (downstream direction, the default).
+  // clicked resource at that depth (dependents by default).
   const radialOptions: RadialMenuOption[] = radial
     ? [
         {
@@ -335,11 +328,11 @@ export function TopologyView({
           },
         },
         {
-          id: 'dinf',
-          label: '∞',
+          id: 'd10',
+          label: '10 hops',
           onSelect: () => {
             blast.enter(radial.nodeId);
-            blast.setDepth(Infinity);
+            blast.setDepth(10);
           },
         },
         {

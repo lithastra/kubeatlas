@@ -24,6 +24,8 @@ type Resource struct {
 	// from it. Marked json:"-" because it duplicates the structured
 	// fields above and would double the serialized payload — clients
 	// don't need it on the wire.
+	// Explicit internal projections may narrow it: SnapshotImpact returns only
+	// allowlisted reference fields, not an object suitable for round-tripping.
 	Raw map[string]any `json:"-"`
 
 	// ClusterID is the federation tag (P3-T20). Empty in single-

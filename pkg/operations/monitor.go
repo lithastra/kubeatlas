@@ -120,9 +120,14 @@ type Monitor struct {
 	cfg             Config
 	kubernetesProbe Probe
 	storageProbe    Probe
+	coverage        *CoverageTracker
 
 	mu       sync.RWMutex
 	snapshot Snapshot
+	// Kept outside the legacy Snapshot/metrics shape. A failed check advances
+	// this timestamp too, so analysis can distinguish fresh failure from stale
+	// evidence without treating an old successful probe as currently healthy.
+	storageCheckedAt time.Time
 }
 
 // New returns a monitor with explicit read-only dependency probes.
@@ -146,6 +151,7 @@ func New(cfg Config, kubernetesProbe, storageProbe Probe) *Monitor {
 		cfg:             cfg,
 		kubernetesProbe: kubernetesProbe,
 		storageProbe:    storageProbe,
+		coverage:        NewCoverageTracker(cfg.StaleAfter),
 		snapshot: Snapshot{
 			StorageDurable: cfg.StorageDurable,
 			StaleAfter:     cfg.StaleAfter,
@@ -176,6 +182,10 @@ func (m *Monitor) Snapshot() Snapshot {
 	return m.snapshot
 }
 
+// Coverage supplies separate resource-type evidence for new analysis consumers.
+// It does not change the existing probe-based metrics or readiness contract.
+func (m *Monitor) Coverage() *CoverageTracker { return m.coverage }
+
 func (m *Monitor) sample(ctx context.Context, now time.Time) {
 	kubernetesOK := m.runProbe(ctx, m.kubernetesProbe)
 	storageOK := m.runProbe(ctx, m.storageProbe)
@@ -190,6 +200,7 @@ func (m *Monitor) sample(ctx context.Context, now time.Time) {
 	}
 	m.snapshot.StorageKnown = true
 	m.snapshot.StorageReachable = storageOK
+	m.storageCheckedAt = now
 	if storageOK {
 		m.snapshot.StorageLastSuccess = now
 	}

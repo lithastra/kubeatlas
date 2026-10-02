@@ -196,6 +196,19 @@ func openAPIResponses(r RouteInfo) map[string]any {
 	resps := map[string]any{
 		successCode: successResp,
 	}
+	if r.Pattern == impactPath {
+		for code, description := range map[string]string{
+			"400": "Malformed, unknown, duplicate, or out-of-range query parameter",
+			"401": "Bearer token required", "403": "Cluster access denied", "404": "Resource or authorized cluster not found",
+			"409": "Expected UID cannot be verified", "413": "Analysis or response size cap exceeded",
+			"429": "Analysis capacity busy", "500": "Analysis failed", "503": "Required evidence capability unavailable",
+			"504": "Request deadline exceeded; a disconnected socket may not deliver the error",
+		} {
+			resps[code] = map[string]any{"description": description, "content": map[string]any{
+				"application/json": map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/ImpactErrorResponse"}},
+			}}
+		}
+	}
 	// /readyz can return 503 when the informer is still syncing.
 	if r.Pattern == "/readyz" {
 		resps["503"] = map[string]any{
@@ -247,6 +260,14 @@ func openAPIComponentsFor(version string) map[string]any {
 		schemas, ok := c["schemas"].(map[string]any)
 		if !ok {
 			return c
+		}
+		schemas["ImpactResponse"] = impactResponseSchema()
+		schemas["ImpactErrorResponse"] = map[string]any{
+			"type": "object", "required": []string{"error", "code"},
+			"properties": map[string]any{
+				"error": map[string]any{"type": "string"},
+				"code":  map[string]any{"type": "string", "enum": []string{"invalid_argument", "unauthorized", "forbidden", "not_found", "conflict", "payload_too_large", "too_many_requests", "internal", "unavailable", "deadline_exceeded"}},
+			},
 		}
 		schemas["ResourceDetailResponseV1"] = map[string]any{
 			"type":        "object",

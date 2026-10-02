@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 )
@@ -95,19 +98,61 @@ var optionalGroups = map[string]bool{
 // actually exposes. Missing optional GVRs are logged as warnings and
 // dropped; missing required GVRs return an error.
 func FilterAvailableGVRs(ctx context.Context, dc discovery.DiscoveryInterface, want []schema.GroupVersionResource) ([]schema.GroupVersionResource, error) {
+	if dc == nil {
+		return nil, errors.New("nil API discovery client")
+	}
+	if len(want) > 256 {
+		return nil, errors.New("excessive startup API discovery scope")
+	}
 	out := make([]schema.GroupVersionResource, 0, len(want))
+	cache := map[string]*metav1.APIResourceList{}
 	for _, gvr := range want {
-		ok, err := groupVersionAvailable(ctx, dc, gvr.GroupVersion())
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		gv := gvr.GroupVersion().String()
+		resources, checked := cache[gv]
+		if !checked {
+			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			var err error
+			if contextual, ok := dc.(interface {
+				ServerResourcesForGroupVersionWithContext(context.Context, string) (*metav1.APIResourceList, error)
+			}); ok {
+				resources, err = contextual.ServerResourcesForGroupVersionWithContext(probeCtx, gv)
+			} else {
+				resources, err = dc.ServerResourcesForGroupVersion(gv)
+			}
+			contextErr := probeCtx.Err()
+			cancel()
+			if contextErr != nil {
+				return nil, contextErr
+			}
+			if err != nil && !apierrors.IsNotFound(err) {
+				return nil, err
+			}
+			if err != nil {
+				resources = nil
+			} else if resources == nil || resources.GroupVersion != gv {
+				return nil, errors.New("invalid startup API discovery response")
+			}
+			cache[gv] = resources
+		}
+		ok := false
+		if resources != nil {
+			for _, resource := range resources.APIResources {
+				if resource.Name == gvr.Resource && slices.Contains(resource.Verbs, "list") && slices.Contains(resource.Verbs, "watch") {
+					ok = true
+					break
+				}
+			}
 		}
 		if !ok {
 			if optionalGroups[gvr.Group] {
-				slog.Warn("optional API group not available; skipping",
+				slog.Warn("optional resource API unavailable; skipping",
 					"group", gvr.Group, "resource", gvr.Resource)
 				continue
 			}
-			return nil, errors.New("required API group not available: " + gvr.GroupVersion().String())
+			return nil, errors.New("required resource API not available: " + gvr.String())
 		}
 		out = append(out, gvr)
 	}

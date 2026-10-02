@@ -29,6 +29,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/gatekeeper"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
 	"github.com/lithastra/kubeatlas/pkg/multicluster"
 	"github.com/lithastra/kubeatlas/pkg/operations"
 	"github.com/lithastra/kubeatlas/pkg/otel"
@@ -711,11 +712,30 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 
 	// API server options. snapWriter is nil unless Tier 2 + snapshots
 	// enabled; when set, /metrics surfaces its counters + queue depth.
+	// Retained metadata is sampled only in standalone mode. Global writer and
+	// legacy unlabelled marker evidence cannot qualify a federated member.
+	var retainedHistory *snapshot.HistoryRetentionObserver
+	if snapWriter != nil && os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") != "true" {
+		reader, _ := graphStore.(graph.HistoryBoundsReader)
+		retainedHistory = snapshot.NewHistoryRetentionObserver(reader, "", snapRetention)
+		go func() {
+			if err := retainedHistory.Start(ctx); err != nil {
+				slog.Error("history retention observer failed to start", "err", err)
+			}
+		}()
+	}
 	apiOpts := []api.ServerOption{
 		api.WithWebFS(webFS),
 		api.WithRegoMetrics(regoEngine.Metrics(), regoEngine.ModuleCount),
 		api.WithDynamicInformerMetrics(dynMetrics),
 		api.WithOperationalStatus(operationsMonitor),
+		api.WithImpactEvidence(analysis.ImpactEvidenceProviders{
+			Coverage: operationsMonitor.Coverage(),
+			Availability: snapshot.NewAnalysisAvailabilityReader(operationsMonitor, snapWriter, snapshot.AnalysisAvailabilityConfig{
+				Durable: operationsCfg.StorageDurable, HistoryEnabled: snapEnabled,
+				Federated: os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") == "true", Retention: snapRetention,
+			}, snapshot.WithHistoryRetention(retainedHistory)),
+		}),
 		api.WithTelemetry(telemetrySender),
 	}
 	if snapWriter != nil {
@@ -761,6 +781,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	// the federation, not once per member cluster, so the multi-cluster
 	// branch wires it on the manager's lifecycle instead.
 	baseInformerOpts := []discovery.InformerOption{
+		discovery.WithCoverage(operationsMonitor.Coverage()),
 		discovery.WithGVRs(gvrs),
 		discovery.WithExtractor(extractor.Default()),
 		discovery.WithBroadcaster(srv.Hub().BroadcastEvent),
@@ -807,10 +828,11 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 	} else {
 		informerStarter = discovery.NewInformerManager(
 			client.Dynamic(), graphStore,
-			append(baseInformerOpts, discovery.WithOnSynced(srv.Readiness().MarkReady))...,
+			append(baseInformerOpts, discovery.WithOnSynced(srv.Readiness().MarkReady), discovery.WithAPIInventory(disc))...,
 		)
 		crdStarter = crd.New(client.Dynamic(), graphStore,
 			crd.WithRegoEvaluator(regoEngine),
+			crd.WithCoverage(operationsMonitor.Coverage()),
 		)
 		// Gatekeeper: watch ConstraintTemplates and register a dynamic
 		// informer per generated Constraint kind. The manager's metrics
@@ -819,6 +841,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 			client.Dynamic(), discovery.WithDynamicMetrics(dynMetrics),
 		)
 		gkStarter = gatekeeper.New(client.Dynamic(), graphStore, extractor.Default(), dynMgr,
+			gatekeeper.WithCoverage(operationsMonitor.Coverage()),
 			gatekeeper.WithDiscovery(discovery.NewDiscoveryFromClient(client)))
 	}
 	if mcMgr != nil {

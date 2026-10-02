@@ -1,5 +1,5 @@
 /* ============================================================
- * TopBar — 48px cartography header.
+ * TopBar — single-row desktop header; separate navigation row when narrow.
  *
  * Hosts: app wordmark (Inria Serif, mono build tag), the small
  * route nav (kept lean while we transition from page-per-route to
@@ -48,7 +48,8 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
       component="header"
       role="banner"
       sx={{
-        height: 'var(--atlas-chrome-top-bar)',
+        minHeight: 'var(--atlas-chrome-top-bar)',
+        flexWrap: { xs: 'wrap', md: 'nowrap' },
         flexShrink: 0,
         display: 'flex',
         alignItems: 'center',
@@ -89,6 +90,7 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
           lineHeight: 1,
           color: 'var(--atlas-text-1)',
           mr: 'var(--atlas-space-3)',
+          flexShrink: 0,
         }}
       >
         {tApp('name')}
@@ -99,12 +101,14 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
           fontFamily: 'var(--atlas-font-mono)',
           fontSize: 'var(--atlas-text-caption-size)',
           color: 'var(--atlas-text-3)',
+          whiteSpace: 'nowrap',
         }}
       >
         {tApp('version', { build: version })}
       </Typography>
       <Box sx={{ flexGrow: 1 }} />
-      <Stack direction="row" spacing={2} alignItems="center" component="nav" aria-label="Primary">
+      <Stack direction="row" spacing={2} alignItems="center" component="nav" aria-label="Primary"
+        sx={{ order: { xs: 1, md: 0 }, width: { xs: '100%', md: 'auto' }, minWidth: 0, overflowX: 'auto' }}>
         {ROUTES.map((entry) => {
           const label = t(entry.labelKey);
           if (entry.kind === 'route') {
@@ -148,6 +152,8 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
 function navItemStyle(isActive: boolean) {
   return {
     display: 'inline-flex',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
     alignItems: 'center',
     justifyContent: 'center',
     height: 32,

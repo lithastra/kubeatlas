@@ -32,6 +32,70 @@ test('stable docs own the root; next and historical versions remain distinct', (
   assert.match(article(page('1.5.2/quick-start')), /--version 1\.5\.1/);
 });
 
+test('the v1.7 development contract is unreleased and does not change stable scope', () => {
+  const contract = page('next/development/impact-analysis');
+  assert.match(text(contract), /This is unreleased documentation/);
+  assert.match(article(contract), /M0 design baseline, not a shipped feature/);
+  assert.match(article(contract), /required future checks, not currently passing feature tests/);
+  assert.match(article(contract), /independent authorization facet/);
+  assert.match(article(contract), /effectivePermissions: not_evaluated/);
+  assert.match(article(contract), /This M1 slice did not register a product endpoint/);
+  assert.match(article(contract), /M2 observation collection: first slice/);
+  assert.match(article(contract), /not durable history/);
+  assert.match(article(contract), /pure M1 result still reports observation coverage as unknown/);
+  assert.match(article(contract), /M2 observation-aware analysis: second slice/);
+  assert.match(article(contract), /dynamic_source_scope_unverified/);
+  assert.match(article(contract), /none_observed_incomplete/);
+  assert.match(article(contract), /not a product endpoint/);
+  assert.match(article(contract), /M2 storage and recording availability: third slice/);
+  assert.match(article(contract), /retainedData: not_queried/);
+  assert.match(article(contract), /not an earliest retained event/);
+  assert.match(article(contract), /M2 cluster-attributed history reads: fourth slice/);
+  assert.match(article(contract), /optional internal capability/);
+  assert.match(article(contract), /Empty cluster selects only unlabelled rows/);
+  assert.match(article(contract), /does not establish caller visibility/);
+  assert.match(article(contract), /not acceptance against an existing cluster/);
+  assert.match(article(contract), /M2 authorized v1 impact API: fifth slice/);
+  assert.match(article(contract), /At most two impact requests per server/);
+  assert.match(article(contract), /one combined 2 MiB cap/);
+  assert.match(article(contract), /M2 CRD-source coverage: sixth slice/);
+  assert.match(article(contract), /M2 Gatekeeper-source coverage: seventh slice/);
+  assert.match(article(contract), /not proof that Gatekeeper is uninstalled/);
+  assert.match(article(contract), /not the health of an otherwise connected watch/);
+  assert.match(article(contract), /M2 API inventory and optional API presence: eighth slice/);
+  assert.match(article(contract), /other_version_advertised/);
+  assert.match(article(contract), /Core Secret endpoints are explicitly excluded/);
+  assert.match(article(contract), /M2 CRD registration reconciliation: ninth slice/);
+  assert.match(article(contract), /An old UID cannot stop a recreated CRD/);
+  assert.match(article(contract), /Successor graph delivery therefore waits for the old delivery to finish/);
+  assert.match(article(contract), /not missed-delete repair/);
+  assert.match(article(contract), /M2 retained history metadata: tenth slice/);
+  assert.match(article(contract), /A marker is a stored metadata record/);
+  assert.match(article(contract), /Observed bounds do not prove a continuous retained interval/);
+  assert.match(article(contract), /retentionEvidence/);
+  assert.match(article(contract), /M3 server-backed Web analysis: first slice/);
+  assert.match(article(contract), /not a product analysis fallback/);
+  assert.match(article(contract), /Cluster selection changes close the old analysis/);
+  assert.match(article(contract), /M3 CLI and captured reports: second slice/);
+  assert.match(article(contract), /M3 cross-surface contract matrix: fourth slice/);
+  assert.match(article(contract), /M3 is not complete/);
+  assert.match(article(contract), /390-by-844 browser check/);
+  assert.match(article(contract), /M3 responsive analysis panels: fifth slice/);
+  assert.match(article(contract), /Covered canvas controls are inert/);
+  assert.match(article(contract), /M4 candidate gates remain separate/);
+  assert.match(article(contract), /not real-cluster acceptance/);
+  assert.match(article(page('next/cli-reference')), /kubectl atlas impact/);
+  assert.match(article(page('next/cli-reference')), /KUBEATLAS_TOKEN/);
+  assert.doesNotMatch(article(page('cli-reference')), /kubectl atlas impact/);
+  assert.match(article(contract), /does not disable collection/);
+  assert.match(article(contract), /healthy registered types are never a complete API inventory/);
+  assert.match(article(page('next/api-reference')), /Impact analysis \(v1\.7, unreleased\)/);
+  assert.doesNotMatch(article(page('api-reference')), /Impact analysis \(v1\.7, unreleased\)/);
+  assert.match(article(page('next/roadmap')), /v1\.7\.0/);
+  assert.doesNotMatch(article(page('roadmap')), /v1\.7\.0/);
+  assert.doesNotMatch(page(), /href=["']?[^\s>"']*development\/impact-analysis/);
+});
+
 for (const prefix of ['', 'next/']) {
   test(`${prefix || 'stable/'} fresh-install instructions use v1.6.0`, () => {
     for (const route of [

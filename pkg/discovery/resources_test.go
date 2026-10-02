@@ -26,7 +26,13 @@ func (f *fakeDiscovery) ServerResourcesForGroupVersion(gv string) (*metav1.APIRe
 	if !f.available[gv] {
 		return nil, apierrors.NewNotFound(schema.GroupResource{Group: gv, Resource: "groupversions"}, gv)
 	}
-	return &metav1.APIResourceList{GroupVersion: gv}, nil
+	resources := &metav1.APIResourceList{GroupVersion: gv}
+	for _, gvr := range kdiscovery.CoreGVRs {
+		if gvr.GroupVersion().String() == gv {
+			resources.APIResources = append(resources.APIResources, metav1.APIResource{Name: gvr.Resource, Kind: "Test", Verbs: metav1.Verbs{"list", "watch"}})
+		}
+	}
+	return resources, nil
 }
 
 func (f *fakeDiscovery) Fresh() bool { return true }

@@ -327,7 +327,7 @@ func TestInformerResyncWithDynamicClient(t *testing.T) {
 		return nil, nil
 	})
 	mgr := NewInformerManager(client, store, WithGVRs([]schema.GroupVersionResource{configMapGVR}),
-		WithResync(time.Second), WithSnapshotSink(sink), WithExtractor(registry))
+		WithClusterID("east"), WithResync(time.Second), WithSnapshotSink(sink), WithExtractor(registry))
 	done := make(chan error, 1)
 	go func() {
 		err := mgr.Start(ctx)
@@ -364,7 +364,7 @@ func TestInformerResyncWithDynamicClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	await(func() bool { return len(sink.recorded()) == 3 })
-	if _, err := store.GetResource(ctx, "test/ConfigMap/canary"); err == nil {
+	if _, err := store.GetResource(ctx, "east:test/ConfigMap/canary"); err == nil {
 		t.Fatal("deleted resource remains in store")
 	}
 	if _, err := client.Resource(configMapGVR).Namespace("test").Create(ctx, updated, metav1.CreateOptions{}); err != nil {
@@ -373,5 +373,10 @@ func TestInformerResyncWithDynamicClient(t *testing.T) {
 	await(func() bool { return len(sink.recorded()) == 4 })
 	if store.resourceWrites.Load() != 3 {
 		t.Fatal("delete must clear the persisted marker before an object is added again")
+	}
+	for _, e := range sink.recorded() {
+		if e.ClusterID != "east" || e.Data != nil {
+			t.Fatal("real informer callback lost cluster attribution or exposed payload")
+		}
 	}
 }

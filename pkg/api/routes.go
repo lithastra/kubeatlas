@@ -46,6 +46,25 @@ type ResponseSpec struct {
 func (s *Server) Routes() []RouteInfo {
 	return []RouteInfo{
 		{
+			Method: "GET", Pattern: impactPath,
+			Summary:     "Explain observed resource dependencies and dependents",
+			Description: "v1-only, read-only impact analysis. Authorizes the selected cluster before any graph or evidence read. Federation requires one explicit cluster; standalone omits cluster. Root namespace does not filter traversal. Five-second request budget, combined 2 MiB response cap, two concurrent requests per server. Oversized results fail with 413; depth/result truncation is explicit in each facet. Observed relationships do not prove outage impact, effective permission, complete history, or deletion safety. Missing evidence remains unknown. External authentication is still required when cluster visibility rules are not configured.",
+			PathParams: []ParamSpec{
+				{Name: "namespace", Required: true, Type: "string", Description: "Root namespace; '_' for cluster-scoped roots"},
+				{Name: "kind", Required: true, Type: "string", Description: "Root resource kind"},
+				{Name: "name", Required: true, Type: "string", Description: "Root resource name"},
+			},
+			QueryParams: []ParamSpec{
+				{Name: "cluster", Type: "string", Description: "One attached, authorized cluster in federation; omit in standalone"},
+				{Name: "relation", Type: "string", Enum: []string{"dependents", "dependencies"}, Description: "Defaults to dependents"},
+				{Name: "max_depth", Type: "integer", Description: "Default 5; range 1..10"},
+				{Name: "limit", Type: "integer", Description: "Default 200; range 1..1000 per facet"},
+				{Name: "expected_uid", Type: "string", Description: "Optional observed root instance precondition; mismatch or unknown UID returns 409"},
+			},
+			Response: ResponseSpec{Description: "Versioned, scope-bound analysis with explicit evidence limitations", SchemaRef: "ImpactResponse"},
+			handler:  s.handleImpact,
+		},
+		{
 			Method: "GET", Pattern: "/healthz",
 			Summary:     "Liveness probe",
 			Description: "Returns 200 OK while the process can serve HTTP. Never gates on cluster state.",
