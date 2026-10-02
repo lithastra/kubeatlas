@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>KubeAtlas impact analysis</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #17243a; background: #edf1f5; }
+    body { margin: 0; padding: 24px; }
+    main { max-width: 1100px; margin: auto; }
+    header, section { background: #fff; border: 1px solid #d6dfe8; border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+    h1 { margin: 8px 0; font-size: clamp(1.5rem, 4vw, 2.2rem); }
+    h2 { font-size: 1.2rem; margin-top: 0; }
+    .eyebrow { color: #52647b; font-size: .85rem; letter-spacing: .1em; text-transform: uppercase; }
+    .warning { border-left: 4px solid #ad651a; padding: 12px 16px; background: #fff6e8; line-height: 1.5; }
+    .metrics { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
+    .metric { background: #edf3f8; padding: 14px 18px; border-radius: 6px; flex: 1 1 130px; }
+    .metric strong { display: block; font-size: 1.8rem; }
+    p { line-height: 1.6; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; line-height: 1.55; }
+    summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+    footer { color: #52647b; font-size: .85rem; }
+    @media (max-width: 600px) { body { padding: 12px; } header, section { padding: 16px; } }
+    @media print { body { background: #fff; padding: 0; } header, section { border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <header>
+    <div class="eyebrow">Captured analysis · not a live view</div>
+    <h1>KubeAtlas impact analysis</h1>
+    <p>{{.Response.Analysis.Root.ID}} · {{.Response.Analysis.Relation}}</p>
+    <p class="warning">{{.Response.SharingWarning}}</p>
+    <div class="metrics">
+      <div class="metric">Ordinary matches<strong>{{.Response.Analysis.Counts.Total}}</strong></div>
+      <div class="metric">Direct<strong>{{.Response.Analysis.Counts.Direct}}</strong></div>
+      <div class="metric">Indirect<strong>{{.Response.Analysis.Counts.Indirect}}</strong></div>
+    </div>
+    <p>Lower bound: {{.Response.Analysis.Counts.LowerBound}} · Truncated: {{.Response.Analysis.Truncated}} · Observation: {{.Response.Analysis.ObservationCoverage}}</p>
+    <p>Authorization associations are separate. Counts describe observed relationships, not predicted outages or safe deletion.</p>
+  </header>
+  <section><h2>Result and evidence</h2><pre id="analysis-summary">{{.Summary}}</pre></section>
+  <section><details><summary>Complete captured JSON</summary>
+    <p>The same schema-v1 response used for every section above. No new query was made for this export.</p>
+    <pre id="captured-json">{{.JSON}}</pre>
+  </details></section>
+  <footer>Self-contained report. No scripts, fonts, images, or other network resources. Share only with authorized recipients.</footer>
+</main></body>
+</html>

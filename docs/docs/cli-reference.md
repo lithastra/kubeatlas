@@ -183,3 +183,71 @@ need the `kubeatlas` binary on `PATH`.
 | `-n`, `--namespace <ns>` | Namespace of the target resource. |
 | `--context`, `--kubeconfig` | Select the cluster — the kubeconfig context and file. |
 | `--no-browser` | Print the URL (or file path) instead of opening a browser. |
+
+### `kubectl atlas impact` (v1.7, unreleased)
+
+This new subcommand reads one captured analysis from `GET /api/v1/impact`.
+Unlike the view commands above, it always uses a running KubeAtlas server,
+never opens a browser, and never computes a local fallback. It does not change
+the existing `kubeatlas diagnose` report or frozen v1alpha1 API.
+
+```bash
+kubectl atlas impact ConfigMap settings -n demo --server https://atlas.example
+kubectl atlas impact ServiceAccount api -n demo --cluster east --output json
+kubectl atlas impact Deployment api -n demo --relation dependencies \
+  --max-depth 3 --expected-uid <uid> --output html --out impact.html
+```
+
+Use the exact case-sensitive Kind (`Deployment`, not `deploy` or `deployments`).
+Omit `-n` for a cluster-scoped root. Namespace selects the root, not a filter on
+returned matches; cross-namespace relationships remain visible. `--cluster`
+selects exactly one federated member and is required by a federated server;
+omit it for a standalone server. It is not the kubeconfig `--context`.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--relation` | `dependents` | `dependents` or `dependencies`; no ambiguous `both`. |
+| `--max-depth` | `5` | 1–10 hops; never unbounded. |
+| `--limit` | `200` | 1–1000 results per facet; ordinary and authorization counts remain separate. |
+| `--expected-uid` | unset | Pin the root instance. A changed or unknown UID fails; unset selects the currently named instance. |
+| `--cluster` | unset | Exact federated member ID; never all clusters. |
+| `--output`, `-o` | `text` | `text`, `json`, or `html`. This is a format, not a filename. |
+| `--out` | stdout | Create a new file with mode 0600; `-` also selects stdout. Existing files and symlinks are rejected. |
+| `--timeout` | `30s` | Overall discovery/read deadline, from 1s to 2m; the HTTP read is also capped at 30s. |
+
+Server resolution follows `--server`, then `KUBEATLAS_URL`, then a temporary
+`kubectl port-forward`, using the existing namespace/context/kubeconfig flags.
+The tunnel closes on command completion, cancellation, or failure. `--local-ui`
+and `--host` are rejected; `--online` and `--no-browser` are unnecessary.
+
+Set the optional bearer credential through `KUBEATLAS_TOKEN` using your normal
+secure environment mechanism. There is deliberately no token argument, URL
+credential, or token in an exported report. Remote servers require HTTPS with
+normal certificate validation. Plain HTTP is allowed only for a literal
+loopback address, for example `http://127.0.0.1:8080` after port-forwarding.
+Redirects are not followed, including redirects to another path on the same
+server. Reverse-proxy base paths are supported; URL queries/fragments are not.
+
+Results alone go to stdout; file-write diagnostics go to stderr. Exit 0 means
+a valid capture, **not** a safety approval: unknown coverage, incomplete/empty
+results, or server-declared truncation remain successful results with explicit
+qualifications. Invalid queries, authorization failures, UID mismatches, network
+errors, unsupported schemas, and write failures exit nonzero. Errors do not
+copy upstream response bodies. There are no automatic retries. Requests to
+older servers without this endpoint fail rather than using the legacy count.
+
+JSON contains the complete supported schema-v1 response envelope. HTML contains
+the same captured JSON as escaped text, plus a readable evidence report, inline
+CSS, and a restrictive content policy; no scripts or external resources are
+loaded. Counts, paths, references, authorization, observation, and cached
+history all come from this one response. Rendering adds no reads. Separate CLI
+invocations make separate captures and may legitimately differ; HTML's embedded
+JSON is the exact capture for that report. Unknown response fields fail closed;
+update the CLI together with the supported server schema.
+
+Exports contain sensitive topology even though no Secret values are included.
+Review access before sharing. `--out` protects newly created files; shell
+redirection has the permissions and overwrite behavior of your shell. If a
+write/close fails, a partial output file may remain and is not silently deleted.
+Retained event bounds do not establish continuous history, and metadata markers
+are not backups or verified recovery points.

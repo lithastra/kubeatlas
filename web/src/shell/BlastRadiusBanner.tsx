@@ -1,10 +1,8 @@
 /* ============================================================
- * BlastRadiusBanner — top-center mode banner.
+ * BlastRadiusBanner — in-panel analysis mode banner.
  *
- * Replaces nothing (the design's mockup shows it replacing the
- * search box; that's a future top-bar consolidation). For v1 it
- * floats over the canvas as a thin chip that calls out the active
- * mode, root, direction, depth, and a hint to exit. Rendering is
+ * Lives with the result instead of covering graph filters on small
+ * canvases. Calls out the active relation and depth. Rendering is
  * gated on BlastRadiusContext.active.
  * ============================================================ */
 import { Box, Typography } from '@mui/material';
@@ -12,16 +10,11 @@ import { Box, Typography } from '@mui/material';
 import { useBlastRadius } from './BlastRadiusContext';
 
 const DIRECTION_LABEL = {
-  downstream: 'downstream ↓',
-  upstream: 'upstream ↑',
-  both: 'both ↕',
+  dependents: 'dependents',
+  dependencies: 'dependencies',
 } as const;
 
-interface BlastRadiusBannerProps {
-  affectedCount?: number;
-}
-
-export function BlastRadiusBanner({ affectedCount }: BlastRadiusBannerProps) {
+export function BlastRadiusBanner() {
   const { active, rootId, depth, direction } = useBlastRadius();
   if (!active || !rootId) return null;
   return (
@@ -29,18 +22,13 @@ export function BlastRadiusBanner({ affectedCount }: BlastRadiusBannerProps) {
       role="status"
       aria-live="polite"
       sx={{
-        position: 'absolute',
-        top: 'var(--atlas-space-3)',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 6,
         backgroundColor: 'var(--atlas-select)',
         color: 'var(--atlas-bg)',
         padding: '6px 14px',
         display: 'flex',
+        flexWrap: 'wrap',
         alignItems: 'center',
         gap: 1.5,
-        boxShadow: '0 2px 6px rgba(0,0,0,0.18)',
       }}
     >
       <Box
@@ -55,8 +43,7 @@ export function BlastRadiusBanner({ affectedCount }: BlastRadiusBannerProps) {
         component="span"
         sx={{ fontFamily: 'var(--atlas-font-ui)', fontSize: 12, fontWeight: 600 }}
       >
-        Blast Radius · {DIRECTION_LABEL[direction]} · {depth === Infinity ? '∞' : depth} hops
-        {affectedCount != null ? ` · ${affectedCount} resources affected` : ''}
+        Impact · {DIRECTION_LABEL[direction]} · {depth} hops
       </Typography>
       <Typography
         component="span"

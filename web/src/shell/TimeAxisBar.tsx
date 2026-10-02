@@ -114,14 +114,17 @@ export function TimeAxisBar() {
       role="region"
       aria-label="Time axis"
       sx={{
-        height: 'var(--atlas-chrome-time-axis)',
+        height: { xs: 'auto', md: 'var(--atlas-chrome-time-axis)' },
+        minHeight: 'var(--atlas-chrome-time-axis)',
         flexShrink: 0,
         backgroundColor: 'var(--atlas-bg)',
         borderBottom: '1px solid var(--atlas-border)',
         display: 'flex',
+        flexWrap: { xs: 'wrap', md: 'nowrap' },
         alignItems: 'center',
         paddingInline: 'var(--atlas-space-4)',
-        gap: 'var(--atlas-space-3)',
+        paddingBlock: { xs: 1, md: 0 },
+        gap: { xs: 1, md: 'var(--atlas-space-3)' },
       }}
     >
       <Typography
@@ -206,6 +209,7 @@ export function TimeAxisBar() {
         onKeyDown={onRailKeyDown}
         sx={{
           flexGrow: 1,
+          minWidth: 80,
           height: 16,
           position: 'relative',
           cursor: 'pointer',

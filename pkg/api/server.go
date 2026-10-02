@@ -15,6 +15,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
 	"github.com/lithastra/kubeatlas/pkg/operations"
 	"github.com/lithastra/kubeatlas/pkg/otel"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
@@ -128,6 +129,11 @@ type Server struct {
 	// (or a scope with no rules) means every caller sees every cluster —
 	// the backward-compatible v1.4 behaviour.
 	rbac ClusterRBAC
+
+	// The new impact path has its own bounded admission and evidence providers.
+	// A timed-out worker retains its slot until it actually stops.
+	impactSem      chan struct{}
+	impactEvidence analysis.ImpactEvidenceProviders
 }
 
 // ClusterLister returns the names of every cluster the federation
@@ -175,6 +181,13 @@ func WithClusterLister(l ClusterLister) ServerOption {
 // open to every caller, exactly as v1.4.
 func WithClusterRBAC(rbac ClusterRBAC) ServerOption {
 	return func(s *Server) { s.rbac = rbac }
+}
+
+// WithImpactEvidence attaches cached observation/availability evidence to the
+// v1-only impact API. These providers are consulted only after authorization.
+// Missing providers leave unknown evidence; no probe or history fallback runs.
+func WithImpactEvidence(providers analysis.ImpactEvidenceProviders) ServerOption {
+	return func(s *Server) { s.impactEvidence = providers }
 }
 
 // WithWebFS mounts the given filesystem under "/" so the Web UI
@@ -278,6 +291,7 @@ func New(addr string, store graph.GraphStore, aggs *aggregator.Registry, opts ..
 		metrics:        newMetricsCounter(),
 		versionMetrics: newVersionCounter(),
 		exportSem:      make(chan struct{}, exportConcurrency),
+		impactSem:      make(chan struct{}, impactConcurrency),
 	}
 	for _, o := range opts {
 		o(s)

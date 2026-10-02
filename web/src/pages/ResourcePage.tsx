@@ -5,13 +5,14 @@ import { useParams } from 'react-router-dom';
 import { useGraph, useResource } from '../api/graph';
 import { getWatchClient } from '../api/watchClient';
 import { ResourceDetailPanel } from '../components/ResourceDetailPanel';
+import { ImpactExplorer } from '../components/ImpactExplorer';
 
 // Outer Box owns the chrome inset so the content doesn't butt up
 // against the LeftClusterStrip. Same convention as the other framed
 // pages — TopologyPage skips it because the canvas is full-bleed.
 function Framed({ children }: { children: ReactNode }) {
   return (
-    <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
+    <Box sx={{ padding: { xs: 'var(--atlas-space-4)', md: 'var(--atlas-space-8)' }, width: '100%', overflow: 'auto' }}>
       {children}
     </Box>
   );
@@ -69,6 +70,10 @@ export function ResourcePage() {
 
   return (
     <Framed>
+      <ImpactExplorer
+        key={`${namespace}/${kind}/${name}/${detail.data.resource.uid || ''}`}
+        target={{ id: `${namespace}/${kind}/${name}`, clusterId: '', namespace, kind, name, expectedUID: detail.data.resource.uid }}
+      />
       <ResourceDetailPanel
         resource={detail.data.resource}
         incoming={detail.data.incoming}

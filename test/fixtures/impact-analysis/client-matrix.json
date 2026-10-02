@@ -1,0 +1,28 @@
+{
+  "purpose": "Synthetic M3 cross-surface contract; not a real-cluster or release acceptance report",
+  "resources": [
+    {"namespace":"demo","kind":"ConfigMap","name":"settings","uid":"matrix-config","resourceVersion":"10","groupVersion":"v1"},
+    {"namespace":"other","kind":"Pod","name":"consumer","uid":"matrix-pod","resourceVersion":"11","groupVersion":"v1"},
+    {"namespace":"other","kind":"Service","name":"api","uid":"matrix-service","resourceVersion":"12","groupVersion":"v1"},
+    {"namespace":"grant","kind":"Role","name":"reader","uid":"matrix-role","resourceVersion":"13","groupVersion":"rbac.authorization.k8s.io/v1"},
+    {"namespace":"grant","kind":"RoleBinding","name":"reader","uid":"matrix-binding","resourceVersion":"14","groupVersion":"rbac.authorization.k8s.io/v1"},
+    {"namespace":"app","kind":"ServiceAccount","name":"worker","uid":"matrix-account","resourceVersion":"15","groupVersion":"v1"},
+    {"namespace":"app","kind":"Deployment","name":"worker","uid":"matrix-workload","resourceVersion":"16","groupVersion":"apps/v1"}
+  ],
+  "edges": [
+    {"from":"other/Pod/consumer","to":"demo/ConfigMap/settings","type":"USES_CONFIGMAP"},
+    {"from":"other/Pod/consumer","to":"other/Secret/credentials","type":"USES_SECRET"},
+    {"from":"other/Service/api","to":"other/Pod/consumer","type":"SELECTS"},
+    {"from":"grant/RoleBinding/reader","to":"grant/Role/reader","type":"BINDS_ROLE"},
+    {"from":"grant/RoleBinding/reader","to":"app/ServiceAccount/worker","type":"BINDS_SUBJECT"},
+    {"from":"app/Deployment/worker","to":"app/ServiceAccount/worker","type":"USES_SERVICEACCOUNT"}
+  ],
+  "cases": [
+    {"name":"ordinary","namespace":"demo","kind":"ConfigMap","rootName":"settings","uid":"matrix-config","cluster":"","relation":"dependents","depth":5,"ordinary":["other/Pod/consumer","other/Service/api"],"authorization":[],"direct":1,"truncated":false},
+    {"name":"dependencies","namespace":"other","kind":"Service","rootName":"api","uid":"matrix-service","cluster":"","relation":"dependencies","depth":5,"ordinary":["demo/ConfigMap/settings","other/Pod/consumer","other/Secret/credentials"],"authorization":[],"direct":1,"truncated":false},
+    {"name":"truncated","namespace":"demo","kind":"ConfigMap","rootName":"settings","uid":"matrix-config","cluster":"","relation":"dependents","depth":1,"ordinary":["other/Pod/consumer"],"authorization":[],"direct":1,"truncated":true},
+    {"name":"incomplete-empty","namespace":"demo","kind":"ConfigMap","rootName":"settings","uid":"matrix-config","cluster":"","relation":"dependencies","depth":5,"ordinary":[],"authorization":[],"direct":0,"truncated":false},
+    {"name":"authorization","namespace":"grant","kind":"Role","rootName":"reader","uid":"matrix-role","cluster":"","relation":"dependents","depth":5,"ordinary":[],"authorization":["app/Deployment/worker","app/ServiceAccount/worker","grant/RoleBinding/reader"],"direct":0,"truncated":false},
+    {"name":"federated","namespace":"demo","kind":"ConfigMap","rootName":"settings","uid":"matrix-config","cluster":"east","relation":"dependents","depth":5,"ordinary":["east:other/Pod/consumer","east:other/Service/api"],"authorization":[],"direct":1,"truncated":false}
+  ]
+}

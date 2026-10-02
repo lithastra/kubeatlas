@@ -10,12 +10,14 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8sdiscovery "k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/operations"
 )
 
 // DefaultResyncPeriod is KubeAtlas's local-cache replay interval. Resync
@@ -91,13 +93,17 @@ func (noopSnapshotSink) Enqueue(_ graph.ResourceEvent) {}
 // configured GVRs and forwards K8s add/update/delete events into a
 // GraphStore via the configured ExtractorRegistry.
 type InformerManager struct {
-	factory      dynamicinformer.DynamicSharedInformerFactory
-	store        graph.GraphStore
-	extractor    ExtractorRegistry
-	broadcaster  Broadcaster
-	snapshotSink SnapshotSink
-	gvrs         []schema.GroupVersionResource
-	resyncPeriod time.Duration
+	inventoryDiscovery k8sdiscovery.DiscoveryInterface
+	dynamic            dynamic.Interface
+	factory            dynamicinformer.DynamicSharedInformerFactory
+	store              graph.GraphStore
+	extractor          ExtractorRegistry
+	broadcaster        Broadcaster
+	snapshotSink       SnapshotSink
+	gvrs               []schema.GroupVersionResource
+	resyncPeriod       time.Duration
+	coverage           *operations.CoverageTracker
+	coverageSession    *operations.CoverageSession
 
 	// Remember only successful resource writes, not merely informer delivery.
 	// Each GVR's handler is serial, but different GVRs run concurrently.
@@ -186,10 +192,23 @@ func WithResync(d time.Duration) InformerOption {
 	return func(m *InformerManager) { m.resyncPeriod = d }
 }
 
+// WithCoverage records bounded, sanitized per-GVR observation evidence. It does
+// not replace readiness, change extraction, or add Kubernetes requests.
+func WithCoverage(tracker *operations.CoverageTracker) InformerOption {
+	return func(m *InformerManager) { m.coverage = tracker }
+}
+
+// WithAPIInventory starts bounded background discovery on this manager's
+// cluster/client. It adds no work to handlers or impact queries.
+func WithAPIInventory(dc k8sdiscovery.DiscoveryInterface) InformerOption {
+	return func(m *InformerManager) { m.inventoryDiscovery = dc }
+}
+
 // NewInformerManager constructs an InformerManager using the dynamic
 // client from c. Pass options to override defaults.
 func NewInformerManager(dyn dynamic.Interface, store graph.GraphStore, opts ...InformerOption) *InformerManager {
 	m := &InformerManager{
+		dynamic:      dyn,
 		store:        store,
 		extractor:    noopRegistry{},
 		broadcaster:  noopBroadcaster,
@@ -227,6 +246,31 @@ func (c *Client) Dynamic() dynamic.Interface {
 // SharedInformerFactory, waits for the initial cache sync, and blocks
 // until ctx is done. Returns ctx.Err() on shutdown.
 func (m *InformerManager) Start(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if m.coverage != nil && m.inventoryDiscovery != nil {
+		done := make(chan struct{})
+		go func() { runAPIInventory(ctx, m.inventoryDiscovery, m.coverage, m.clusterID); close(done) }()
+		defer func() { cancel(); <-done }()
+	}
+	if m.coverage != nil {
+		allowed := make([]schema.GroupVersionResource, 0, len(m.gvrs))
+		for _, gvr := range m.gvrs {
+			if !isSkipped(gvr) {
+				allowed = append(allowed, gvr)
+			}
+		}
+		var err error
+		m.coverageSession, err = m.coverage.Begin(m.clusterID, allowed, time.Now())
+		if err != nil {
+			return err
+		}
+		defer func() { m.coverageSession.Stop(time.Now()) }()
+		m.factory = dynamicinformer.NewDynamicSharedInformerFactory(&coverageClient{Interface: m.dynamic, session: m.coverageSession}, m.resyncPeriod)
+	}
+	// Each type reports initial handler delivery independently. One forbidden
+	// GVR must not keep the already-synced types from reporting their own state.
+	registrations := make(map[schema.GroupVersionResource]cache.ResourceEventHandlerRegistration)
 	for _, gvr := range m.gvrs {
 		if isSkipped(gvr) {
 			slog.Warn("skipping watch on blacklisted GVR", "gvr", gvr)
@@ -234,7 +278,7 @@ func (m *InformerManager) Start(ctx context.Context) error {
 		}
 		gvr := gvr // capture for closure
 		informer := m.factory.ForResource(gvr).Informer()
-		_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		registration, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc:    func(obj any) { m.handleUpsert(ctx, gvr, obj, graph.EventTypeAdd) },
 			UpdateFunc: func(_, obj any) { m.handleUpsert(ctx, gvr, obj, graph.EventTypeUpdate) },
 			DeleteFunc: func(obj any) { m.handleDelete(ctx, gvr, obj) },
@@ -242,9 +286,19 @@ func (m *InformerManager) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("register handler for %s: %w", gvr, err)
 		}
+		registrations[gvr] = registration
 	}
 
 	m.factory.Start(ctx.Done())
+	if m.coverageSession != nil {
+		for gvr, registration := range registrations {
+			go func() {
+				if cache.WaitForCacheSync(ctx.Done(), registration.HasSynced) {
+					m.coverageSession.InitialDeliveryComplete(gvr)
+				}
+			}()
+		}
+	}
 	syncs := m.factory.WaitForCacheSync(ctx.Done())
 	for gvr, ok := range syncs {
 		if !ok {
@@ -271,6 +325,7 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	u, ok := toUnstructured(obj)
 	if !ok {
 		slog.Warn("informer received non-unstructured object", "type", fmt.Sprintf("%T", obj))
+		m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
 	r := UnstructuredToResource(u, m.kindFor(gvr, u))
@@ -284,6 +339,7 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	resourceChanged := !versioned || !known || previous != version
 	if resourceChanged {
 		if err := m.store.UpsertResource(ctx, r); err != nil {
+			m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 			slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
 			return
 		}
@@ -300,6 +356,7 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		// Enqueue is non-blocking by contract. A local-cache replay is not
 		// a resource change and must not create another history event.
 		m.snapshotSink.Enqueue(graph.ResourceEvent{
+			ClusterID:       m.clusterID,
 			Namespace:       r.Namespace,
 			Kind:            r.Kind,
 			UID:             string(r.UID),
@@ -323,10 +380,12 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		// Best-effort: log and still upsert whatever edges the
 		// extractors did produce before the failure.
 		slog.Warn("edge extraction failed", "id", r.ID(), "err", err)
+		m.coverageSession.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
 	}
 	for _, e := range edges {
 		if ref, ok := graph.SecretReferenceFromEdge(e); ok {
 			if err := m.store.UpsertResource(ctx, ref); err != nil {
+				m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 				slog.Warn("upsert referenced Secret placeholder failed", "id", ref.ID(), "err", err)
 				continue
 			}
@@ -334,6 +393,7 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	}
 	for _, e := range edges {
 		if err := m.store.UpsertEdge(ctx, e); err != nil {
+			m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 			slog.Warn("upsert edge failed", "from", e.From, "to", e.To, "err", err)
 		}
 	}
@@ -353,6 +413,7 @@ func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVers
 	}
 	u, ok := toUnstructured(obj)
 	if !ok {
+		m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
 	m.persistedMu.Lock()
@@ -367,12 +428,14 @@ func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVers
 		id = m.clusterID + ":" + id
 	}
 	if err := m.store.DeleteResource(ctx, id); err != nil {
+		m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		slog.Warn("delete resource failed", "id", id, "err", err)
 	}
 
 	// Record the delete in the F-111 snapshot stream. Data is nil —
 	// the resource is gone, only its identity is recorded.
 	m.snapshotSink.Enqueue(graph.ResourceEvent{
+		ClusterID:       m.clusterID,
 		Namespace:       u.GetNamespace(),
 		Kind:            kind,
 		UID:             string(u.GetUID()),

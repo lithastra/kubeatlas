@@ -13,14 +13,17 @@
  *   |    |                       Compass  |         |
  *   +----+--------------------------------+---------+
  *
+ * Below the medium breakpoint, detail overlays the canvas (not the
+ * cluster strip). Its analysis controls stay inside the scrolling panel.
+ *
  * Standalone shell only. The Headlamp plugin variant (embedded=true)
  * skips top bar + time axis + left strip and hands the body to the
  * host. The current commit ships the standalone path; the embedded
  * branch needs Headlamp's host context, which lives in the future
  * lithastra/kubeatlas-headlamp-plugin integration.
  * ============================================================ */
-import { Box } from '@mui/material';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Box, useMediaQuery, useTheme } from '@mui/material';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Panel } from '../design';
 import { useAnnouncer } from './AnnouncerContext';
@@ -65,7 +68,7 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
   // don't announce "no mode" / "all clusters" on first paint.
   useEffect(() => {
     if (blast.active && blast.rootId) {
-      announce(`Blast radius on ${blast.rootId}, depth ${blast.depth === Infinity ? 'unbounded' : blast.depth}, ${blast.direction}.`);
+      announce(`Impact analysis on ${blast.rootId}, depth ${blast.depth}, ${blast.direction}.`);
     }
   }, [blast.active, blast.rootId, blast.depth, blast.direction, announce]);
 
@@ -87,6 +90,25 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
   const liveContent = contextPanel ?? ctx.content;
   const [panelOpen, setPanelOpen] = useState(liveContent != null);
   if (liveContent != null && !panelOpen) setPanelOpen(true);
+  const narrow = useMediaQuery(useTheme().breakpoints.down('md'));
+  const hasPanel = panelOpen && liveContent != null;
+  const overlayPanel = narrow && hasPanel;
+  const mainRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  // The covered canvas must not receive keyboard input. Move focus into the
+  // panel once when it overlays the canvas, not on every response refresh.
+  useEffect(() => {
+    if (!overlayPanel) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const main = mainRef.current;
+    return () => {
+      if (previous?.isConnected && !previous.closest('[inert]')) previous.focus();
+      else main?.focus();
+    };
+  }, [overlayPanel]);
+  useEffect(() => {
+    if (overlayPanel) closeRef.current?.focus();
+  }, [overlayPanel, blast.active]);
 
   // Global ⌘K / Ctrl-K handler. Lives at the shell so any view (and
   // the Headlamp embed once the embedded branch lands) can summon
@@ -134,6 +156,8 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
+        '@supports (height: 100dvh)': { height: '100dvh' },
+        minWidth: 0,
         backgroundColor: 'var(--atlas-bg)',
         color: 'var(--atlas-text-1)',
       }}
@@ -143,33 +167,41 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
       <Box
         id="atlas-main"
         component="main"
-        sx={{ display: 'flex', flexGrow: 1, minHeight: 0 }}
+        ref={mainRef}
+        tabIndex={-1}
+        sx={{ display: 'flex', flexGrow: 1, minHeight: 0, minWidth: 0, position: 'relative', overflow: 'hidden' }}
       >
         {!embedded && <LeftClusterStrip />}
-        <GridBackground>
+        <GridBackground inert={overlayPanel} sx={{ '& > *': { maxHeight: '100%' } }}>
           {children}
-          <BlastRadiusBanner />
-          <BlastRadiusControls />
           <DiffModeBanner />
         </GridBackground>
-        {panelOpen && liveContent != null && (
+        {hasPanel && (
           <Panel
             variant="panel"
             padding={0}
             ariaLabel="Detail panel"
             sx={{
-              width: 'var(--atlas-chrome-right-panel-width)',
-              minWidth: 'var(--atlas-chrome-right-panel-min)',
-              maxWidth: 'var(--atlas-chrome-right-panel-max)',
+              position: { xs: 'absolute', md: 'relative' },
+              top: 0,
+              bottom: 0,
+              right: 0,
+              zIndex: { xs: 10, md: 'auto' },
+              width: { xs: embedded ? '100%' : 'calc(100% - var(--atlas-chrome-left-cluster-strip))', md: 'var(--atlas-chrome-right-panel-width)' },
+              minWidth: { xs: 0, md: 'var(--atlas-chrome-right-panel-min)' },
+              maxWidth: { xs: 'none', md: 'var(--atlas-chrome-right-panel-max)' },
+              flexShrink: 0,
               overflow: 'auto',
             }}
           >
             <Box
               component="button"
+              ref={closeRef}
               type="button"
-              onClick={closePanel}
+              onClick={blast.active ? blast.exit : closePanel}
               sx={{
                 width: '100%',
+                minHeight: 40,
                 textAlign: 'right',
                 padding: 'var(--atlas-space-2) var(--atlas-space-3)',
                 background: 'transparent',
@@ -180,10 +212,12 @@ export function AtlasShell({ embedded = false, contextPanel, children }: AtlasSh
                 fontSize: 'var(--atlas-text-caption-size)',
                 color: 'var(--atlas-text-2)',
               }}
-              aria-label="Close detail panel"
+              aria-label={blast.active ? 'Exit impact analysis' : 'Close detail panel'}
             >
-              close ✕
+              {blast.active ? 'Back to resource' : 'close ✕'}
             </Box>
+            <BlastRadiusBanner />
+            <BlastRadiusControls />
             <Box
               aria-live="polite"
               sx={{ padding: 'var(--atlas-space-4)' }}

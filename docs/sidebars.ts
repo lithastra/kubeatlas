@@ -63,6 +63,7 @@ const sidebars: SidebarsConfig = {
     'api-reference',
     'cli-reference',
     'developer-guide',
+    'development/impact-analysis',
     'release-process',
     'faq',
     'roadmap',

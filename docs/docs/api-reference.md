@@ -34,11 +34,11 @@ document, trust the OpenAPI document.
   path templates (e.g. `/api/v1/resources/_/Namespace/default`).
 - 4xx errors return `{ "error": "<message>" }`; 5xx errors return the
   same shape, with the message suitable for surfacing to operators.
-- The API does not paginate. Every list endpoint returns the full
-  result; the search endpoint caps at `limit=200`.
+- The API does not provide cursor pagination. Search and impact analysis have
+  explicit result limits; impact truncation and errors are documented below.
 - The examples below use `/api/v1/` URLs. Swap the prefix to
-  `/api/v1alpha1/` for the frozen surface (response shapes are
-  identical except for the resource-detail enrichment fields).
+  `/api/v1alpha1/` only for shared legacy routes. Explicitly v1-only additions,
+  including impact analysis, have no v1alpha1 counterpart.
 
 ## Health and observability
 
@@ -141,6 +141,111 @@ The fifteen built-in edge types are:
 
 Additional types come from any loaded
 [Rego rule packs](./concepts/rego-rules.md).
+
+## Impact analysis (v1.7, unreleased)
+
+This endpoint is implemented in the development tree, **not shipped in v1.6.0**.
+Web/CLI/report integration and real-environment candidate acceptance remain
+pending. It does not replace legacy blast-radius or snapshot/diff routes yet.
+
+### `GET /api/v1/impact/{namespace}/{kind}/{name}`
+
+Explains observed dependencies/dependents within one authorized cluster, with
+separate authorization associations and explicit observation limitations.
+`_` identifies a cluster-scoped root; the root namespace is not a traversal filter.
+
+| Parameter | Meaning |
+| --- | --- |
+| `cluster` | Required single attached cluster in federation; omit in standalone |
+| `relation` | `dependents` (default) or `dependencies` |
+| `max_depth` | Default 5, range 1–10 |
+| `limit` | Default 200, range 1–1,000, applied separately to the two facets |
+| `expected_uid` | Optional observed root-instance precondition; unverifiable/mismatched UID returns 409 |
+
+Repeated, empty, unknown, and invalid parameters return 400. Cluster visibility
+is checked before graph/evidence reads. If visibility rules are configured,
+missing tokens return 401 and denied cluster requests return 403. Without rules,
+the existing all-visible policy applies; protect the service with external
+authentication. Authorization here does not retrofit the legacy snapshot APIs.
+
+```bash
+# Standalone, locally authenticated/protected service as appropriate.
+curl -s 'http://localhost:8080/api/v1/impact/demo/ConfigMap/settings?relation=dependents&limit=200'
+```
+
+The JSON envelope contains `schemaVersion`, `kubeatlasVersion`, `generatedAt`,
+`scope`, `analysis`, and `sharingWarning`. Analysis contains root identity,
+resources/counts/representative paths, reference explanations, a separate
+`authorization` facet, `observation`, and `availability`. The served OpenAPI
+documents all nested fields. Secret targets stay reference-only, with unknown
+existence/UID/value; relationships do not prove an outage or effective permission.
+Empty/incomplete observations never mean safe to delete. Historical data remains
+`not_queried` unless the separate retained-metadata observer has checked it;
+a successful current analysis is not a history or backup guarantee.
+
+The ordinary observation's `before.sources` and `after.sources` include available
+source-scoped records from standalone CRD and Gatekeeper discovery. They cover
+only registered resource types, not a complete API inventory. Missing or
+federated dynamic-source evidence remains unavailable; `inventoryLimited` marks
+an exhausted evidence budget without disabling collection. Source changes across
+the graph read invalidate the ordinary observation window's stability.
+CRD endpoint/kind/scope/UID changes retire the previous registration; same-GVR
+replacement advances continuity rather than reusing its callback token. Stopped
+version records and known data gaps remain visible. Losing all served versions
+stops collection; a delayed old-UID tombstone cannot stop its replacement.
+Retiring a CRD registration retains graph data, not proof of current existence
+or version equivalence. None of this establishes complete collector coverage.
+Gatekeeper's optional `discovery` record describes only the supported v1
+ConstraintTemplate API, with `state`, `checkedAt`, `revision`, and `stale`.
+`advertised` does not prove controller health or list/watch permission;
+`not_advertised` does not prove Gatekeeper is uninstalled. `unknown`,
+`permission_denied`, and `failed` remain distinct. Cached discovery becomes
+stale after ten minutes without declaring healthy watches disconnected; the
+impact query never refreshes it. None of these states closes ordinary type scope
+or converts an empty result into complete zero impact.
+
+The ordinary captures also carry `apiInventory` from bounded background API
+discovery in standalone mode. It describes endpoint metadata and all advertised
+versions, with `unknown`, `complete`, `partial`, `permission_denied`, or `failed`
+state, check time, generation/revision, stale/stopped/limited flags, and at most
+256 descriptors. Discovery completeness does not imply graph observation.
+`optionalApis` reports seven supported optional resources as `advertised`,
+`not_advertised`, `other_version_advertised`, `unsupported_shape`, or `unknown`
+before/after the read. Negative assessment requires a fresh complete inventory
+and checks every advertised version; it does not assert operator installation.
+`unobservedApis` names list/watch endpoints without captured registration
+evidence, excluding core Secret endpoints. Inventory changes invalidate the
+ordinary window; these fields leave authorization coverage independent.
+Federated members currently have no production inventory worker, so their
+inventory stays unavailable. The query reads cached evidence only.
+
+With standalone Tier 2 history enabled, `availability.evidence.history` also
+includes `retentionEvidence`: a five-minute background check of retained
+metadata, expiring after ten minutes. Its state is `not_queried`, `observed`,
+`failed`, or `unsupported`, with `checkedAt`, `stale`, `stopped`, and `bounds`.
+The bounds identify the exact cluster and checked `from`/`to` window, first/last
+non-Secret event times, and latest snapshot-marker time. Zero record timestamps
+mean no matching retained records in that window, not no historical changes.
+The parent `retainedData` becomes `observed` or `unavailable` as appropriate;
+freshness and stopped flags still qualify a cached success. Each storage read
+has a five-second deadline and returns no object identities, payloads, or counts.
+The HTTP request performs no history query. Retention bounds do not establish
+continuous history, and marker existence does not verify a restore point or
+backup. Writer gaps and history coverage remain independent. This cache is not
+exposed for federated members, disabled history, or Tier 1.
+
+Depth/result limits can return a successful result with explicit truncation and
+lower-bound counts. The **combined encoded response**, including both facets and
+evidence, must fit 2 MiB; size exhaustion returns 413 without a partial success.
+The request processing budget is 5 seconds; timeout attempts 504, but an expired
+or disconnected socket may not deliver it. At most two impact requests run per
+server; saturation returns 429. Unknown authorized roots/clusters return 404,
+unsupported evidence/store capabilities return 503, and internal failures return
+500. Errors contain a stable `code` and a sanitized `error` message.
+
+Responses use `Cache-Control: no-store`, vary on Authorization, and carry a
+warning about sensitive topology. See the [development contract](./development/impact-analysis.md)
+for current coverage gaps and remaining acceptance work.
 
 ## Resource detail
 
