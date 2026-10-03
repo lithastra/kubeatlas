@@ -1,0 +1,22 @@
+{
+  "name": "http-cache-semantics",
+  "version": "4.2.0-kubeatlas.1",
+  "description": "Parses Cache-Control and other headers. Helps building correct HTTP caches and proxies",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kornelski/http-cache-semantics.git"
+  },
+  "main": "index.js",
+  "types": "index.js",
+  "files": [
+    "index.js"
+  ],
+  "author": "Kornel Lesiński <npms2@geekhood.net> (https://kornel.ski/)",
+  "license": "BSD-2-Clause",
+  "private": true,
+  "kubeatlasPatch": {
+    "upstreamVersion": "4.2.0",
+    "upstreamIntegrity": "sha512-dTxcvPXqPvXBQpq5dUr6mEMJX4oIEFv6bwom3FDwKRDsuIjjJGANqhBuoAn9c1RQJIdAKav33ED65E2ys+87QQ==",
+    "localSecurityRevision": 1
+  }
+}
