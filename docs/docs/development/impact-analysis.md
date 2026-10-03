@@ -1350,20 +1350,33 @@ separately reviewed and merged.
 
 | Gate | Reviewed evidence and conclusion |
 | --- | --- |
-| At least five complete Web flows and CLI/report parity | The six-case matrix and earlier real-Go-API synthetic browser/CLI checks above satisfy the local scenario requirement. Go API tests independently check handwritten graph oracles and the entire captures; CLI tests consume all six in text/JSON/HTML. Chromium exercises five resource flows and the federated topology flow. |
-| Production Web delivery | CI builds with `tsc --noEmit && vite build`; the browser config starts `vite preview` from that job's `web/dist`, with server reuse disabled. Only `/api/**` and the watch transport are replaced; routes, JavaScript assets, UI state and download files are real. |
+| At least five complete Web flows and CLI/report parity | The six-case matrix satisfies the local scenario requirement. Go API tests independently check handwritten graph oracles and the entire captures; CLI tests consume all six in text/JSON/HTML. The live Chromium suite runs all six against the actual Go HTTP server and executes the compiled CLI for JSON/HTML in the same session. Only the six capture clock fields differ between separate requests; every other field must match. |
+| Production Web delivery | CI builds with `tsc --noEmit && vite build`. Nine transport-substituted checks run through `vite preview`; seven live checks load the same `web/dist` through the actual Go static handler, routes and middleware. The live suite has no API or WebSocket substitution, and server reuse is disabled. |
 | Capture fidelity and consent | Browser replies deliberately retain noncanonical whitespace and a final newline, so reserialization fails exact JSON/HTML assertions. Downloads require consent and make no extra query. Query changes reset consent. HTML has no active/external elements and retains its restrictive CSP. Unit tests additionally cover large integer/timestamp text, hostile strings, duplicate keys and unsupported private payloads. |
-| Identity and cluster boundaries | Browser requests check GET, limit 200 and the detail UID; federated topology deliberately has no captured UID. Identity mismatch and 403 hide results/exports. Switching to west clears east, including an in-flight refresh delivered late, and a denied west analysis stays closed. Actual authorization-before-read and no-disclosure behavior is checked separately in `TestImpactAPIAuthorizationBeforeEveryRead`; the browser's synthetic 403 cannot prove server authorization. |
+| Identity and cluster boundaries | Browser requests check GET, limit 200 and the detail UID; federated topology deliberately has no captured UID. Identity mismatch and 403 hide results/exports. Switching to west clears east, including an in-flight refresh delivered late. Live checks configure the actual `RBACScope`: east-only visibility, missing/unknown token and denied west statuses, Web refresh hiding a previous capture after denial, and CLI failure without creating a report. `TestImpactAPIAuthorizationBeforeEveryRead` independently checks denied requests do not read graph/evidence. Synthetic credentials and rules do not prove an operator's external authentication configuration. |
 | Counts, paths and limitations | Shared fixtures keep ordinary and authorization counts separate, expand representative paths, qualify reference-only Secrets, truncation and incomplete empty results. Portable shell/highlight tests cover filter-independent queries, exact ordinary edge highlights and focus/inert behavior. Earlier four-viewport browser evidence and the narrow resource flow remain bounded layout checks. |
 
-No new M3 product behavior is required by this review. A specific repeatability
-gap remains: CI does not yet run the production browser and actual CLI against
-one live Go HTTP server in the same synthetic session. The earlier local checks
-did this, while current CI composes independent real-handler, CLI and browser
-checks through the locked captures. A disposable loopback synthetic-server
-runner could automate that connection under normal development authorization,
-without Kubernetes; this is a concrete follow-up, not evidence that deployed
-authentication or watches have passed.
+The previously identified live-HTTP repeatability gap is closed by
+`web/tests/e2e/impact-live.spec.ts`. The opt-in Go test runner reuses the matrix
+loader/seed, serves the production bundle and real API at literal loopback
+ports 4174/4175, and runs no informer, database or Kubernetes client. It exits
+on SIGTERM/SIGINT with a 90-second deadline and bounded HTTP shutdown.
+Playwright owns and stops it.
+Actual CLI subprocesses use explicit loopback `--server` and an absent
+kubeconfig. Server impact counters verify Web downloads issue no extra query
+and each CLI report adds exactly one request. Report files have mode 0600;
+401/403 commands leave no file. This closes the source/synthetic M3 integration
+follow-up, not deployed watch, external authentication or M4 acceptance.
+
+Reproduce without a cluster (after installing locked Web dependencies and
+Playwright Chromium):
+
+```bash
+npm --prefix web run build
+go test -buildvcs=false -c -o bin/impact-browser-server.test ./pkg/api
+CGO_ENABLED=0 go build -buildvcs=false -o bin/kubectl-atlas ./cmd/kubectl-atlas
+npm --prefix web run test:impact-live
+```
 
 Before M4 acceptance, exercise the frozen candidate's actual Web/API/CLI path
 under its configured external authentication, including allowed/denied member

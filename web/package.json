@@ -15,7 +15,8 @@
     "pretest": "node --test test-stubs/ts-jest-transformer.check.cjs",
     "test": "jest",
     "test:e2e": "playwright test",
-    "test:impact-browser": "playwright test --config playwright.impact.config.ts"
+    "test:impact-browser": "playwright test --config playwright.impact.config.ts",
+    "test:impact-live": "playwright test --config playwright.impact-live.config.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",
