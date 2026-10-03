@@ -33,3 +33,28 @@ When the contract changes, review the graph/oracles and complete response
 differences together with all three consumers. Do not blindly regenerate
 captures to silence a failing test. These fixtures do not replace browser
 layout checks, real-environment authorization checks, or candidate validation.
+
+## Production browser integration
+
+`web/tests/e2e/impact.spec.ts` reuses this matrix in Chromium against the Vite
+production bundle. API responses and the WebSocket transport are substituted;
+the real routes, query identity checks, controls, paths, and browser downloads
+run. Five standalone scenarios and the federated east scenario check displayed
+evidence and captures. Boundary checks cover refresh/loading followed by a 403,
+response identity mismatch, query changes and consent reset, incomplete/truncated
+qualification, narrow resource layout, and cluster switches clearing exports.
+
+```bash
+npm --prefix web run build
+npm --prefix web run typecheck:e2e
+# Install the lockfile-matched Chromium once if it is not already available.
+cd web && npx playwright install chromium && npm run test:impact-browser
+```
+
+CI runs the production build and this single-worker suite as a separate job.
+The default Playwright configuration retains the live PetClinic smoke suite;
+the impact configuration starts only a loopback production preview and needs
+no API server, Kubernetes credentials, cluster, or kubectl. Synthetic browser
+integration does not establish real-cluster watch continuity, deployed
+authentication, effective permissions, frozen-candidate performance, or M4
+acceptance. The Go/CLI contract tests remain independent checks of the fixture.
