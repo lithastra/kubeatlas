@@ -42,7 +42,12 @@ the real routes, query identity checks, controls, paths, and browser downloads
 run. Five standalone scenarios and the federated east scenario check displayed
 evidence and captures. Boundary checks cover refresh/loading followed by a 403,
 response identity mismatch, query changes and consent reset, incomplete/truncated
-qualification, narrow resource layout, and cluster switches clearing exports.
+qualification, narrow resource layout, and cluster switches clearing exports
+even when an old refresh completes late. West denial is a synthetic 403, not
+proof of deployed server authorization. Browser replies add whitespace and a
+final newline to the unchanged fixture semantics, so export comparisons also
+detect reserialization. HTML must retain its CSP and contain no active or
+external-resource elements.
 
 ```bash
 npm --prefix web run build
