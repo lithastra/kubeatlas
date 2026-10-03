@@ -6,6 +6,7 @@ package impact
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
+	"github.com/lithastra/kubeatlas/pkg/operations"
 	"github.com/lithastra/kubeatlas/pkg/store/memory"
 )
 
@@ -211,6 +213,52 @@ func TestQueryURLSafety(t *testing.T) {
 		change(&bad)
 		if bad.Validate() == nil {
 			t.Error("accepted invalid query")
+		}
+	}
+}
+
+func TestFetchRejectsNestedCoverageScope(t *testing.T) {
+	for _, cluster := range []string{"", "east"} {
+		for _, facet := range []int{0, 1, 2, 3} {
+			for _, inventory := range []bool{false, true} {
+				t.Run(fmt.Sprintf("cluster=%s/facet=%d/inventory=%t", cluster, facet, inventory), func(t *testing.T) {
+					q := testQuery()
+					q.ClusterID = cluster
+					r := testResponse(t, q)
+					snapshots := []*operations.CoverageSnapshot{
+						&r.Analysis.Observation.Ordinary.Before, &r.Analysis.Observation.Ordinary.After,
+						&r.Analysis.Observation.Authorization.Before, &r.Analysis.Observation.Authorization.After,
+					}
+					if inventory {
+						snapshots[facet].APIInventory = &operations.APIInventoryEvidence{ClusterID: "west"}
+					} else {
+						snapshots[facet].Sources = []operations.CoverageSourceSnapshot{{ClusterID: "west", Source: operations.CoverageSourceCRD}}
+					}
+					server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						w.Header().Set("Content-Type", "application/json")
+						_ = json.NewEncoder(w).Encode(r)
+					}))
+					defer server.Close()
+					if got, err := Fetch(context.Background(), server.URL, "", q); err == nil || got != nil {
+						t.Fatal("accepted foreign nested coverage")
+					}
+					if _, err := Render(r, "html"); err == nil {
+						t.Fatal("exported foreign nested coverage")
+					}
+					if inventory {
+						snapshots[facet].APIInventory.ClusterID = cluster
+					} else {
+						snapshots[facet].Sources[0].ClusterID = cluster
+					}
+					if err := validateResponse(r, q); err != nil {
+						t.Fatalf("rejected matching nested scope: %v", err)
+					}
+					if _, err := Render(r, "html"); err != nil {
+						t.Fatalf("matching export failed: %v", err)
+					}
+
+				})
+			}
 		}
 	}
 }

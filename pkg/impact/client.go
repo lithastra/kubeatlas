@@ -22,6 +22,7 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
+	"github.com/lithastra/kubeatlas/pkg/operations"
 )
 
 // Query selects one server-side analysis. All bounds are explicit; no implicit
@@ -191,6 +192,21 @@ func validateResponse(r *Response, q Query) error {
 		a.Observation.Ordinary.Before.ClusterID != q.ClusterID || a.Observation.Ordinary.After.ClusterID != q.ClusterID ||
 		a.Observation.Authorization.Before.ClusterID != q.ClusterID || a.Observation.Authorization.After.ClusterID != q.ClusterID {
 		return bad
+	}
+	// Nested source/inventory records are exported too, even when not displayed.
+	// Bind every coverage record to this request, matching the Web capture gate.
+	for _, snapshot := range []*operations.CoverageSnapshot{
+		&a.Observation.Ordinary.Before, &a.Observation.Ordinary.After,
+		&a.Observation.Authorization.Before, &a.Observation.Authorization.After,
+	} {
+		for _, source := range snapshot.Sources {
+			if source.ClusterID != q.ClusterID {
+				return bad
+			}
+		}
+		if snapshot.APIInventory != nil && snapshot.APIInventory.ClusterID != q.ClusterID {
+			return bad
+		}
 	}
 	identities := map[string]bool{a.Root.ID: true}
 	validIdentity := func(id analysis.ImpactIdentity) bool {

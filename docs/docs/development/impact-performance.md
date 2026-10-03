@@ -54,3 +54,25 @@ workloads were active. Keep results for different shapes and storage tiers
 separate. A failed response is a failed measurement, never an omitted sample.
 The benchmark reports p95 from the measured duration array; it does not infer
 p95 from Go's average `ns/op`.
+
+## Additional bounded preparation shapes
+
+Each shape uses ten warm-ups and 100 measured requests with production middleware.
+Keep measurements for these distinct synthetic workloads separate.
+
+| Benchmark | Resources | Edges | Oracle |
+| --- | --- | --- | --- |
+| `BenchmarkImpactAPI5K` | 5,000 | 6,000 | 4, complete |
+| `BenchmarkImpactAPI10K` | 10,000 | 12,000 | 4, complete |
+| `BenchmarkImpactAPI5KHighFanout` | 5,000 | 18,000 | 200, truncated |
+
+The 10K shape doubles the sparse groups. The high-fanout shape references five
+shared ConfigMaps from every Deployment and Pod; 4,000 matches are reachable,
+with the fixed response limit of 200. No budget or response limit was relaxed.
+The 5K/63K-edge shape exceeds the existing 16 MiB projection budget and
+returns HTTP 413. This remains a technical limit; the bounded 18K-edge case
+does not establish universal dense-graph support.
+
+```bash
+go test ./pkg/api -run '^$' -bench '^BenchmarkImpactAPI(5K|10K|5KHighFanout)$' -benchtime=100x -count=1
+```
