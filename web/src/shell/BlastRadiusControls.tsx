@@ -1,16 +1,15 @@
 /* ============================================================
- * BlastRadiusControls — bottom-center depth + direction toolbar.
+ * BlastRadiusControls — in-panel depth + direction toolbar.
  *
- * Two chip rows sitting over the canvas at the bottom: depth
- * choices (1 / 2 / 3 / 5 / ∞) and direction (↓ downstream, ↑
- * upstream, ↕ both). Mirrors the design's depth slider + mode
+ * Two wrapping chip rows next to the captured result: depth
+ * choices (1 / 2 / 3 / 5 / 10) and an explicit server relation. Mirrors the design's depth slider + mode
  * toggle (the radial menu primitive is queued for a separate pass).
  * Active only while BlastRadiusContext.active.
  * ============================================================ */
 import { Box, Stack } from '@mui/material';
 
 import { Panel } from '../design';
-import type { BlastDirection } from '../lib/blastRadius';
+import type { ImpactRelation } from '../api/impactTypes';
 import { useBlastRadius } from './BlastRadiusContext';
 
 const DEPTHS: Array<{ value: number; label: string }> = [
@@ -18,13 +17,12 @@ const DEPTHS: Array<{ value: number; label: string }> = [
   { value: 2, label: '2' },
   { value: 3, label: '3' },
   { value: 5, label: '5' },
-  { value: Infinity, label: '∞' },
+  { value: 10, label: '10' },
 ];
 
-const DIRECTIONS: Array<{ value: BlastDirection; label: string }> = [
-  { value: 'downstream', label: '↓' },
-  { value: 'upstream', label: '↑' },
-  { value: 'both', label: '↕' },
+const DIRECTIONS: Array<{ value: ImpactRelation; label: string }> = [
+  { value: 'dependents', label: 'Dependents' },
+  { value: 'dependencies', label: 'Dependencies' },
 ];
 
 export function BlastRadiusControls() {
@@ -33,15 +31,11 @@ export function BlastRadiusControls() {
   return (
     <Box
       sx={{
-        position: 'absolute',
-        bottom: 'var(--atlas-space-4)',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 4,
+        minWidth: 0,
       }}
     >
-      <Panel variant="card" padding={2} ariaLabel="Blast radius controls">
-        <Stack direction="row" spacing={3} alignItems="center">
+      <Panel variant="card" padding={2} ariaLabel="Impact analysis controls">
+        <Stack spacing={1} alignItems="flex-start">
           <ChipGroup
             label="depth"
             options={DEPTHS}
@@ -49,7 +43,7 @@ export function BlastRadiusControls() {
             onChange={setDepth}
           />
           <ChipGroup
-            label="mode"
+            label="relation"
             options={DIRECTIONS}
             value={direction}
             onChange={setDirection}
@@ -74,7 +68,7 @@ function ChipGroup<T extends string | number>({
   onChange,
 }: ChipGroupProps<T>) {
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center">
+    <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap>
       <Box
         component="span"
         sx={{
@@ -99,6 +93,7 @@ function ChipGroup<T extends string | number>({
             aria-pressed={isActive}
             sx={{
               minWidth: 28,
+              minHeight: 36,
               padding: '4px 8px',
               border: '1px solid',
               borderColor: isActive ? 'var(--atlas-select)' : 'var(--atlas-border)',

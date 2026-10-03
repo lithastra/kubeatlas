@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Legacy characterization only; not a v1.7 acceptance report",
+  "resources": [
+    {"id": "demo/ConfigMap/settings", "namespace": "demo", "kind": "ConfigMap", "name": "settings", "uid": "config-1"},
+    {"id": "demo/Deployment/api", "namespace": "demo", "kind": "Deployment", "name": "api", "uid": "deployment-1"},
+    {"id": "demo/ReplicaSet/api-rs", "namespace": "demo", "kind": "ReplicaSet", "name": "api-rs", "uid": "replicaset-1", "ownerReferences": [{"kind": "Deployment", "name": "api", "uid": "deployment-1"}]},
+    {"id": "demo/Pod/api-pod", "namespace": "demo", "kind": "Pod", "name": "api-pod", "uid": "pod-1", "ownerReferences": [{"kind": "ReplicaSet", "name": "api-rs", "uid": "replicaset-1"}]},
+    {"id": "demo/Service/api", "namespace": "demo", "kind": "Service", "name": "api", "uid": "service-1"},
+    {"id": "demo/Ingress/api", "namespace": "demo", "kind": "Ingress", "name": "api", "uid": "ingress-1"},
+    {"id": "demo/ServiceAccount/worker", "namespace": "demo", "kind": "ServiceAccount", "name": "worker", "uid": "account-1"},
+    {"id": "demo/RoleBinding/reader", "namespace": "demo", "kind": "RoleBinding", "name": "reader", "uid": "binding-1"},
+    {"id": "demo/Role/reader", "namespace": "demo", "kind": "Role", "name": "reader", "uid": "role-1"},
+    {"id": "demo/Secret/credentials", "namespace": "demo", "kind": "Secret", "name": "credentials"},
+    {"id": "demo/PersistentVolumeClaim/data", "namespace": "demo", "kind": "PersistentVolumeClaim", "name": "data", "uid": "pvc-1"},
+    {"id": "demo/ConfigMap/isolated", "namespace": "demo", "kind": "ConfigMap", "name": "isolated", "uid": "isolated-1"}
+  ],
+  "edges": [
+    {"from": "demo/Deployment/api", "to": "demo/ConfigMap/settings", "type": "USES_CONFIGMAP"},
+    {"from": "demo/ReplicaSet/api-rs", "to": "demo/Deployment/api", "type": "OWNS"},
+    {"from": "demo/Pod/api-pod", "to": "demo/ReplicaSet/api-rs", "type": "OWNS"},
+    {"from": "demo/Service/api", "to": "demo/Pod/api-pod", "type": "SELECTS"},
+    {"from": "demo/Ingress/api", "to": "demo/Service/api", "type": "ROUTES_TO"},
+    {"from": "demo/Deployment/api", "to": "demo/ServiceAccount/worker", "type": "USES_SERVICEACCOUNT"},
+    {"from": "demo/RoleBinding/reader", "to": "demo/ServiceAccount/worker", "type": "BINDS_SUBJECT"},
+    {"from": "demo/RoleBinding/reader", "to": "demo/Role/reader", "type": "BINDS_ROLE"},
+    {"from": "demo/Deployment/api", "to": "demo/Secret/credentials", "type": "USES_SECRET"},
+    {"from": "demo/Deployment/api", "to": "demo/PersistentVolumeClaim/data", "type": "MOUNTS_VOLUME"}
+  ],
+  "queries": [
+    {"name": "config-direct", "root": "demo/ConfigMap/settings", "depth": 1, "incoming": ["demo/Deployment/api"], "outgoing": []},
+    {"name": "config-two-hops", "root": "demo/ConfigMap/settings", "depth": 2, "incoming": ["demo/Deployment/api", "demo/ReplicaSet/api-rs"], "outgoing": []},
+    {"name": "config-route-chain", "root": "demo/ConfigMap/settings", "depth": 5, "incoming": ["demo/Deployment/api", "demo/Ingress/api", "demo/Pod/api-pod", "demo/ReplicaSet/api-rs", "demo/Service/api"], "outgoing": []},
+    {"name": "ownership-versus-dependencies", "root": "demo/Deployment/api", "depth": 3, "incoming": ["demo/Pod/api-pod", "demo/ReplicaSet/api-rs", "demo/Service/api"], "outgoing": ["demo/ConfigMap/settings", "demo/PersistentVolumeClaim/data", "demo/Secret/credentials", "demo/ServiceAccount/worker"]},
+    {"name": "secret-reference", "root": "demo/Secret/credentials", "depth": 5, "incoming": ["demo/Deployment/api", "demo/Ingress/api", "demo/Pod/api-pod", "demo/ReplicaSet/api-rs", "demo/Service/api"], "outgoing": []},
+    {"name": "rbac-branch-is-not-reverse-reachability", "root": "demo/Role/reader", "depth": 5, "incoming": ["demo/RoleBinding/reader"], "outgoing": []},
+    {"name": "isolated-resource", "root": "demo/ConfigMap/isolated", "depth": 5, "incoming": [], "outgoing": []},
+    {"name": "service-incoming-route", "root": "demo/Service/api", "depth": 1, "incoming": ["demo/Ingress/api"], "outgoing": ["demo/Pod/api-pod"]}
+  ]
+}

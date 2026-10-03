@@ -42,7 +42,7 @@ interface EdgeTypeFilterProps {
 
 export function EdgeTypeFilter({ value, onChange }: EdgeTypeFilterProps) {
   return (
-    <Stack direction="row" spacing={0.5} alignItems="center" role="group" aria-label="Edge filter">
+    <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap" useFlexGap role="group" aria-label="Edge filter">
       <Typography
         component="span"
         sx={{

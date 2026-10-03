@@ -158,7 +158,7 @@ func newRootCmd(a *app) *cobra.Command {
 		"kubeconfig context to target — passed through to kubectl and kubeatlas")
 	root.PersistentFlags().StringVar(&a.kubeconfig, "kubeconfig", "",
 		"Path to the kubeconfig file — passed through to kubectl and kubeatlas")
-	root.AddCommand(newNamespaceCmd(a), newClusterCmd(a))
+	root.AddCommand(newNamespaceCmd(a), newClusterCmd(a), newImpactCmd(a))
 	return root
 }
 

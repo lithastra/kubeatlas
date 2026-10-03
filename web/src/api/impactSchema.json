@@ -1,0 +1,2214 @@
+{
+  "properties": {
+    "analysis": {
+      "nullable": true,
+      "properties": {
+        "authorization": {
+          "properties": {
+            "applicable": {
+              "type": "boolean"
+            },
+            "counts": {
+              "properties": {
+                "bindings": {
+                  "type": "integer"
+                },
+                "direct": {
+                  "type": "integer"
+                },
+                "indirect": {
+                  "type": "integer"
+                },
+                "lowerBound": {
+                  "type": "boolean"
+                },
+                "pods": {
+                  "type": "integer"
+                },
+                "roles": {
+                  "type": "integer"
+                },
+                "serviceAccounts": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "workloads": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "total",
+                "direct",
+                "indirect",
+                "roles",
+                "bindings",
+                "serviceAccounts",
+                "workloads",
+                "pods",
+                "lowerBound"
+              ],
+              "type": "object"
+            },
+            "effectivePermissions": {
+              "type": "string"
+            },
+            "evidenceCategory": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "integer"
+            },
+            "maxDepth": {
+              "type": "integer"
+            },
+            "modeledTraversalComplete": {
+              "type": "boolean"
+            },
+            "notices": {
+              "items": {
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "count"
+                ],
+                "type": "object"
+              },
+              "nullable": true,
+              "type": "array"
+            },
+            "observationCoverage": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "resources": {
+              "items": {
+                "properties": {
+                  "depth": {
+                    "type": "integer"
+                  },
+                  "path": {
+                    "items": {
+                      "properties": {
+                        "bindingNamespace": {
+                          "type": "string"
+                        },
+                        "bindingScope": {
+                          "type": "string"
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "ownerUIDStatus": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "traversalFrom": {
+                          "type": "string"
+                        },
+                        "traversalTo": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "to",
+                        "type",
+                        "traversalFrom",
+                        "traversalTo"
+                      ],
+                      "type": "object"
+                    },
+                    "nullable": true,
+                    "type": "array"
+                  },
+                  "resource": {
+                    "properties": {
+                      "clusterId": {
+                        "type": "string"
+                      },
+                      "groupVersion": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "type": "string"
+                      },
+                      "referenceOnly": {
+                        "type": "boolean"
+                      },
+                      "resourceVersion": {
+                        "type": "string"
+                      },
+                      "uid": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "namespace",
+                      "kind",
+                      "name",
+                      "referenceOnly"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "resource",
+                  "depth",
+                  "path"
+                ],
+                "type": "object"
+              },
+              "nullable": true,
+              "type": "array"
+            },
+            "sourceVersionEvidence": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "truncationReasons": {
+              "items": {
+                "type": "string"
+              },
+              "nullable": true,
+              "type": "array"
+            }
+          },
+          "required": [
+            "applicable",
+            "evidenceCategory",
+            "sourceVersionEvidence",
+            "effectivePermissions",
+            "observationCoverage",
+            "maxDepth",
+            "limit",
+            "resources",
+            "counts",
+            "truncated",
+            "truncationReasons",
+            "notices",
+            "modeledTraversalComplete"
+          ],
+          "type": "object"
+        },
+        "availability": {
+          "nullable": true,
+          "properties": {
+            "currentGraphRead": {
+              "type": "string"
+            },
+            "evidence": {
+              "properties": {
+                "capturedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "clusterId": {
+                  "type": "string"
+                },
+                "history": {
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "coverage": {
+                      "type": "string"
+                    },
+                    "observationStartedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "reasons": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "retainedData": {
+                      "type": "string"
+                    },
+                    "retentionEvidence": {
+                      "nullable": true,
+                      "properties": {
+                        "bounds": {
+                          "properties": {
+                            "clusterId": {
+                              "type": "string"
+                            },
+                            "firstEventAt": {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            "from": {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            "lastEventAt": {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            "latestMarkerAt": {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            "to": {
+                              "format": "date-time",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "clusterId",
+                            "from",
+                            "to",
+                            "firstEventAt",
+                            "lastEventAt",
+                            "latestMarkerAt"
+                          ],
+                          "type": "object"
+                        },
+                        "checkedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "stale": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "stopped": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "state",
+                        "checkedAt",
+                        "stale",
+                        "stopped",
+                        "bounds"
+                      ],
+                      "type": "object"
+                    },
+                    "retentionNanos": {
+                      "type": "integer"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "reasons",
+                    "observationStartedAt",
+                    "retentionNanos",
+                    "coverage",
+                    "content",
+                    "retainedData"
+                  ],
+                  "type": "object"
+                },
+                "storage": {
+                  "properties": {
+                    "checkedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "durabilityKnown": {
+                      "type": "boolean"
+                    },
+                    "durable": {
+                      "type": "boolean"
+                    },
+                    "lastSuccessAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "staleAfterNanos": {
+                      "type": "integer"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "durabilityKnown",
+                    "durable",
+                    "checkedAt",
+                    "lastSuccessAt",
+                    "staleAfterNanos"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "clusterId",
+                "capturedAt",
+                "storage",
+                "history"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "currentGraphRead",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        "counts": {
+          "properties": {
+            "direct": {
+              "type": "integer"
+            },
+            "indirect": {
+              "type": "integer"
+            },
+            "lowerBound": {
+              "type": "boolean"
+            },
+            "other": {
+              "type": "integer"
+            },
+            "pods": {
+              "type": "integer"
+            },
+            "total": {
+              "type": "integer"
+            },
+            "workloads": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total",
+            "direct",
+            "indirect",
+            "workloads",
+            "pods",
+            "other",
+            "lowerBound"
+          ],
+          "type": "object"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "maxDepth": {
+          "type": "integer"
+        },
+        "modeledTraversalComplete": {
+          "type": "boolean"
+        },
+        "notices": {
+          "items": {
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "reason",
+              "count"
+            ],
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "observation": {
+          "nullable": true,
+          "properties": {
+            "authorization": {
+              "properties": {
+                "after": {
+                  "properties": {
+                    "apiInventory": {
+                      "nullable": true,
+                      "properties": {
+                        "checkedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "clusterId": {
+                          "type": "string"
+                        },
+                        "generation": {
+                          "type": "integer"
+                        },
+                        "limited": {
+                          "type": "boolean"
+                        },
+                        "resources": {
+                          "items": {
+                            "properties": {
+                              "group": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "list": {
+                                "type": "boolean"
+                              },
+                              "namespaced": {
+                                "type": "boolean"
+                              },
+                              "resource": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "watch": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "group",
+                              "version",
+                              "resource",
+                              "kind",
+                              "namespaced",
+                              "list",
+                              "watch"
+                            ],
+                            "type": "object"
+                          },
+                          "nullable": true,
+                          "type": "array"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "stale": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "stopped": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "clusterId",
+                        "generation",
+                        "revision",
+                        "state",
+                        "checkedAt",
+                        "stale",
+                        "stopped",
+                        "limited",
+                        "resources"
+                      ],
+                      "type": "object"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "clusterId": {
+                      "type": "string"
+                    },
+                    "generation": {
+                      "type": "integer"
+                    },
+                    "resources": {
+                      "items": {
+                        "properties": {
+                          "continuityRevision": {
+                            "type": "integer"
+                          },
+                          "extractionGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "group": {
+                            "type": "string"
+                          },
+                          "initialDeliveryDone": {
+                            "type": "boolean"
+                          },
+                          "lastListSuccess": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "persistenceGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "processingGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "reasons": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "resource": {
+                            "type": "string"
+                          },
+                          "since": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "watchEstablished": {
+                            "type": "boolean"
+                          },
+                          "watchGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "continuityRevision",
+                          "group",
+                          "version",
+                          "resource",
+                          "state",
+                          "reasons",
+                          "since",
+                          "initialDeliveryDone",
+                          "watchEstablished",
+                          "lastListSuccess",
+                          "watchGapSince",
+                          "processingGapSince",
+                          "extractionGapSince",
+                          "persistenceGapSince"
+                        ],
+                        "type": "object"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "sources": {
+                      "items": {
+                        "properties": {
+                          "clusterId": {
+                            "type": "string"
+                          },
+                          "discovery": {
+                            "nullable": true,
+                            "properties": {
+                              "checkedAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "revision": {
+                                "type": "integer"
+                              },
+                              "stale": {
+                                "type": "boolean"
+                              },
+                              "state": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "checkedAt",
+                              "revision",
+                              "stale"
+                            ],
+                            "type": "object"
+                          },
+                          "generation": {
+                            "type": "integer"
+                          },
+                          "inventoryLimited": {
+                            "type": "boolean"
+                          },
+                          "resources": {
+                            "items": {
+                              "properties": {
+                                "continuityRevision": {
+                                  "type": "integer"
+                                },
+                                "extractionGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "group": {
+                                  "type": "string"
+                                },
+                                "initialDeliveryDone": {
+                                  "type": "boolean"
+                                },
+                                "lastListSuccess": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "persistenceGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "processingGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "reasons": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "nullable": true,
+                                  "type": "array"
+                                },
+                                "resource": {
+                                  "type": "string"
+                                },
+                                "since": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                },
+                                "watchEstablished": {
+                                  "type": "boolean"
+                                },
+                                "watchGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "continuityRevision",
+                                "group",
+                                "version",
+                                "resource",
+                                "state",
+                                "reasons",
+                                "since",
+                                "initialDeliveryDone",
+                                "watchEstablished",
+                                "lastListSuccess",
+                                "watchGapSince",
+                                "processingGapSince",
+                                "extractionGapSince",
+                                "persistenceGapSince"
+                              ],
+                              "type": "object"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "clusterId",
+                          "source",
+                          "generation",
+                          "state",
+                          "inventoryLimited",
+                          "resources"
+                        ],
+                        "type": "object"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "generation",
+                    "clusterId",
+                    "capturedAt",
+                    "state",
+                    "resources"
+                  ],
+                  "type": "object"
+                },
+                "before": {
+                  "properties": {
+                    "apiInventory": {
+                      "nullable": true,
+                      "properties": {
+                        "checkedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "clusterId": {
+                          "type": "string"
+                        },
+                        "generation": {
+                          "type": "integer"
+                        },
+                        "limited": {
+                          "type": "boolean"
+                        },
+                        "resources": {
+                          "items": {
+                            "properties": {
+                              "group": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "list": {
+                                "type": "boolean"
+                              },
+                              "namespaced": {
+                                "type": "boolean"
+                              },
+                              "resource": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "watch": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "group",
+                              "version",
+                              "resource",
+                              "kind",
+                              "namespaced",
+                              "list",
+                              "watch"
+                            ],
+                            "type": "object"
+                          },
+                          "nullable": true,
+                          "type": "array"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "stale": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "stopped": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "clusterId",
+                        "generation",
+                        "revision",
+                        "state",
+                        "checkedAt",
+                        "stale",
+                        "stopped",
+                        "limited",
+                        "resources"
+                      ],
+                      "type": "object"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "clusterId": {
+                      "type": "string"
+                    },
+                    "generation": {
+                      "type": "integer"
+                    },
+                    "resources": {
+                      "items": {
+                        "properties": {
+                          "continuityRevision": {
+                            "type": "integer"
+                          },
+                          "extractionGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "group": {
+                            "type": "string"
+                          },
+                          "initialDeliveryDone": {
+                            "type": "boolean"
+                          },
+                          "lastListSuccess": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "persistenceGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "processingGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "reasons": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "resource": {
+                            "type": "string"
+                          },
+                          "since": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "watchEstablished": {
+                            "type": "boolean"
+                          },
+                          "watchGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "continuityRevision",
+                          "group",
+                          "version",
+                          "resource",
+                          "state",
+                          "reasons",
+                          "since",
+                          "initialDeliveryDone",
+                          "watchEstablished",
+                          "lastListSuccess",
+                          "watchGapSince",
+                          "processingGapSince",
+                          "extractionGapSince",
+                          "persistenceGapSince"
+                        ],
+                        "type": "object"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "sources": {
+                      "items": {
+                        "properties": {
+                          "clusterId": {
+                            "type": "string"
+                          },
+                          "discovery": {
+                            "nullable": true,
+                            "properties": {
+                              "checkedAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "revision": {
+                                "type": "integer"
+                              },
+                              "stale": {
+                                "type": "boolean"
+                              },
+                              "state": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "checkedAt",
+                              "revision",
+                              "stale"
+                            ],
+                            "type": "object"
+                          },
+                          "generation": {
+                            "type": "integer"
+                          },
+                          "inventoryLimited": {
+                            "type": "boolean"
+                          },
+                          "resources": {
+                            "items": {
+                              "properties": {
+                                "continuityRevision": {
+                                  "type": "integer"
+                                },
+                                "extractionGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "group": {
+                                  "type": "string"
+                                },
+                                "initialDeliveryDone": {
+                                  "type": "boolean"
+                                },
+                                "lastListSuccess": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "persistenceGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "processingGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "reasons": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "nullable": true,
+                                  "type": "array"
+                                },
+                                "resource": {
+                                  "type": "string"
+                                },
+                                "since": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                },
+                                "watchEstablished": {
+                                  "type": "boolean"
+                                },
+                                "watchGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "continuityRevision",
+                                "group",
+                                "version",
+                                "resource",
+                                "state",
+                                "reasons",
+                                "since",
+                                "initialDeliveryDone",
+                                "watchEstablished",
+                                "lastListSuccess",
+                                "watchGapSince",
+                                "processingGapSince",
+                                "extractionGapSince",
+                                "persistenceGapSince"
+                              ],
+                              "type": "object"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "clusterId",
+                          "source",
+                          "generation",
+                          "state",
+                          "inventoryLimited",
+                          "resources"
+                        ],
+                        "type": "object"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "generation",
+                    "clusterId",
+                    "capturedAt",
+                    "state",
+                    "resources"
+                  ],
+                  "type": "object"
+                },
+                "emptyResultAssessment": {
+                  "type": "string"
+                },
+                "optionalApis": {
+                  "items": {
+                    "properties": {
+                      "after": {
+                        "type": "string"
+                      },
+                      "before": {
+                        "type": "string"
+                      },
+                      "group": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "group",
+                      "version",
+                      "resource",
+                      "before",
+                      "after"
+                    ],
+                    "type": "object"
+                  },
+                  "nullable": true,
+                  "type": "array"
+                },
+                "profile": {
+                  "type": "string"
+                },
+                "reasons": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "nullable": true,
+                  "type": "array"
+                },
+                "stableWindow": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "typeScopeClosed": {
+                  "type": "boolean"
+                },
+                "unobservedApis": {
+                  "items": {
+                    "properties": {
+                      "group": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "list": {
+                        "type": "boolean"
+                      },
+                      "namespaced": {
+                        "type": "boolean"
+                      },
+                      "resource": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      },
+                      "watch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "group",
+                      "version",
+                      "resource",
+                      "kind",
+                      "namespaced",
+                      "list",
+                      "watch"
+                    ],
+                    "type": "object"
+                  },
+                  "nullable": true,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "profile",
+                "state",
+                "typeScopeClosed",
+                "stableWindow",
+                "reasons",
+                "before",
+                "after",
+                "emptyResultAssessment"
+              ],
+              "type": "object"
+            },
+            "ordinary": {
+              "properties": {
+                "after": {
+                  "properties": {
+                    "apiInventory": {
+                      "nullable": true,
+                      "properties": {
+                        "checkedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "clusterId": {
+                          "type": "string"
+                        },
+                        "generation": {
+                          "type": "integer"
+                        },
+                        "limited": {
+                          "type": "boolean"
+                        },
+                        "resources": {
+                          "items": {
+                            "properties": {
+                              "group": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "list": {
+                                "type": "boolean"
+                              },
+                              "namespaced": {
+                                "type": "boolean"
+                              },
+                              "resource": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "watch": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "group",
+                              "version",
+                              "resource",
+                              "kind",
+                              "namespaced",
+                              "list",
+                              "watch"
+                            ],
+                            "type": "object"
+                          },
+                          "nullable": true,
+                          "type": "array"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "stale": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "stopped": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "clusterId",
+                        "generation",
+                        "revision",
+                        "state",
+                        "checkedAt",
+                        "stale",
+                        "stopped",
+                        "limited",
+                        "resources"
+                      ],
+                      "type": "object"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "clusterId": {
+                      "type": "string"
+                    },
+                    "generation": {
+                      "type": "integer"
+                    },
+                    "resources": {
+                      "items": {
+                        "properties": {
+                          "continuityRevision": {
+                            "type": "integer"
+                          },
+                          "extractionGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "group": {
+                            "type": "string"
+                          },
+                          "initialDeliveryDone": {
+                            "type": "boolean"
+                          },
+                          "lastListSuccess": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "persistenceGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "processingGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "reasons": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "resource": {
+                            "type": "string"
+                          },
+                          "since": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "watchEstablished": {
+                            "type": "boolean"
+                          },
+                          "watchGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "continuityRevision",
+                          "group",
+                          "version",
+                          "resource",
+                          "state",
+                          "reasons",
+                          "since",
+                          "initialDeliveryDone",
+                          "watchEstablished",
+                          "lastListSuccess",
+                          "watchGapSince",
+                          "processingGapSince",
+                          "extractionGapSince",
+                          "persistenceGapSince"
+                        ],
+                        "type": "object"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "sources": {
+                      "items": {
+                        "properties": {
+                          "clusterId": {
+                            "type": "string"
+                          },
+                          "discovery": {
+                            "nullable": true,
+                            "properties": {
+                              "checkedAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "revision": {
+                                "type": "integer"
+                              },
+                              "stale": {
+                                "type": "boolean"
+                              },
+                              "state": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "checkedAt",
+                              "revision",
+                              "stale"
+                            ],
+                            "type": "object"
+                          },
+                          "generation": {
+                            "type": "integer"
+                          },
+                          "inventoryLimited": {
+                            "type": "boolean"
+                          },
+                          "resources": {
+                            "items": {
+                              "properties": {
+                                "continuityRevision": {
+                                  "type": "integer"
+                                },
+                                "extractionGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "group": {
+                                  "type": "string"
+                                },
+                                "initialDeliveryDone": {
+                                  "type": "boolean"
+                                },
+                                "lastListSuccess": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "persistenceGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "processingGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "reasons": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "nullable": true,
+                                  "type": "array"
+                                },
+                                "resource": {
+                                  "type": "string"
+                                },
+                                "since": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                },
+                                "watchEstablished": {
+                                  "type": "boolean"
+                                },
+                                "watchGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "continuityRevision",
+                                "group",
+                                "version",
+                                "resource",
+                                "state",
+                                "reasons",
+                                "since",
+                                "initialDeliveryDone",
+                                "watchEstablished",
+                                "lastListSuccess",
+                                "watchGapSince",
+                                "processingGapSince",
+                                "extractionGapSince",
+                                "persistenceGapSince"
+                              ],
+                              "type": "object"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "clusterId",
+                          "source",
+                          "generation",
+                          "state",
+                          "inventoryLimited",
+                          "resources"
+                        ],
+                        "type": "object"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "generation",
+                    "clusterId",
+                    "capturedAt",
+                    "state",
+                    "resources"
+                  ],
+                  "type": "object"
+                },
+                "before": {
+                  "properties": {
+                    "apiInventory": {
+                      "nullable": true,
+                      "properties": {
+                        "checkedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "clusterId": {
+                          "type": "string"
+                        },
+                        "generation": {
+                          "type": "integer"
+                        },
+                        "limited": {
+                          "type": "boolean"
+                        },
+                        "resources": {
+                          "items": {
+                            "properties": {
+                              "group": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string"
+                              },
+                              "list": {
+                                "type": "boolean"
+                              },
+                              "namespaced": {
+                                "type": "boolean"
+                              },
+                              "resource": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "watch": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "group",
+                              "version",
+                              "resource",
+                              "kind",
+                              "namespaced",
+                              "list",
+                              "watch"
+                            ],
+                            "type": "object"
+                          },
+                          "nullable": true,
+                          "type": "array"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "stale": {
+                          "type": "boolean"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "stopped": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "clusterId",
+                        "generation",
+                        "revision",
+                        "state",
+                        "checkedAt",
+                        "stale",
+                        "stopped",
+                        "limited",
+                        "resources"
+                      ],
+                      "type": "object"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "clusterId": {
+                      "type": "string"
+                    },
+                    "generation": {
+                      "type": "integer"
+                    },
+                    "resources": {
+                      "items": {
+                        "properties": {
+                          "continuityRevision": {
+                            "type": "integer"
+                          },
+                          "extractionGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "group": {
+                            "type": "string"
+                          },
+                          "initialDeliveryDone": {
+                            "type": "boolean"
+                          },
+                          "lastListSuccess": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "persistenceGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "processingGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "reasons": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "resource": {
+                            "type": "string"
+                          },
+                          "since": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "watchEstablished": {
+                            "type": "boolean"
+                          },
+                          "watchGapSince": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "continuityRevision",
+                          "group",
+                          "version",
+                          "resource",
+                          "state",
+                          "reasons",
+                          "since",
+                          "initialDeliveryDone",
+                          "watchEstablished",
+                          "lastListSuccess",
+                          "watchGapSince",
+                          "processingGapSince",
+                          "extractionGapSince",
+                          "persistenceGapSince"
+                        ],
+                        "type": "object"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "sources": {
+                      "items": {
+                        "properties": {
+                          "clusterId": {
+                            "type": "string"
+                          },
+                          "discovery": {
+                            "nullable": true,
+                            "properties": {
+                              "checkedAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "revision": {
+                                "type": "integer"
+                              },
+                              "stale": {
+                                "type": "boolean"
+                              },
+                              "state": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "checkedAt",
+                              "revision",
+                              "stale"
+                            ],
+                            "type": "object"
+                          },
+                          "generation": {
+                            "type": "integer"
+                          },
+                          "inventoryLimited": {
+                            "type": "boolean"
+                          },
+                          "resources": {
+                            "items": {
+                              "properties": {
+                                "continuityRevision": {
+                                  "type": "integer"
+                                },
+                                "extractionGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "group": {
+                                  "type": "string"
+                                },
+                                "initialDeliveryDone": {
+                                  "type": "boolean"
+                                },
+                                "lastListSuccess": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "persistenceGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "processingGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "reasons": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "nullable": true,
+                                  "type": "array"
+                                },
+                                "resource": {
+                                  "type": "string"
+                                },
+                                "since": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                },
+                                "watchEstablished": {
+                                  "type": "boolean"
+                                },
+                                "watchGapSince": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "continuityRevision",
+                                "group",
+                                "version",
+                                "resource",
+                                "state",
+                                "reasons",
+                                "since",
+                                "initialDeliveryDone",
+                                "watchEstablished",
+                                "lastListSuccess",
+                                "watchGapSince",
+                                "processingGapSince",
+                                "extractionGapSince",
+                                "persistenceGapSince"
+                              ],
+                              "type": "object"
+                            },
+                            "nullable": true,
+                            "type": "array"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "clusterId",
+                          "source",
+                          "generation",
+                          "state",
+                          "inventoryLimited",
+                          "resources"
+                        ],
+                        "type": "object"
+                      },
+                      "nullable": true,
+                      "type": "array"
+                    },
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "generation",
+                    "clusterId",
+                    "capturedAt",
+                    "state",
+                    "resources"
+                  ],
+                  "type": "object"
+                },
+                "emptyResultAssessment": {
+                  "type": "string"
+                },
+                "optionalApis": {
+                  "items": {
+                    "properties": {
+                      "after": {
+                        "type": "string"
+                      },
+                      "before": {
+                        "type": "string"
+                      },
+                      "group": {
+                        "type": "string"
+                      },
+                      "resource": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "group",
+                      "version",
+                      "resource",
+                      "before",
+                      "after"
+                    ],
+                    "type": "object"
+                  },
+                  "nullable": true,
+                  "type": "array"
+                },
+                "profile": {
+                  "type": "string"
+                },
+                "reasons": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "nullable": true,
+                  "type": "array"
+                },
+                "stableWindow": {
+                  "type": "boolean"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "typeScopeClosed": {
+                  "type": "boolean"
+                },
+                "unobservedApis": {
+                  "items": {
+                    "properties": {
+                      "group": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "list": {
+                        "type": "boolean"
+                      },
+                      "namespaced": {
+                        "type": "boolean"
+                      },
+                      "resource": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "string"
+                      },
+                      "watch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "group",
+                      "version",
+                      "resource",
+                      "kind",
+                      "namespaced",
+                      "list",
+                      "watch"
+                    ],
+                    "type": "object"
+                  },
+                  "nullable": true,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "profile",
+                "state",
+                "typeScopeClosed",
+                "stableWindow",
+                "reasons",
+                "before",
+                "after",
+                "emptyResultAssessment"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "ordinary",
+            "authorization"
+          ],
+          "type": "object"
+        },
+        "observationCoverage": {
+          "type": "string"
+        },
+        "referenceEvidence": {
+          "items": {
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "sourceResourceVersion": {
+                "type": "string"
+              },
+              "sourceUID": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "uses": {
+                "items": {
+                  "properties": {
+                    "fieldPath": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string"
+                    },
+                    "mountFieldPath": {
+                      "type": "string"
+                    },
+                    "optional": {
+                      "type": "string"
+                    },
+                    "refresh": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fieldPath",
+                    "mode",
+                    "optional",
+                    "refresh"
+                  ],
+                  "type": "object"
+                },
+                "nullable": true,
+                "type": "array"
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "type",
+              "status",
+              "uses"
+            ],
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "resources": {
+          "items": {
+            "properties": {
+              "depth": {
+                "type": "integer"
+              },
+              "path": {
+                "items": {
+                  "properties": {
+                    "from": {
+                      "type": "string"
+                    },
+                    "ownerUIDStatus": {
+                      "type": "string"
+                    },
+                    "to": {
+                      "type": "string"
+                    },
+                    "traversalFrom": {
+                      "type": "string"
+                    },
+                    "traversalTo": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "to",
+                    "type",
+                    "traversalFrom",
+                    "traversalTo"
+                  ],
+                  "type": "object"
+                },
+                "nullable": true,
+                "type": "array"
+              },
+              "resource": {
+                "properties": {
+                  "clusterId": {
+                    "type": "string"
+                  },
+                  "groupVersion": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "namespace": {
+                    "type": "string"
+                  },
+                  "referenceOnly": {
+                    "type": "boolean"
+                  },
+                  "resourceVersion": {
+                    "type": "string"
+                  },
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "namespace",
+                  "kind",
+                  "name",
+                  "referenceOnly"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "resource",
+              "depth",
+              "path"
+            ],
+            "type": "object"
+          },
+          "nullable": true,
+          "type": "array"
+        },
+        "root": {
+          "properties": {
+            "clusterId": {
+              "type": "string"
+            },
+            "groupVersion": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "referenceOnly": {
+              "type": "boolean"
+            },
+            "resourceVersion": {
+              "type": "string"
+            },
+            "uid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "namespace",
+            "kind",
+            "name",
+            "referenceOnly"
+          ],
+          "type": "object"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "truncationReasons": {
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "type": "array"
+        }
+      },
+      "required": [
+        "root",
+        "relation",
+        "maxDepth",
+        "limit",
+        "resources",
+        "counts",
+        "truncated",
+        "truncationReasons",
+        "notices",
+        "modeledTraversalComplete",
+        "observationCoverage",
+        "referenceEvidence",
+        "authorization"
+      ],
+      "type": "object"
+    },
+    "generatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "kubeatlasVersion": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "scope": {
+      "properties": {
+        "clusterId": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "namespaceScope": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clusterId",
+        "mode",
+        "namespaceScope"
+      ],
+      "type": "object"
+    },
+    "sharingWarning": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kubeatlasVersion",
+    "generatedAt",
+    "scope",
+    "analysis",
+    "sharingWarning"
+  ],
+  "type": "object"
+}

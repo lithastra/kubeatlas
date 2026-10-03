@@ -14,31 +14,33 @@
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 
 import { useResource } from '../api/graph';
-import { Panel, StatusPill } from '../design';
+import { Panel } from '../design';
 import { useBlastRadius } from '../shell';
 
 interface NodeDetailPanelProps {
   /** graph.Resource.ID() — namespace/kind/name (cluster-prefixed in
    *  multicluster mode). */
   nodeId: string;
+  concrete?: boolean;
 }
 
-export function NodeDetailPanel({ nodeId }: NodeDetailPanelProps) {
+export function NodeDetailPanel({ nodeId, concrete = false }: NodeDetailPanelProps) {
   const parsed = parseNodeId(nodeId);
   const blast = useBlastRadius();
   const { data, isLoading, isError } = useResource({
     namespace: parsed.namespace ?? null,
-    kind: parsed.kind ?? null,
-    name: parsed.name ?? null,
+    // Never strip a federation prefix and fetch a different standalone object.
+    kind: concrete && !parsed.clusterId ? parsed.kind ?? null : null,
+    name: concrete && !parsed.clusterId ? parsed.name ?? null : null,
   });
 
   return (
     <Stack spacing={2}>
       <Header parsed={parsed} />
-      <Box
+      {concrete && <Box
         component="button"
         type="button"
-        onClick={() => blast.enter(nodeId)}
+        onClick={() => blast.enter(nodeId, data?.resource.uid)}
         sx={{
           alignSelf: 'flex-start',
           padding: '6px 12px',
@@ -55,8 +57,9 @@ export function NodeDetailPanel({ nodeId }: NodeDetailPanelProps) {
           },
         }}
       >
-        ↯ Show blast radius
-      </Box>
+        ↯ Analyze impact
+      </Box>}
+      {!concrete && <Typography variant="body2">Aggregated view. Open a concrete resource to analyze impact.</Typography>}
       {isLoading && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <CircularProgress size={14} />
@@ -70,9 +73,6 @@ export function NodeDetailPanel({ nodeId }: NodeDetailPanelProps) {
       )}
       {data && (
         <>
-          <Stack direction="row" spacing={1}>
-            <StatusPill variant="healthy" />
-          </Stack>
           <Panel variant="card" padding={3} ariaLabel="Incoming edges">
             <Typography
               component="div"
