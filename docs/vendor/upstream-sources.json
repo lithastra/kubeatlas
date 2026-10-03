@@ -1,0 +1,63 @@
+[
+  {
+    "name": "braces",
+    "upstream_version": "3.0.3",
+    "upstream_tarball": "braces-3.0.3.tgz",
+    "upstream_integrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
+    "upstream_archive_sha256": "1cd18e862c8640b4568b1425a7df4ee030ff201d45b2da8f9f222d2987494ffc",
+    "upstream_files_sha256": {
+      "LICENSE": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2",
+      "lib/compile.js": "dc98f22eee3d511785d92a00758d5f0d48efed5f5813bdecc2de430c529b5c9f",
+      "lib/constants.js": "c18ac5adb57308f1ce42a28552da3a31f5d83709743ebd9a636336813a744d4b",
+      "lib/expand.js": "41ccc196ebfa7b7781a634e721eb744e4e7bcb54cba427a7e3d6806a1b9e58f7",
+      "index.js": "332ea07c7b006361aad12aa994ca75dc1db8e8382b884909e2f38f10b85c88a4",
+      "lib/parse.js": "e572166565f15fa6ad9865ae49d678218e32aabfd1b3720f6d0d43d39800d310",
+      "lib/stringify.js": "379f22d77bfa1478341ccd49c5e4267464aabcbba03558bab332aac23fc6f23a",
+      "lib/utils.js": "b5a7596aa67730412b3c029ef09e84e6b67b8e445cffd35d1d295549c89066c7",
+      "package.json": "56f08b888a4f30dc7cf8a7dbb36ffe92b737912ba36abe9d069d32167c957ac7",
+      "README.md": "947b0fc3cc12eaaa070207126213fbdf9ab2bf8cd13dcc6e4007b36b79309866"
+    },
+    "patched_files_sha256": {
+      "LICENSE": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2",
+      "README.md": "947b0fc3cc12eaaa070207126213fbdf9ab2bf8cd13dcc6e4007b36b79309866",
+      "index.js": "332ea07c7b006361aad12aa994ca75dc1db8e8382b884909e2f38f10b85c88a4",
+      "lib/compile.js": "e82ea4c95406accaf9977720553e59c4d98ba48e5030b2304b6499cd533b7590",
+      "lib/constants.js": "c18ac5adb57308f1ce42a28552da3a31f5d83709743ebd9a636336813a744d4b",
+      "lib/expand.js": "351ca3c2c0e5d515278f3304f887f366f2ecdd418576678e27b240a931e9b9da",
+      "lib/parse.js": "bd9213bcf606eadc05fb5d5b6976142fb35019a9c805b836e1d481ed8f2bdc74",
+      "lib/stringify.js": "00da2404aad9da9e866b2bb02c30db995bcd016ee69ea7c00692f3f447fc2962",
+      "lib/utils.js": "b5a7596aa67730412b3c029ef09e84e6b67b8e445cffd35d1d295549c89066c7",
+      "package.json": "81d4396d7c27804af5a76bc3c63f3c410977687bd3131582ff4d9294d0885ce8"
+    },
+    "modified_files": [
+      "lib/compile.js",
+      "lib/expand.js",
+      "lib/parse.js",
+      "lib/stringify.js",
+      "package.json"
+    ]
+  },
+  {
+    "name": "http-cache-semantics",
+    "upstream_version": "4.2.0",
+    "upstream_tarball": "http-cache-semantics-4.2.0.tgz",
+    "upstream_integrity": "sha512-dTxcvPXqPvXBQpq5dUr6mEMJX4oIEFv6bwom3FDwKRDsuIjjJGANqhBuoAn9c1RQJIdAKav33ED65E2ys+87QQ==",
+    "upstream_archive_sha256": "f57454db8ab2d06a4baabbfb7c70ad4181a00b7ee0efebcdffa9ba313bd80eb7",
+    "upstream_files_sha256": {
+      "LICENSE": "ab868ad5a2ef5068560d9cd3b2180ec63c140bb4c5cae1ba779d300a0ac74fa3",
+      "index.js": "01b7d66c854b2fe53ac05c98feb6e0d64722ab8898a778e2d2426a8b468d178f",
+      "package.json": "bee0609d5ab09a590afe0e1209d3702b0afb0a3c158492f90902a724d889d22b",
+      "README.md": "be77466544e7060ad859664e779d84db4440f6dcca28da0975d0bcd97000c9fa"
+    },
+    "patched_files_sha256": {
+      "LICENSE": "ab868ad5a2ef5068560d9cd3b2180ec63c140bb4c5cae1ba779d300a0ac74fa3",
+      "README.md": "be77466544e7060ad859664e779d84db4440f6dcca28da0975d0bcd97000c9fa",
+      "index.js": "4e39148656dbd382284ddaeea2ba88af0f966a6ddbd9752ad5c739fb6b87707e",
+      "package.json": "a659ca8ff65c8d1de4b72fabfcb2fac26cced5a4b0a36446c02b0cf3970f5484"
+    },
+    "modified_files": [
+      "index.js",
+      "package.json"
+    ]
+  }
+]
