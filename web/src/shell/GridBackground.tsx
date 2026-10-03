@@ -15,15 +15,19 @@ import { type ReactNode } from 'react';
 interface GridBackgroundProps {
   children?: ReactNode;
   sx?: SxProps<Theme>;
+  inert?: boolean;
 }
 
-export function GridBackground({ children, sx }: GridBackgroundProps) {
+export function GridBackground({ children, sx, inert }: GridBackgroundProps) {
   return (
     <Box
+      inert={inert}
       sx={[
         {
           position: 'relative',
           flexGrow: 1,
+          // Let resource/analysis content shrink beside the cluster strip.
+          minWidth: 0,
           minHeight: 0,
           backgroundColor: 'var(--atlas-bg)',
           // Two CSS gradients layered for the major / minor grid.

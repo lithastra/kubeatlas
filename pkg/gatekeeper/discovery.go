@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/operations"
 )
 
 // constraintTemplateGVR is the meta resource this component watches to
@@ -54,18 +56,27 @@ type ExtractorRegistry interface {
 // Discovery watches ConstraintTemplates and drives a
 // DynamicInformerManager to register one informer per Constraint kind.
 type Discovery struct {
-	dyn       dynamic.Interface
-	disco     k8sdiscovery.DiscoveryInterface
-	store     graph.GraphStore
-	extractor ExtractorRegistry
-	dynMgr    *discovery.DynamicInformerManager
-	logger    *slog.Logger
-	factory   dynamicinformer.DynamicSharedInformerFactory
-	pollEvery time.Duration
+	dyn             dynamic.Interface
+	disco           k8sdiscovery.DiscoveryInterface
+	store           graph.GraphStore
+	extractor       ExtractorRegistry
+	dynMgr          *discovery.DynamicInformerManager
+	logger          *slog.Logger
+	factory         dynamicinformer.DynamicSharedInformerFactory
+	pollEvery       time.Duration
+	coverage        *operations.CoverageTracker
+	coverageSession *operations.CoverageSession
+	metaCoverage    *operations.CoverageSession
 }
 
 // Option configures Discovery.
 type Option func(*Discovery)
+
+// WithCoverage records this standalone extraction pipeline separately from CRD
+// discovery, even where they happen to observe the same Kubernetes objects.
+func WithCoverage(tracker *operations.CoverageTracker) Option {
+	return func(d *Discovery) { d.coverage = tracker }
+}
 
 // WithLogger swaps the structured logger.
 func WithLogger(l *slog.Logger) Option {
@@ -77,7 +88,7 @@ func WithLogger(l *slog.Logger) Option {
 }
 
 // WithDiscovery supplies the discovery client used to gate the
-// ConstraintTemplate informer on Gatekeeper actually being installed.
+// ConstraintTemplate informer on its supported API resource being advertised.
 // Without it, Discovery keeps its historical behaviour and starts the
 // informer unconditionally.
 func WithDiscovery(dc k8sdiscovery.DiscoveryInterface) Option {
@@ -112,12 +123,44 @@ func (d *Discovery) Start(ctx context.Context) error {
 	if d.dyn == nil {
 		return errors.New("gatekeeper.Discovery.Start: nil dynamic client")
 	}
+	if d.store == nil || d.extractor == nil || d.dynMgr == nil {
+		return errors.New("gatekeeper.Discovery.Start: missing store, extractor, or dynamic manager")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if d.coverage != nil {
+		var err error
+		d.coverageSession, err = d.coverage.BeginSource("", operations.CoverageSourceGatekeeper, time.Now())
+		if err != nil {
+			return err
+		}
+		defer func() { d.coverageSession.Stop(time.Now()) }()
+		if err := d.coverageSession.RecordDiscovery(operations.SourceAPIUnknown, time.Time{}); err != nil {
+			return err
+		}
+		d.metaCoverage, err = d.coverageSession.BeginType(constraintTemplateGVR, time.Now())
+		if err != nil {
+			d.metaCoverage = nil
+		} // InventoryLimited remains visible; collection continues.
+	}
 
 	// The manager binds its base context on Start; run it alongside.
-	go func() { _ = d.dynMgr.Start(ctx) }()
+	managerDone := make(chan struct{})
+	var managerErr error
+	go func() { managerErr = d.dynMgr.Start(ctx); close(managerDone) }()
+	defer func() { cancel(); <-managerDone }()
+	for !d.dynMgr.Started() {
+		select {
+		case <-managerDone:
+			return managerErr
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 
-	// Gate the ConstraintTemplate meta-informer on Gatekeeper actually
-	// being installed. Otherwise, on a cluster without Gatekeeper the
+	// Gate the ConstraintTemplate meta-informer on its supported API
+	// being advertised. Otherwise, on a cluster without that API the
 	// reflector spins forever on "the server could not find the requested
 	// resource"; awaitConstraintTemplateCRD keeps this component idle —
 	// and quiet — until the CRD is served (re-checking each pollEvery, so
@@ -126,17 +169,25 @@ func (d *Discovery) Start(ctx context.Context) error {
 		return err
 	}
 
-	d.factory = dynamicinformer.NewDynamicSharedInformerFactory(d.dyn, resyncPeriod)
+	d.factory = dynamicinformer.NewDynamicSharedInformerFactory(discovery.ObserveCoverageClient(d.dyn, d.metaCoverage), resyncPeriod)
 	informer := d.factory.ForResource(constraintTemplateGVR).Informer()
-	if _, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	registration, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj any) { d.onTemplate(ctx, obj) },
 		UpdateFunc: func(_, obj any) { d.onTemplate(ctx, obj) },
 		DeleteFunc: func(obj any) { d.onTemplateDelete(obj) },
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
 	d.factory.Start(ctx.Done())
+	if d.metaCoverage != nil {
+		go func() {
+			if cache.WaitForCacheSync(ctx.Done(), registration.HasSynced) {
+				d.metaCoverage.InitialDeliveryComplete(constraintTemplateGVR)
+			}
+		}()
+	}
 	d.factory.WaitForCacheSync(ctx.Done())
 	d.logger.Info("gatekeeper discovery started")
 
@@ -145,13 +196,16 @@ func (d *Discovery) Start(ctx context.Context) error {
 }
 
 // awaitConstraintTemplateCRD blocks until the ConstraintTemplate CRD is
-// served (Gatekeeper installed) or ctx is cancelled, re-probing every
+// advertised or ctx is cancelled, re-probing every
 // pollEvery. It returns nil once the CRD is present and ctx.Err() if the
 // context is cancelled first. The "absent" state is logged once at info;
 // transient probe errors go to debug so a flaky apiserver does not spam.
 func (d *Discovery) awaitConstraintTemplateCRD(ctx context.Context) error {
 	loggedAbsent := false
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		ok, err := d.gatekeeperInstalled(ctx)
 		if ok {
 			return nil
@@ -160,7 +214,7 @@ func (d *Discovery) awaitConstraintTemplateCRD(ctx context.Context) error {
 		case err != nil:
 			d.logger.Debug("gatekeeper: probing for the ConstraintTemplate CRD", "err", err)
 		case !loggedAbsent:
-			d.logger.Info("gatekeeper not installed; ConstraintTemplate discovery is idle until its CRD is served")
+			d.logger.Info("Gatekeeper v1 ConstraintTemplate API not advertised; waiting for the supported resource")
 			loggedAbsent = true
 		}
 		select {
@@ -172,20 +226,31 @@ func (d *Discovery) awaitConstraintTemplateCRD(ctx context.Context) error {
 }
 
 // gatekeeperInstalled reports whether the apiserver serves the
-// ConstraintTemplate CRD. With no discovery client it assumes installed,
-// preserving the pre-gating behaviour for callers that do not wire one.
+// supported ConstraintTemplate API. With no discovery client it preserves
+// unconditional observation without claiming installation or API presence.
 func (d *Discovery) gatekeeperInstalled(ctx context.Context) (bool, error) {
-	if d.disco == nil {
-		return true, nil
+	state, err := d.discoverTemplateAPI(ctx)
+	checked := time.Now()
+	if state == operations.SourceAPIUnknown {
+		checked = time.Time{}
 	}
-	return discovery.GroupVersionAvailable(ctx, d.disco, constraintTemplateGVR.GroupVersion())
+	if recordErr := d.coverageSession.RecordDiscovery(state, checked); recordErr != nil {
+		return false, recordErr
+	}
+	// Preserve unconditional observation when no client is configured, but do
+	// not manufacture an advertised-API observation from that fallback.
+	return state == operations.SourceAPIAdvertised || (d.disco == nil && err == nil), err
 }
 
 // onTemplate registers a Constraint informer for the kind the template
 // generates. Idempotent (the manager dedups by GVR).
 func (d *Discovery) onTemplate(ctx context.Context, obj any) {
+	if ctx.Err() != nil {
+		return
+	}
 	gvr, kind, ok := constraintGVRFromTemplate(obj)
 	if !ok {
+		d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
 
@@ -199,7 +264,13 @@ func (d *Discovery) onTemplate(ctx context.Context, obj any) {
 		}
 	}
 
-	if err := d.dynMgr.Add(gvr, d.constraintHandler(ctx, kind)); err != nil {
+	if err := d.dynMgr.AddObserved(gvr, d.coverageSession, func(child context.Context, coverage *operations.CoverageSession) cache.ResourceEventHandler {
+		if d.coverageSession != nil && coverage == nil {
+			d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
+		}
+		return d.constraintHandler(child, kind, coverage)
+	}); err != nil {
+		d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
 		d.logger.Warn("gatekeeper: register constraint informer",
 			"gvr", gvr.String(), "err", err)
 		return
@@ -214,6 +285,7 @@ func (d *Discovery) onTemplateDelete(obj any) {
 	}
 	gvr, kind, ok := constraintGVRFromTemplate(obj)
 	if !ok {
+		d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
 	d.dynMgr.Remove(gvr)
@@ -223,47 +295,61 @@ func (d *Discovery) onTemplateDelete(obj any) {
 // constraintHandler returns the event handler for one Constraint kind:
 // each Constraint flows into the store and through the extractor
 // pipeline (which emits the ENFORCES edges); deletes cascade.
-func (d *Discovery) constraintHandler(ctx context.Context, kind string) cache.ResourceEventHandler {
+func (d *Discovery) constraintHandler(ctx context.Context, kind string, coverage *operations.CoverageSession) cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj any) { d.handleConstraint(ctx, kind, obj) },
-		UpdateFunc: func(_, obj any) { d.handleConstraint(ctx, kind, obj) },
-		DeleteFunc: func(obj any) { d.handleConstraintDelete(ctx, kind, obj) },
+		AddFunc:    func(obj any) { d.handleConstraint(ctx, kind, obj, coverage) },
+		UpdateFunc: func(_, obj any) { d.handleConstraint(ctx, kind, obj, coverage) },
+		DeleteFunc: func(obj any) { d.handleConstraintDelete(ctx, kind, obj, coverage) },
 	}
 }
 
-func (d *Discovery) handleConstraint(ctx context.Context, kind string, obj any) {
+func (d *Discovery) handleConstraint(ctx context.Context, kind string, obj any, coverage *operations.CoverageSession) {
+	if ctx.Err() != nil {
+		return
+	}
+	gvr := schema.GroupVersionResource{Group: constraintGroup, Version: constraintVersion, Resource: strings.ToLower(kind)}
 	u, ok := toUnstructured(obj)
 	if !ok {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
 	if err := d.store.UpsertResource(ctx, r); err != nil {
+		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: upsert constraint", "id", r.ID(), "err", err)
 		return
 	}
 	edges, err := d.extractor.ExtractAll(ctx, r, d.store)
 	if err != nil {
+		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
 		d.logger.Warn("gatekeeper: extract constraint edges", "id", r.ID(), "err", err)
 		return
 	}
 	for _, e := range edges {
 		if err := d.store.UpsertEdge(ctx, e); err != nil {
+			coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 			d.logger.Warn("gatekeeper: upsert enforce edge",
 				"from", e.From, "to", e.To, "err", err)
 		}
 	}
 }
 
-func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj any) {
+func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj any, coverage *operations.CoverageSession) {
+	if ctx.Err() != nil {
+		return
+	}
+	gvr := schema.GroupVersionResource{Group: constraintGroup, Version: constraintVersion, Resource: strings.ToLower(kind)}
 	if t, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 		obj = t.Obj
 	}
 	u, ok := toUnstructured(obj)
 	if !ok {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
 	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
+		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: delete constraint", "id", r.ID(), "err", err)
 	}
 }
@@ -278,7 +364,7 @@ func constraintGVRFromTemplate(obj any) (schema.GroupVersionResource, string, bo
 		return schema.GroupVersionResource{}, "", false
 	}
 	kind, found, err := unstructured.NestedString(u.Object, "spec", "crd", "spec", "names", "kind")
-	if err != nil || !found || kind == "" {
+	if err != nil || !found || kind == "" || kind == "Secret" || len(kind) > 253 || strings.ContainsAny(kind, "/:\\") || strings.ContainsFunc(kind, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
 		return schema.GroupVersionResource{}, "", false
 	}
 	return schema.GroupVersionResource{
@@ -291,7 +377,7 @@ func constraintGVRFromTemplate(obj any) (schema.GroupVersionResource, string, bo
 func toUnstructured(obj any) (*unstructured.Unstructured, bool) {
 	switch v := obj.(type) {
 	case *unstructured.Unstructured:
-		return v, true
+		return v, v != nil
 	case unstructured.Unstructured:
 		return &v, true
 	default:

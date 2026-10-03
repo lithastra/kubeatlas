@@ -39,7 +39,7 @@ func (f *fakeGKDiscovery) ServerResourcesForGroupVersion(gv string) (*metav1.API
 	if !f.available[gv] {
 		return nil, apierrors.NewNotFound(schema.GroupResource{Group: gv, Resource: "groupversions"}, gv)
 	}
-	return &metav1.APIResourceList{GroupVersion: gv}, nil
+	return &metav1.APIResourceList{GroupVersion: gv, APIResources: []metav1.APIResource{{Name: "constrainttemplates", Kind: "ConstraintTemplate", Verbs: metav1.Verbs{"list", "watch"}}}}, nil
 }
 
 func gkGV() string { return constraintTemplateGVR.GroupVersion().String() }

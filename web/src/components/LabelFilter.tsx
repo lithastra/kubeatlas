@@ -43,9 +43,9 @@ export function LabelFilter({ value, onChange }: LabelFilterProps) {
   };
 
   return (
-    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ maxWidth: '100%' }}>
       <Autocomplete
-        sx={{ width: 220 }}
+        sx={{ width: 220, maxWidth: '100%' }}
         size="small"
         options={keyOptions}
         value={pendingKey}
@@ -57,7 +57,7 @@ export function LabelFilter({ value, onChange }: LabelFilterProps) {
         // Remount when the key changes so the value input clears
         // after a filter is added (pendingKey resets to null).
         key={pendingKey ?? '_none'}
-        sx={{ width: 220 }}
+        sx={{ width: 220, maxWidth: '100%' }}
         size="small"
         options={valueOptions}
         value={null}
@@ -72,6 +72,7 @@ export function LabelFilter({ value, onChange }: LabelFilterProps) {
           onDelete={() => removeFilter(k)}
           size="small"
           color="primary"
+          sx={{ maxWidth: '100%' }}
         />
       ))}
     </Stack>

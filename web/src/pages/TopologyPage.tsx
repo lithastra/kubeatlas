@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Box, CircularProgress, FormControlLabel, Switch, Tooltip } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, FormControlLabel, Switch, Tooltip } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
 import { useFederationGraph } from '../api/federation';
 import { useGraph } from '../api/graph';
 import { useOtelOverlay } from '../api/otel';
+import { parseImpactTarget, useImpact } from '../api/impact';
 import { mergeOverlayEdges } from '../lib/overlay';
 import type { Level } from '../api/types';
 import { LabelFilter } from '../components/LabelFilter';
@@ -39,7 +40,20 @@ export function TopologyPage() {
   const [zoom, setZoom] = useState(1);
   const [edgePreset, setEdgePreset] = useState<EdgeFilterPreset>('all');
   const [overlayOn, setOverlayOn] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const controlsRef = useRef<TopologyControls | null>(null);
+  const [selectedNodeID, setSelectedNodeID] = useState<string | null>(null);
+  // Closing the shell panel clears its content, not the graph selection.
+  // A second tap/Enter on that same node must still reopen the detail.
+  const [selectionRevision, setSelectionRevision] = useState(0);
+  const target = useMemo(() => blast.active && blast.rootId ? parseImpactTarget(blast.rootId, blast.expectedUID) : null, [blast.active, blast.rootId, blast.expectedUID]);
+  const scopedTarget = target?.clusterId === (cluster.selected || '') && !diff.active ? target : null;
+  const impact = useImpact(scopedTarget, blast.direction, blast.depth);
+  const { isFetching: impactLoading, error: impactError, refetch: refreshImpact } = impact;
+  const impactResponse = scopedTarget && !impact.isFetching && !impact.isError ? impact.data : undefined;
+  const { exit: exitImpact } = blast;
+  useEffect(() => () => exitImpact(), [exitImpact]);
+  useEffect(() => { exitImpact(); setSelectedNodeID(null); setContent(null); }, [cluster.selected, exitImpact, setContent]);
 
   // Fetch dispatch. Two paths share the same View shape so the rest
   // of the page is unchanged:
@@ -87,31 +101,44 @@ export function TopologyPage() {
   useEffect(() => () => setContent(null), [setContent]);
 
   // While blast-radius mode is active, the right panel shows the
-  // hop-by-hop summary instead of the single-node detail. Restores
-  // the detail view (for the root) on exit so the operator doesn't
-  // lose their selection.
+  // server summary instead of the single-node detail. Restore the last
+  // selected node on exit; cluster switches must clear both surfaces.
   useEffect(() => {
     if (diff.active && diff.anchor) {
       setContent(<DiffChangeLog anchor={diff.anchor} namespace={namespace ?? ''} />);
       return;
     }
     if (blast.active && blast.rootId) {
+      if (!scopedTarget) {
+        setContent(null);
+        return;
+      }
       setContent(
         <BlastRadiusPanel
-          view={data}
-          rootId={blast.rootId}
-          depth={blast.depth}
-          direction={blast.direction}
+          response={impactResponse}
+          loading={impactLoading}
+          error={impactError}
+          onRefresh={() => { if (scopedTarget) void refreshImpact(); }}
         />,
       );
-    } else if (blast.rootId) {
-      setContent(<NodeDetailPanel nodeId={blast.rootId} />);
+    } else if (selectedNodeID && (parseImpactTarget(selectedNodeID)?.clusterId || '') === (cluster.selected || '')) {
+      setContent(<NodeDetailPanel nodeId={selectedNodeID} concrete={data?.nodes.find((n) => n.id === selectedNodeID)?.type === 'resource'} />);
+    } else {
+      setContent(null);
     }
   }, [
     blast.active,
     blast.rootId,
     blast.depth,
     blast.direction,
+    impactResponse,
+    impactLoading,
+    impactError,
+    refreshImpact,
+    scopedTarget,
+    selectedNodeID,
+    selectionRevision,
+    cluster.selected,
     diff.active,
     diff.anchor,
     namespace,
@@ -120,7 +147,9 @@ export function TopologyPage() {
   ]);
 
   const handleSelect = (id: string | null) => {
-    setContent(id ? <NodeDetailPanel nodeId={id} /> : null);
+    blast.exit();
+    setSelectedNodeID(id);
+    setSelectionRevision((revision) => revision + 1);
   };
 
   return (
@@ -142,10 +171,17 @@ export function TopologyPage() {
           top: 'var(--atlas-space-3)',
           left: 'var(--atlas-space-3)',
           zIndex: 5,
+          width: 'calc(100% - 2 * var(--atlas-space-3))',
           maxWidth: 480,
+          maxHeight: 'calc(100% - 2 * var(--atlas-space-3))',
+          overflow: 'auto',
         }}
       >
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen}
+          aria-controls="topology-filters" sx={{ display: { xs: 'inline-flex', md: 'none' } }}>
+          {filtersOpen ? 'Hide graph filters' : 'Show graph filters'}
+        </Button>
+        <Box id="topology-filters" sx={{ display: { xs: filtersOpen ? 'flex' : 'none', md: 'flex' }, gap: 2, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
           <LevelTabs value={level} onChange={setLevel} disableWorkload disableResource />
           {level === 'namespace' && <NamespacePicker />}
           <LabelFilter value={labelFilter} onChange={setLabelFilter} />
@@ -184,6 +220,7 @@ export function TopologyPage() {
       ) : (
         <>
           <TopologyView
+            impactResponse={impactResponse}
             view={viewData}
             onSelect={handleSelect}
             onZoom={setZoom}

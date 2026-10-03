@@ -10,6 +10,9 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/lithastra/kubeatlas/pkg/operations"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -39,7 +42,6 @@ type DynamicInformerManager struct {
 	metrics *DynamicMetrics
 
 	mu        sync.RWMutex
-	factory   dynamicinformer.DynamicSharedInformerFactory
 	baseCtx   context.Context
 	started   bool
 	informers map[schema.GroupVersionResource]*dynamicHandle
@@ -47,8 +49,9 @@ type DynamicInformerManager struct {
 
 // dynamicHandle pairs an informer's cancel func with its sync check.
 type dynamicHandle struct {
-	cancel context.CancelFunc
-	synced cache.InformerSynced
+	cancel   context.CancelFunc
+	synced   cache.InformerSynced
+	coverage *operations.CoverageSession
 }
 
 // DynamicOption configures a DynamicInformerManager at construction.
@@ -74,8 +77,8 @@ func WithDynamicMetrics(m *DynamicMetrics) DynamicOption {
 }
 
 // NewDynamicInformerManager builds a manager against the given dynamic
-// client. The shared informer factory is created in Start so the
-// caller's context bounds every informer's lifetime.
+// client. Start binds the parent context; each registration owns a fresh
+// informer and a child context, so removed registrations can be added again.
 func NewDynamicInformerManager(dyn dynamic.Interface, opts ...DynamicOption) *DynamicInformerManager {
 	m := &DynamicInformerManager{
 		dyn:       dyn,
@@ -99,7 +102,14 @@ func (m *DynamicInformerManager) Start(ctx context.Context) error {
 	}
 
 	m.mu.Lock()
-	m.factory = dynamicinformer.NewDynamicSharedInformerFactory(m.dyn, DefaultResyncPeriod)
+	if m.started {
+		m.mu.Unlock()
+		return errors.New("dynamic informer manager already started")
+	}
+	if err := ctx.Err(); err != nil {
+		m.mu.Unlock()
+		return err
+	}
 	m.baseCtx = ctx
 	m.started = true
 	m.mu.Unlock()
@@ -116,26 +126,65 @@ func (m *DynamicInformerManager) Start(ctx context.Context) error {
 // failure increments the error counter and is returned — it never
 // leaves a half-registered informer behind.
 func (m *DynamicInformerManager) Add(gvr schema.GroupVersionResource, handler cache.ResourceEventHandler) error {
+	return m.AddObserved(gvr, nil, func(context.Context, *operations.CoverageSession) cache.ResourceEventHandler { return handler })
+}
+
+// AddObserved creates a handler and list/watch adapter using the SAME
+// registration token and lifetime. Idempotent Add never replaces callbacks or
+// resets evidence. Evidence capacity does not disable collection; a nil token
+// is handed to build and the source keeps its limited-inventory signal.
+// build runs under the registration lock and must not reenter the manager.
+func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, source *operations.CoverageSession, build func(context.Context, *operations.CoverageSession) cache.ResourceEventHandler) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if !m.started {
+	if !m.started || m.baseCtx.Err() != nil {
 		return ErrManagerNotStarted
+	}
+	if isCoreSecretGVR(gvr) || gvr.Version == "" || gvr.Resource == "" || build == nil {
+		return errors.New("invalid dynamic informer registration")
 	}
 	if _, exists := m.informers[gvr]; exists {
 		return nil
 	}
 
-	informer := m.factory.ForResource(gvr).Informer()
-	if _, err := informer.AddEventHandler(handler); err != nil {
+	var coverage *operations.CoverageSession
+	if source != nil {
+		var err error
+		coverage, err = source.BeginType(gvr, time.Now())
+		if err != nil {
+			m.metrics.incErrors()
+		}
+	}
+	informerCtx, cancel := context.WithCancel(m.baseCtx)
+	handler := build(informerCtx, coverage)
+	if handler == nil {
+		cancel()
+		coverage.Stop(time.Now())
+		return errors.New("dynamic informer handler is nil")
+	}
+	// A cached stopped informer cannot restart. Each registration owns a fresh
+	// factory/informer and captured token, including after Remove + Add.
+	factory := dynamicinformer.NewDynamicSharedInformerFactory(ObserveCoverageClient(m.dyn, coverage), DefaultResyncPeriod)
+	informer := factory.ForResource(gvr).Informer()
+	registration, err := informer.AddEventHandler(handler)
+	if err != nil {
+		cancel()
+		coverage.Stop(time.Now())
 		m.metrics.incErrors()
 		return fmt.Errorf("dynamic informer add %s: %w", gvr.String(), err)
 	}
 
-	informerCtx, cancel := context.WithCancel(m.baseCtx)
 	go informer.Run(informerCtx.Done())
+	if coverage != nil {
+		go func() {
+			if cache.WaitForCacheSync(informerCtx.Done(), registration.HasSynced) {
+				coverage.InitialDeliveryComplete(gvr)
+			}
+		}()
+	}
 
-	m.informers[gvr] = &dynamicHandle{cancel: cancel, synced: informer.HasSynced}
+	m.informers[gvr] = &dynamicHandle{cancel: cancel, synced: registration.HasSynced, coverage: coverage}
 	m.metrics.setActive(len(m.informers))
 	m.logger.Info("dynamic informer registered",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource))
@@ -154,6 +203,7 @@ func (m *DynamicInformerManager) Remove(gvr schema.GroupVersionResource) {
 	}
 	delete(m.informers, gvr)
 	h.cancel()
+	h.coverage.Stop(time.Now())
 	m.metrics.setActive(len(m.informers))
 	m.logger.Info("dynamic informer removed",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource))
@@ -193,8 +243,10 @@ func (m *DynamicInformerManager) removeAll() {
 	defer m.mu.Unlock()
 	for gvr, h := range m.informers {
 		h.cancel()
+		h.coverage.Stop(time.Now())
 		delete(m.informers, gvr)
 	}
+	m.started = false
 	m.metrics.setActive(0)
 }
 
