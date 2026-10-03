@@ -58,7 +58,7 @@ GraphStore v2 clean-up that surfaces `graphstore_version` on
 | **v1.5.1** | ✅ Released | Explicit CloudNativePG prerequisite, retained Tier 2 data by default, reproducible PostgreSQL + AGE image, and enforced upgrade, recovery, uninstall-retention, and snapshot release evidence. |
 | **v1.5.2** | ✅ Released | Secret relationships remain reference-only while Secret objects, values, identifying metadata, and historical event payloads are excluded or scrubbed. |
 | **v1.6.0** | ✅ Released | Production-operability signals and runbooks, source platform/upgrade/restore validation, and verified public OCI artifacts. One-hour functional scope; no endurance or dedicated performance acceptance claim. |
-| **v1.7.0** | In development; M3 delivery review | Bounded paths, reference explanations, RBAC associations, observation continuity, cached availability, and an authorized v1-only impact API have local tests. Six synthetic desktop Web/CLI/export scenarios agree; focused narrow-screen repair is locally verified. Delivery review and candidate validation remain pending; not released. |
+| **v1.7.0** | In development; M3 source/synthetic delivery reviewed | Bounded paths, reference explanations, RBAC associations, observation continuity, cached availability, and an authorized v1-only impact API have tests. Six synthetic scenarios connect production Web, actual CLI and live Go HTTP; CI builds/tests the Web bundle. Source/synthetic delivery review is complete; frozen deployment integration and M4 acceptance remain pending. PR #72 remains a draft; not released. |
 | **Further out** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference; a possible future `v1alpha1` retirement (which would version a v2.0). |
 
 ## v1.7.0 — explainable impact analysis (in development)
@@ -131,8 +131,9 @@ overflow. The responsive slice moves analysis controls into the result panel, us
 narrow-screen overlay with focus/inert handling, and bounds or wraps shared
 chrome and filters. Local browser checks now cover widths 320/390/768/1280,
 including unchanged captures and query counts. The observed responsive defect
-is repaired for these checks; M3 delivery review and M4 candidate acceptance
-remain separate from local UI validation.
+is repaired for these checks. The [M3 source/synthetic delivery review](./development/impact-analysis.md#m3-source-and-synthetic-delivery-review)
+now records the completed review and the exact remaining live integration
+evidence; M4 candidate acceptance remains pending.
 These local tests do not prove real-cluster watch reliability,
 real-environment authorization configuration, effective permissions, or release delivery.
 The M0 synthetic tests document

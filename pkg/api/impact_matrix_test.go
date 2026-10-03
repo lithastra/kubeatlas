@@ -24,17 +24,20 @@ import (
 // Hand-authored graph/oracles and complete API captures are shared with Web and
 // command tests. Only version and capture timestamps are normalized; paths,
 // counts, identity, coverage, limits and all other evidence must match exactly.
-func TestImpactClientMatrixWireContract(t *testing.T) {
-	var fixture struct {
-		Resources []graph.Resource
-		Edges     []graph.Edge
-		Cases     []struct {
-			Name, Namespace, Kind, RootName, UID, Cluster, Relation string
-			Depth, Direct                                           int
-			Ordinary, Authorization                                 []string
-			Truncated                                               bool
-		}
+type impactClientMatrix struct {
+	Resources []graph.Resource
+	Edges     []graph.Edge
+	Cases     []struct {
+		Name, Namespace, Kind, RootName, UID, Cluster, Relation string
+		Depth, Direct                                           int
+		Ordinary, Authorization                                 []string
+		Truncated                                               bool
 	}
+}
+
+func loadImpactClientMatrix(t *testing.T) (impactClientMatrix, *memory.Store) {
+	t.Helper()
+	var fixture impactClientMatrix
 	load := func(path string, dst any) {
 		t.Helper()
 		data, err := os.ReadFile(path)
@@ -46,11 +49,6 @@ func TestImpactClientMatrixWireContract(t *testing.T) {
 		}
 	}
 	load("../../test/fixtures/impact-analysis/client-matrix.json", &fixture)
-	var captures map[string]json.RawMessage
-	load("../../test/fixtures/impact-analysis/client-captures.json", &captures)
-	if len(captures) != len(fixture.Cases) {
-		t.Fatal("matrix/capture case count differs")
-	}
 	store := memory.New()
 	ctx := context.Background()
 	for _, cluster := range []string{"", "east", "west"} {
@@ -72,6 +70,23 @@ func TestImpactClientMatrixWireContract(t *testing.T) {
 			}
 		}
 	}
+	return fixture, store
+}
+
+func TestImpactClientMatrixWireContract(t *testing.T) {
+	fixture, store := loadImpactClientMatrix(t)
+	var captures map[string]json.RawMessage
+	data, err := os.ReadFile("../../test/fixtures/impact-analysis/client-captures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &captures); err != nil {
+		t.Fatal(err)
+	}
+	if len(captures) != len(fixture.Cases) {
+		t.Fatal("matrix/capture case count differs")
+	}
+	ctx := context.Background()
 	for _, tc := range fixture.Cases {
 		t.Run(tc.Name, func(t *testing.T) {
 			var opts []ServerOption
