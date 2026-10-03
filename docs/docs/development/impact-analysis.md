@@ -1311,6 +1311,15 @@ The six-case desktop matrix above satisfies that local scenario count; the
 fifth slice adds focused responsive repair and browser evidence. Review the
 complete M3 change set and its integration gates before candidate freeze.
 
+The production Web build and a dedicated single-worker Chromium impact suite
+are now configured in CI. The suite reuses the shared captures and exercises
+the actual application routes, displayed paths/counts, consent and JSON/HTML
+downloads, query changes, loading/403 failure, identity mismatch, and federated
+cluster switching. Its API and WebSocket transports are synthetic; the
+existing live PetClinic suite remains a separate smoke check. See the fixture
+README and `npm --prefix web run test:impact-browser` after a production build.
+This automation does not close real-environment integration or M4 gates.
+
 M4 verifies upgrade from the latest v1.6 patch, frozen supported Kubernetes
 versions, existing API compatibility, Secret sentinel checks, bounded query
 performance, immutable public artifacts, and operator documentation. Benchmark

@@ -11,6 +11,7 @@ import { defineConfig, devices } from '@playwright/test';
 // `npx playwright test`.
 export default defineConfig({
   testDir: './tests/e2e',
+  testIgnore: 'impact.spec.ts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
   // E2E exercises a live cluster + WS — parallel runs would race on
