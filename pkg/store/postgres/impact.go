@@ -28,7 +28,7 @@ FROM (
     'kind', data->>'kind', 'name', data->>'name', 'namespace', data->>'namespace',
     'clusterId', cluster_id, 'uid', data->>'uid',
     'groupVersion', data->>'groupVersion', 'resourceVersion', data->>'resourceVersion',
-    'ownerReferences', data->'ownerReferences')) ||
+    'ownerReferences', ` + impactOwnerReferencesSQL + `)) ||
     jsonb_build_object('referenceFields', ` + impactReferenceSQL() + `) END AS projected
   FROM public.resources WHERE cluster_id = $1 LIMIT $2
 ) AS scoped`
@@ -68,6 +68,9 @@ func (s *Store) SnapshotImpact(ctx context.Context, opts graph.ImpactSnapshotOpt
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("postgres.SnapshotImpact: begin: %w", err)
 	}
 	defer func() {
@@ -77,6 +80,9 @@ func (s *Store) SnapshotImpact(ctx context.Context, opts graph.ImpactSnapshotOpt
 		_ = tx.Rollback(cleanup)
 	}()
 	if _, err := tx.Exec(ctx, `SET LOCAL statement_timeout = '5s'`); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("postgres.SnapshotImpact: timeout: %w", err)
 	}
 	if err := readImpactRows(ctx, tx, impactResourcesSQL, opts.ClusterID, opts.MaxResources+1, opts.MaxBytes, func(body []byte) error {
@@ -102,6 +108,9 @@ func (s *Store) SnapshotImpact(ctx context.Context, opts graph.ImpactSnapshotOpt
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("postgres.SnapshotImpact: finish: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
@@ -113,6 +122,9 @@ func (s *Store) SnapshotImpact(ctx context.Context, opts graph.ImpactSnapshotOpt
 func readImpactRows(ctx context.Context, tx pgx.Tx, query, cluster string, limit, maxBytes int, add func([]byte) error) error {
 	rows, err := tx.Query(ctx, query, cluster, limit, maxBytes)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("postgres.SnapshotImpact: query: %w", err)
 	}
 	defer rows.Close()
@@ -122,6 +134,9 @@ func readImpactRows(ctx context.Context, tx pgx.Tx, query, cluster string, limit
 		}
 		var body []byte
 		if err := rows.Scan(&body); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return fmt.Errorf("postgres.SnapshotImpact: scan: %w", err)
 		}
 		if body == nil {
@@ -132,7 +147,24 @@ func readImpactRows(ctx context.Context, tx pgx.Tx, query, cluster string, limit
 		}
 	}
 	if err := rows.Err(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("postgres.SnapshotImpact: rows: %w", err)
 	}
 	return nil
 }
+
+// Invalid owner identities fail decoding without transferring arbitrary payloads.
+const impactOwnerReferencesSQL = `CASE
+WHEN data->'ownerReferences' IS NULL OR data->'ownerReferences' = 'null'::jsonb THEN NULL
+WHEN jsonb_typeof(data->'ownerReferences') <> 'array' THEN '"invalid owner references"'::jsonb
+WHEN EXISTS (SELECT 1 FROM jsonb_array_elements(data->'ownerReferences') AS owner(value)
+  WHERE jsonb_typeof(value) <> 'object'
+    OR EXISTS (SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(value) = 'object' THEN value ELSE '{}'::jsonb END) AS field(key, value)
+      WHERE key IN ('kind', 'name', 'uid') AND jsonb_typeof(field.value) NOT IN ('string', 'null')))
+THEN '"invalid owner references"'::jsonb
+ELSE COALESCE((SELECT jsonb_agg(jsonb_build_object(
+  'kind', value->'kind', 'name', value->'name', 'uid', value->'uid') ORDER BY ordinality)
+  FROM jsonb_array_elements(data->'ownerReferences') WITH ORDINALITY AS owner(value, ordinality)), '[]'::jsonb)
+END`

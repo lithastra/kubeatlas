@@ -27,6 +27,22 @@ import (
 // separate. This measures a sequential loopback HTTP GET through middleware,
 // complete body receipt and decoding, not a real cluster or Tier 2 release gate.
 func BenchmarkImpactAPI5K(b *testing.B) {
+	benchmarkImpactAPI(b, 1000, false, 4, false)
+}
+
+// BenchmarkImpactAPI10K uses 10,000 resources and 12,000 sparse edges.
+func BenchmarkImpactAPI10K(b *testing.B) {
+	benchmarkImpactAPI(b, 2000, false, 4, false)
+}
+
+// BenchmarkImpactAPI5KHighFanout uses 5,000 resources and 18,000 edges.
+// Every workload references the same five ConfigMaps. The root has 4,000
+// reachable resources; the default response must truncate at 200 matches.
+func BenchmarkImpactAPI5KHighFanout(b *testing.B) {
+	benchmarkImpactAPI(b, 1000, true, 200, true)
+}
+
+func benchmarkImpactAPI(b *testing.B, groups int, shared bool, wantTotal int, wantTruncated bool) {
 	ctx := context.Background()
 	store := memory.New()
 	resource := func(kind, name, version string) graph.Resource {
@@ -43,20 +59,31 @@ func BenchmarkImpactAPI5K(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	for i := range 1000 {
+	for i := range groups {
 		cm := resource("ConfigMap", fmt.Sprintf("cm-%04d", i), "v1")
 		deployment := resource("Deployment", fmt.Sprintf("deployment-%04d", i), "apps/v1")
 		rs := resource("ReplicaSet", fmt.Sprintf("rs-%04d", i), "apps/v1")
 		put(cm)
 		put(deployment)
 		put(rs)
-		edge(deployment, cm, graph.EdgeTypeUsesConfigMap)
+		configRefs := []graph.Resource{cm}
+		if shared {
+			configRefs = make([]graph.Resource, 5)
+			for k := range configRefs {
+				configRefs[k] = resource("ConfigMap", fmt.Sprintf("cm-%04d", k), "v1")
+			}
+		}
+		for _, target := range configRefs {
+			edge(deployment, target, graph.EdgeTypeUsesConfigMap)
+		}
 		edge(rs, deployment, graph.EdgeTypeOwns)
 		for j := range 2 {
 			pod := resource("Pod", fmt.Sprintf("pod-%04d-%d", i, j), "v1")
 			put(pod)
 			edge(pod, rs, graph.EdgeTypeOwns)
-			edge(pod, cm, graph.EdgeTypeUsesConfigMap)
+			for _, target := range configRefs {
+				edge(pod, target, graph.EdgeTypeUsesConfigMap)
+			}
 		}
 	}
 	server := New("", store, aggregator.NewRegistry())
@@ -82,7 +109,7 @@ func BenchmarkImpactAPI5K(b *testing.B) {
 		if err := json.Unmarshal(body, &capture); err != nil {
 			b.Fatal(err)
 		}
-		if capture.Analysis == nil || capture.Analysis.Counts.Total != 4 || capture.Analysis.Truncated {
+		if capture.Analysis == nil || capture.Analysis.Counts.Total != wantTotal || capture.Analysis.Truncated != wantTruncated {
 			b.Fatal("benchmark response does not match the frozen query")
 		}
 	}
