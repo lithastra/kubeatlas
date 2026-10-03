@@ -14,7 +14,7 @@
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
     "typecheck": "tsc",
-    "test:dependencies": "node --test tests/dependencies.test.cjs"
+    "test:dependencies": "node --test tests/dependencies.test.cjs tests/security-patches.test.cjs"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.2",
@@ -24,7 +24,9 @@
     "clsx": "^2.0.0",
     "prism-react-renderer": "^2.3.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "braces": "file:vendor/braces",
+    "http-cache-semantics": "file:vendor/http-cache-semantics"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "3.10.2",
@@ -42,7 +44,9 @@
     },
     "sockjs@0.3.24": {
       "uuid": "^11.1.1"
-    }
+    },
+    "braces": "$braces",
+    "http-cache-semantics": "$http-cache-semantics"
   },
   "browserslist": {
     "production": [
