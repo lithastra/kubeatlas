@@ -1327,8 +1327,9 @@ must exercise Tier 1/Tier 2 parity and compare paths against hand-authored
 oracles; structural fixture validation alone is not correctness evidence.
 M3 requires at least five complete Web flows and matching CLI/report results.
 The six-case desktop matrix above satisfies that local scenario count; the
-fifth slice adds focused responsive repair and browser evidence. Review the
-complete M3 change set and its integration gates before candidate freeze.
+fifth slice adds focused responsive repair and browser evidence. The source
+and synthetic delivery review below records the current M3 gates before
+candidate freeze.
 
 The production Web build and a dedicated single-worker Chromium impact suite
 are now configured in CI. The suite reuses the shared captures and exercises
@@ -1338,6 +1339,40 @@ cluster switching. Its API and WebSocket transports are synthetic; the
 existing live PetClinic suite remains a separate smoke check. See the fixture
 README and `npm --prefix web run test:impact-browser` after a production build.
 This automation does not close real-environment integration or M4 gates.
+
+### M3 source and synthetic delivery review
+
+The M3 source/evidence review is complete. This status supersedes the historical
+pending client/export/review notes in the individual slices above; it is not
+candidate or deployed-environment acceptance. [PR #72](https://github.com/lithastra/kubeatlas/pull/72)
+records the exact reviewed head and CI results, and remains a draft until
+separately reviewed and merged.
+
+| Gate | Reviewed evidence and conclusion |
+| --- | --- |
+| At least five complete Web flows and CLI/report parity | The six-case matrix and earlier real-Go-API synthetic browser/CLI checks above satisfy the local scenario requirement. Go API tests independently check handwritten graph oracles and the entire captures; CLI tests consume all six in text/JSON/HTML. Chromium exercises five resource flows and the federated topology flow. |
+| Production Web delivery | CI builds with `tsc --noEmit && vite build`; the browser config starts `vite preview` from that job's `web/dist`, with server reuse disabled. Only `/api/**` and the watch transport are replaced; routes, JavaScript assets, UI state and download files are real. |
+| Capture fidelity and consent | Browser replies deliberately retain noncanonical whitespace and a final newline, so reserialization fails exact JSON/HTML assertions. Downloads require consent and make no extra query. Query changes reset consent. HTML has no active/external elements and retains its restrictive CSP. Unit tests additionally cover large integer/timestamp text, hostile strings, duplicate keys and unsupported private payloads. |
+| Identity and cluster boundaries | Browser requests check GET, limit 200 and the detail UID; federated topology deliberately has no captured UID. Identity mismatch and 403 hide results/exports. Switching to west clears east, including an in-flight refresh delivered late, and a denied west analysis stays closed. Actual authorization-before-read and no-disclosure behavior is checked separately in `TestImpactAPIAuthorizationBeforeEveryRead`; the browser's synthetic 403 cannot prove server authorization. |
+| Counts, paths and limitations | Shared fixtures keep ordinary and authorization counts separate, expand representative paths, qualify reference-only Secrets, truncation and incomplete empty results. Portable shell/highlight tests cover filter-independent queries, exact ordinary edge highlights and focus/inert behavior. Earlier four-viewport browser evidence and the narrow resource flow remain bounded layout checks. |
+
+No new M3 product behavior is required by this review. A specific repeatability
+gap remains: CI does not yet run the production browser and actual CLI against
+one live Go HTTP server in the same synthetic session. The earlier local checks
+did this, while current CI composes independent real-handler, CLI and browser
+checks through the locked captures. A disposable loopback synthetic-server
+runner could automate that connection under normal development authorization,
+without Kubernetes; this is a concrete follow-up, not evidence that deployed
+authentication or watches have passed.
+
+Before M4 acceptance, exercise the frozen candidate's actual Web/API/CLI path
+under its configured external authentication, including allowed/denied member
+scope, expected-UID replacement, known references, initial sync and list/watch
+failure qualification on Tier 1 and Tier 2. This deployment evidence is absent;
+the green PetClinic smoke and older upgrade jobs do not supply it. Richer API
+inventory presentation, complete collector/version coverage and per-member
+history/discovery evidence remain the documented limitations, rather than
+silently becoming satisfied by the synthetic client review.
 
 M4 verifies upgrade from the latest v1.6 patch, frozen supported Kubernetes
 versions, existing API compatibility, Secret sentinel checks, bounded query

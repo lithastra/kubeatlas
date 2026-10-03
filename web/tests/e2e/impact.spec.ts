@@ -9,7 +9,10 @@ const captures = JSON.parse(readFileSync(new URL('../../../test/fixtures/impact-
 // sink run here. Only API/WS transport is replaced. Go tests lock these shared
 // captures to the actual handler/store/engine. This is not cluster acceptance.
 type Reply = (route: Route, url: URL) => Promise<void>;
-const ordinary = JSON.stringify(captures.ordinary);
+// Preserve semantics of the Go-locked fixtures while making reserialization
+// observably wrong: exports must retain the HTTP whitespace and final newline.
+const wire = (name: keyof typeof captures) => `${JSON.stringify(captures[name], null, 2)}\n`;
+const ordinary = wire('ordinary');
 
 async function fixtureTransport(page: Page, reply?: Reply) {
   const requests: URL[] = [];
@@ -20,6 +23,17 @@ async function fixtureTransport(page: Page, reply?: Reply) {
     const json = (body: unknown) => route.fulfill({ json: body });
     if (url.pathname.startsWith('/api/v1/impact/')) {
       requests.push(url);
+      expect(route.request().method()).toBe('GET');
+      expect(url.searchParams.get('limit')).toBe('200');
+      const root = matrix.resources.find((item) => url.pathname === `/api/v1/impact/${item.namespace}/${item.kind}/${item.name}`);
+      expect(root).toBeDefined();
+      if (url.searchParams.get('cluster')) {
+        // Federated topology has no previously captured UID and must not read
+        // a same-named standalone detail to invent one.
+        expect(url.searchParams.has('expected_uid')).toBe(false);
+      } else {
+        expect(url.searchParams.get('expected_uid')).toBe(root!.uid);
+      }
       if (reply) return reply(route, url);
       const entry = matrix.cases.find((item) =>
         url.pathname === `/api/v1/impact/${item.namespace}/${item.kind}/${item.rootName}` &&
@@ -33,7 +47,7 @@ async function fixtureTransport(page: Page, reply?: Reply) {
         return route.fulfill({ status: 404, json: { error: 'No synthetic capture for this query' } });
       }
       expect(entry, 'every successful query must have an explicit shared oracle').toBeDefined();
-      return route.fulfill({ contentType: 'application/json', body: JSON.stringify(captures[entry!.name as keyof typeof captures]) });
+      return route.fulfill({ contentType: 'application/json', body: wire(entry!.name as keyof typeof captures) });
     }
     if (url.pathname === '/api/v1/federation/clusters') return json({ clusters: ['east', 'west'] });
     if (url.pathname === '/api/v1/federation/graph') {
@@ -108,14 +122,16 @@ for (const entry of matrix.cases.filter((item) => !item.cluster)) {
     await expect(page.getByRole('button', { name: 'Download JSON' })).toBeDisabled();
     await page.getByRole('checkbox', { name: 'I understand this file contains sensitive cluster topology.' }).check();
     const before = transport.requests.length;
-    const raw = JSON.stringify(capture);
+    const raw = wire(entry.name as keyof typeof captures);
     expect(await downloaded(page, 'JSON')).toBe(raw);
     const html = await downloaded(page, 'HTML');
     const embedded = await page.evaluate((text) => {
       const doc = new DOMParser().parseFromString(text, 'text/html');
-      return { raw: doc.getElementById('captured-json')?.textContent, external: doc.querySelectorAll('script,iframe,object,embed,link,img').length };
+      return { raw: doc.getElementById('captured-json')?.textContent,
+        external: doc.querySelectorAll('script,iframe,object,embed,link,img,form,[src],[href]').length,
+        csp: doc.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute('content') };
     }, html);
-    expect(embedded).toEqual({ raw, external: 0 });
+    expect(embedded).toEqual({ raw, external: 0, csp: "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" });
     expect(transport.requests).toHaveLength(before);
     const query = transport.requests.at(-1)!;
     expect(query.searchParams.get('expected_uid')).toBe(entry.uid);
@@ -144,6 +160,7 @@ test('refresh hides the old capture while loading and fails closed on authorizat
   await expect(page.getByText('2 observed · 1 direct · 1 indirect', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Download HTML' })).toHaveCount(0);
   expect(transport.requests).toHaveLength(2);
+  expect(transport.unexpected).toEqual([]);
 });
 
 test('identity mismatch cannot display or export a substituted resource', async ({ page }) => {
@@ -152,6 +169,7 @@ test('identity mismatch cannot display or export a substituted resource', async 
   await expect(page.getByText('Could not obtain a matching impact result. No analysis is shown.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download JSON' })).toHaveCount(0);
   expect(transport.requests).toHaveLength(1);
+  expect(transport.unexpected).toEqual([]);
 });
 
 test('query changes reset consent and keep depth truncation and incomplete emptiness qualified', async ({ page }) => {
@@ -169,10 +187,25 @@ test('query changes reset consent and keep depth truncation and incomplete empti
   await expect(page.getByText('No dependencies observed; analysis incomplete.', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   expect(transport.requests).toHaveLength(4);
+  expect(transport.unexpected).toEqual([]);
 });
 
-test('federated topology clears the east capture when switching clusters', async ({ page }) => {
-  const transport = await fixtureTransport(page);
+test('federated topology clears east on switch, rejects its late refresh and fails closed for denied west', async ({ page }) => {
+  let eastCalls = 0;
+  let release: () => void = () => {};
+  let attempted: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const lateReply = new Promise<void>((resolve) => { attempted = resolve; });
+  const transport = await fixtureTransport(page, async (route, url) => {
+    if (url.searchParams.get('cluster') === 'west') return route.fulfill({ status: 403, json: { error: 'denied', code: 'forbidden' } });
+    expect(url.searchParams.get('cluster')).toBe('east');
+    if (++eastCalls === 2) await gate;
+    try {
+      await route.fulfill({ contentType: 'application/json', body: wire('federated') });
+    } finally {
+      if (eastCalls === 2) attempted();
+    }
+  });
   await page.goto('/topology');
   await page.getByRole('button', { name: 'Focus cluster east', exact: true }).click();
   const canvas = page.getByTestId('topology-canvas');
@@ -183,12 +216,26 @@ test('federated topology clears the east capture when switching clusters', async
   await page.getByRole('button', { name: /Analyze impact/ }).click();
   await expect(page.getByText('Cluster: east · All namespaces', { exact: true })).toBeVisible();
   await page.getByRole('checkbox', { name: 'I understand this file contains sensitive cluster topology.' }).check();
-  expect(await downloaded(page, 'JSON')).toBe(JSON.stringify(captures.federated));
+  expect(await downloaded(page, 'JSON')).toBe(wire('federated'));
+  await page.getByRole('button', { name: 'Refresh analysis' }).click();
+  await expect(page.getByText('Loading server analysis…', { exact: true })).toBeVisible();
+  await expect.poll(() => eastCalls).toBe(2);
   await page.getByRole('button', { name: 'Focus cluster west', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Impact analysis', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Download JSON' })).toHaveCount(0);
   await expect(page.getByText('Cluster: east · All namespaces', { exact: true })).toHaveCount(0);
-  expect(transport.requests).toHaveLength(1);
+  release();
+  await lateReply;
+  await canvas.focus();
+  await canvas.press('ArrowRight');
+  await canvas.press('Enter');
+  await page.getByRole('button', { name: /Analyze impact/ }).click();
+  await expect(page.getByText('Access to this cluster is not authorized.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Cluster: east · All namespaces', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Download JSON' })).toHaveCount(0);
+  expect(transport.requests).toHaveLength(3);
   expect(transport.requests[0].searchParams.get('cluster')).toBe('east');
+  expect(transport.requests[1].searchParams.get('cluster')).toBe('east');
+  expect(transport.requests[2].searchParams.get('cluster')).toBe('west');
   expect(transport.unexpected).toEqual([]);
 });
