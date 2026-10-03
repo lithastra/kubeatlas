@@ -21,7 +21,12 @@ var _ graph.ImpactSnapshotter = (*Store)(nil)
 var impactResourcesSQL = `
 SELECT CASE WHEN octet_length(projected::text) <= $3 THEN projected ELSE NULL END
 FROM (
-  SELECT CASE WHEN data->>'kind' = 'Secret' THEN
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM jsonb_each(data) AS field(key, value)
+    WHERE (key IN ('kind', 'name', 'namespace') OR
+      (data->>'kind' IS DISTINCT FROM 'Secret' AND key IN ('uid', 'groupVersion', 'resourceVersion')))
+      AND jsonb_typeof(value) NOT IN ('string', 'null')
+  ) THEN NULL WHEN data->>'kind' = 'Secret' THEN
     jsonb_build_object('kind', 'Secret', 'name', data->>'name',
       'namespace', data->>'namespace', 'clusterId', cluster_id)
   ELSE jsonb_strip_nulls(jsonb_build_object(
