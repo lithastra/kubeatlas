@@ -53,3 +53,37 @@ func TestImpactOwnerProjectionBeforeWire(t *testing.T) {
 		}
 	}
 }
+
+func TestImpactMalformedScalarProjectionBeforeWire(t *testing.T) {
+	if testing.Short() {
+		t.Skip("disposable PostgreSQL integration")
+	}
+	h := StartPostgresWithAGE(t)
+	ctx := context.Background()
+	s, err := New(ctx, Config{DSN: h.ConnStr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	r := graph.Resource{Kind: "Pod", Name: "child", Namespace: "default"}
+	for _, field := range []string{"kind", "name", "namespace", "uid", "groupVersion", "resourceVersion"} {
+		t.Run(field, func(t *testing.T) {
+			if err := s.UpsertResource(ctx, r); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.pool.Exec(ctx, `UPDATE public.resources SET data=jsonb_set(data,ARRAY[$1::text],'{"payload":"scalar-canary"}'::jsonb) WHERE id=$2`, field, r.ID()); err != nil {
+				t.Fatal(err)
+			}
+			var body []byte
+			if err := s.pool.QueryRow(ctx, impactResourcesSQL, "", 2, graph.DefaultImpactBytes).Scan(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body != nil {
+				t.Fatalf("malformed identity must fail before wire: %s", body)
+			}
+			if _, err := s.SnapshotImpact(ctx, graph.ImpactSnapshotOptions{}); err == nil {
+				t.Fatal("malformed identity accepted")
+			}
+		})
+	}
+}
