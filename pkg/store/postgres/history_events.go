@@ -53,6 +53,9 @@ func (s *Store) ReadHistoryEvents(ctx context.Context, query graph.HistoryEventQ
 	// provide database-side safeguards in addition to the caller's deadline.
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
+		if ctx.Err() != nil {
+			return graph.HistoryEventPage{}, ctx.Err()
+		}
 		return graph.HistoryEventPage{}, fmt.Errorf("postgres.ReadHistoryEvents: begin: %w", err)
 	}
 	defer func() {
@@ -61,10 +64,16 @@ func (s *Store) ReadHistoryEvents(ctx context.Context, query graph.HistoryEventQ
 		_ = tx.Rollback(cleanup)
 	}()
 	if _, err := tx.Exec(ctx, `SET LOCAL statement_timeout = '5s'`); err != nil {
+		if ctx.Err() != nil {
+			return graph.HistoryEventPage{}, ctx.Err()
+		}
 		return graph.HistoryEventPage{}, fmt.Errorf("postgres.ReadHistoryEvents: timeout: %w", err)
 	}
 	rows, err := tx.Query(ctx, historyEventsSQL, q.ClusterID, q.Namespace, q.From, q.To, q.Limit+1, q.MaxBytes)
 	if err != nil {
+		if ctx.Err() != nil {
+			return graph.HistoryEventPage{}, ctx.Err()
+		}
 		return graph.HistoryEventPage{}, fmt.Errorf("postgres.ReadHistoryEvents: query: %w", err)
 	}
 	defer rows.Close()
@@ -78,6 +87,9 @@ func (s *Store) ReadHistoryEvents(ctx context.Context, query graph.HistoryEventQ
 		}
 		var body []byte
 		if err := rows.Scan(&body); err != nil {
+			if ctx.Err() != nil {
+				return graph.HistoryEventPage{}, ctx.Err()
+			}
 			return graph.HistoryEventPage{}, fmt.Errorf("postgres.ReadHistoryEvents: scan: %w", err)
 		}
 		if body == nil {
@@ -93,9 +105,15 @@ func (s *Store) ReadHistoryEvents(ctx context.Context, query graph.HistoryEventQ
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		if ctx.Err() != nil {
+			return graph.HistoryEventPage{}, ctx.Err()
+		}
 		return graph.HistoryEventPage{}, fmt.Errorf("postgres.ReadHistoryEvents: rows: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
+		if ctx.Err() != nil {
+			return graph.HistoryEventPage{}, ctx.Err()
+		}
 		return graph.HistoryEventPage{}, fmt.Errorf("postgres.ReadHistoryEvents: finish: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
