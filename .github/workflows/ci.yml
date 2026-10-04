@@ -175,6 +175,47 @@ jobs:
       - working-directory: web
         run: npm run typecheck
 
+  web-build-browser:
+    name: Production Web build + synthetic impact browser flows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          cache: true
+      - working-directory: web
+        run: npm ci
+      - working-directory: web
+        run: npm run typecheck:e2e
+      - working-directory: web
+        run: npm run build
+      - name: Build the test-only HTTP fixture and actual CLI
+        run: |
+          go test -buildvcs=false -c -o bin/impact-browser-server.test ./pkg/api
+          CGO_ENABLED=0 go build -buildvcs=false -o bin/kubectl-atlas ./cmd/kubectl-atlas
+      - working-directory: web
+        run: npx playwright install --with-deps chromium
+      - working-directory: web
+        run: npm run test:impact-browser
+      - working-directory: web
+        run: npm run test:impact-live
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: impact-browser-report
+          path: |
+            web/playwright-report/
+            web/playwright-live-report/
+            web/test-results/
+          retention-days: 7
+
   helm-unittest:
     name: Helm chart unittest
     runs-on: ubuntu-latest
