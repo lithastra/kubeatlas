@@ -1326,8 +1326,9 @@ This automation does not close real-environment integration or M4 gates.
 The M3 source/evidence review is complete. This status supersedes the historical
 pending client/export/review notes in the individual slices above; it is not
 candidate or deployed-environment acceptance. [PR #72](https://github.com/lithastra/kubeatlas/pull/72)
-records the exact reviewed head and CI results, and remains a draft until
-separately reviewed and merged.
+records the exact reviewed head and CI results. It was separately reviewed
+and merged on October 4, 2026; the main CI passed. This merge does not close
+the deployment or M4 acceptance gates.
 
 | Gate | Reviewed evidence and conclusion |
 | --- | --- |
