@@ -14,6 +14,31 @@ type Reply = (route: Route, url: URL) => Promise<void>;
 const wire = (name: keyof typeof captures) => `${JSON.stringify(captures[name], null, 2)}\n`;
 const ordinary = wire('ordinary');
 
+// UI-only metadata scenario: retain the shared graph/path oracle, while using
+// the documented stale-before/fresh-after API-inventory contract. It does not
+// stand in for a real discovery collector or cluster acceptance.
+function inventoryCapture() {
+  const capture = JSON.parse(ordinary);
+  const coverage = capture.analysis.observation.ordinary;
+  const resources = [
+    { group: 'gateway.networking.k8s.io', version: 'v1', resource: 'gateways', kind: 'Gateway', namespaced: true, list: true, watch: true },
+    { group: 'example.test', version: 'v1', resource: 'widgets', kind: 'Widget', namespaced: true, list: true, watch: true },
+  ];
+  coverage.before.apiInventory = { clusterId: '', generation: 1, revision: 1, state: 'complete',
+    checkedAt: '2026-09-30T23:00:00Z', stale: true, stopped: false, limited: false, resources };
+  coverage.after.apiInventory = { ...coverage.before.apiInventory, revision: 2, checkedAt: coverage.after.capturedAt, stale: false };
+  coverage.optionalApis = [
+    ['gateway.networking.k8s.io', 'v1', 'gateways'], ['gateway.networking.k8s.io', 'v1', 'httproutes'],
+    ['kyverno.io', 'v1', 'policies'], ['kyverno.io', 'v1', 'clusterpolicies'],
+    ['wgpolicyk8s.io', 'v1alpha2', 'policyreports'], ['wgpolicyk8s.io', 'v1alpha2', 'clusterpolicyreports'],
+    ['route.openshift.io', 'v1', 'routes'],
+  ].map(([group, version, resource]) => ({ group, version, resource, before: 'unknown',
+    after: resource === 'gateways' ? 'advertised' : 'not_advertised' }));
+  coverage.unobservedApis = resources;
+  coverage.reasons.push('api_inventory_stale', 'api_inventory_window_unstable', 'advertised_resource_types_unobserved');
+  return `${JSON.stringify(capture, null, 2)}\n`;
+}
+
 async function fixtureTransport(page: Page, reply?: Reply) {
   const requests: URL[] = [];
   const unexpected: string[] = [];
@@ -96,6 +121,46 @@ async function downloaded(page: Page, format: 'JSON' | 'HTML') {
   const path = await download.path();
   expect(path).not.toBeNull();
   return readFile(path!, 'utf8');
+}
+
+for (const viewport of [{ width: 1280, height: 900 }, { width: 360, height: 800 }]) {
+  test(`API inventory details at ${viewport.width}px preserve capture and query count`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport);
+    const consoleIssues: string[] = [];
+    page.on('console', (message) => { if (message.type() === 'error' || message.type() === 'warning') consoleIssues.push(message.text()); });
+    const raw = inventoryCapture();
+    const transport = await fixtureTransport(page, (route) => route.fulfill({ contentType: 'application/json', body: raw }));
+    await openResource(page);
+    await expect(page).toHaveTitle(/KubeAtlas/);
+    const compass = page.locator('use[href$="#atlas-icon-compass"]');
+    const spriteHref = await compass.getAttribute('href');
+    expect(spriteHref).not.toBeNull();
+    expect(new URL(spriteHref!, page.url()).origin).toBe(new URL(page.url()).origin);
+    await expect.poll(() => compass.evaluate((element) => (element as SVGGraphicsElement).getBBox().width)).toBeGreaterThan(0);
+    await expect(page.getByText('2 observed · 1 direct · 1 indirect', { exact: true })).toBeVisible();
+    await expect(page.locator('vite-error-overlay')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const summary = page.getByText('API observation details', { exact: true });
+    await summary.focus();
+    await summary.press('Enter');
+    const details = page.locator('details').filter({ has: summary });
+    await expect(details).toHaveAttribute('open', '');
+    await expect(details.getByText('Complete enumeration · stale', { exact: true })).toBeVisible();
+    await expect(details.getByText('Before: Unknown · After: Advertised', { exact: true })).toBeVisible();
+    await expect(details.getByText('example.test/v1/widgets', { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const bounds = await details.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    await summary.evaluate((element) => element.scrollIntoView({ block: 'start' }));
+    await testInfo.attach(`API inventory ${viewport.width}px`, { body: await page.screenshot(), contentType: 'image/png' });
+    await page.getByRole('checkbox', { name: 'I understand this file contains sensitive cluster topology.' }).check();
+    expect(await downloaded(page, 'JSON')).toBe(raw);
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.unexpected).toEqual([]);
+    expect(consoleIssues).toEqual([]);
+  });
 }
 
 for (const entry of matrix.cases.filter((item) => !item.cluster)) {

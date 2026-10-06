@@ -40,12 +40,44 @@ export interface ImpactFacet {
   notices: Array<{ reason: string; count: number }>;
 }
 
+export interface ImpactAPIEndpoint {
+  group: string;
+  version: string;
+  resource: string;
+}
+
+export interface ImpactAPIResource extends ImpactAPIEndpoint {
+  kind: string;
+  namespaced: boolean;
+  list: boolean;
+  watch: boolean;
+}
+
+export interface ImpactInventorySnapshot {
+  capturedAt: string;
+  apiInventory?: {
+    clusterId: string;
+    generation: number;
+    revision: number;
+    state: string;
+    checkedAt: string;
+    stale: boolean;
+    stopped: boolean;
+    limited: boolean;
+    resources: ImpactAPIResource[] | null;
+  } | null;
+}
+
 export interface ImpactCoverage {
   state: string;
   typeScopeClosed: boolean;
   stableWindow: boolean;
   emptyResultAssessment: string;
   reasons: string[];
+  before?: ImpactInventorySnapshot;
+  after?: ImpactInventorySnapshot;
+  optionalApis?: Array<ImpactAPIEndpoint & { before: string; after: string }> | null;
+  unobservedApis?: ImpactAPIResource[] | null;
 }
 
 export interface ImpactResponse {
