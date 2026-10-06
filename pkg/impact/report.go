@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
+	"github.com/lithastra/kubeatlas/pkg/operations"
 )
 
 //go:embed report.html
@@ -113,10 +114,14 @@ func textReport(r *Response) string {
 		line("  Before: %s (%s, %d resource-type records) | After: %s (%s, %d resource-type records)",
 			retainedTime(o.Before.CapturedAt), quoted(string(o.Before.State)), len(o.Before.Resources),
 			retainedTime(o.After.CapturedAt), quoted(string(o.After.State)), len(o.After.Resources))
+		appendCoverageSnapshot(&b, "Before", o.Before)
+		appendCoverageSnapshot(&b, "After", o.After)
 		section(facet.name+" coverage reasons", o.Reasons)
 		section(facet.name+" optional APIs", o.OptionalAPIs)
 		section(facet.name+" unobserved endpoints", o.UnobservedAPIs)
 	}
+	line("API inventory describes advertised endpoints, not collector coverage or effective permissions.")
+	line("Registered source types are not a complete API inventory. Rows without recorded gaps do not establish complete observation.")
 	line("Detailed per-type/source observations and inventory remain in the complete JSON capture (--output json, or HTML's embedded JSON).")
 	h := a.Availability.Evidence.History
 	line("\nHistory writer: %s | Coverage: %s | Retained data: %s", quoted(string(h.State)), quoted(string(h.Coverage)), quoted(h.RetainedData))
@@ -137,6 +142,54 @@ func textReport(r *Response) string {
 		}
 	}
 	return safe.String()
+}
+
+func appendCoverageSnapshot(b *strings.Builder, label string, snapshot operations.CoverageSnapshot) {
+	line := func(format string, args ...any) { _, _ = fmt.Fprintf(b, "  "+format+"\n", args...) }
+	appendResourceGaps(b, label+" required", snapshot.Resources)
+	for _, source := range snapshot.Sources {
+		line("%s source %s: state=%s inventoryLimited=%t registeredTypes=%d", label,
+			strconv.QuoteToASCII(string(source.Source)), strconv.QuoteToASCII(string(source.State)), source.InventoryLimited, len(source.Resources))
+		appendResourceGaps(b, label+" source "+strconv.QuoteToASCII(string(source.Source)), source.Resources)
+	}
+	if inventory := snapshot.APIInventory; inventory != nil {
+		line("%s API inventory: state=%s stale=%t stopped=%t limited=%t endpoints=%d", label,
+			strconv.QuoteToASCII(string(inventory.State)), inventory.Stale, inventory.Stopped, inventory.Limited, len(inventory.Resources))
+		line("  Checked: %s", retainedTime(inventory.CheckedAt))
+	} else {
+		line("%s API inventory: unavailable", label)
+	}
+}
+
+func appendResourceGaps(b *strings.Builder, label string, rows []operations.ResourceCoverage) {
+	if len(rows) == 0 {
+		_, _ = fmt.Fprintf(b, "  %s resource-type evidence: unavailable\n", label)
+		return
+	}
+	found := false
+	for _, row := range rows {
+		if row.State == operations.CoverageObserved && len(row.Reasons) == 0 && row.InitialDeliveryDone && row.WatchEstablished {
+			continue
+		}
+		if !found {
+			_, _ = fmt.Fprintf(b, "  %s resource-type gaps:\n", label)
+			found = true
+		}
+		endpoint := row.Version + "/" + row.Resource
+		if row.Group != "" {
+			endpoint = row.Group + "/" + endpoint
+		}
+		reasons := make([]string, len(row.Reasons))
+		for i, reason := range row.Reasons {
+			reasons[i] = string(reason)
+		}
+		_, _ = fmt.Fprintf(b, "    %s: state=%s initialDelivery=%t watchEstablished=%t reasons=%s\n",
+			strconv.QuoteToASCII(endpoint), strconv.QuoteToASCII(string(row.State)), row.InitialDeliveryDone, row.WatchEstablished,
+			strconv.QuoteToASCII(strings.Join(reasons, ", ")))
+	}
+	if !found {
+		_, _ = fmt.Fprintf(b, "  %s resource-type gaps: none recorded in the supplied rows\n", label)
+	}
 }
 
 func retainedTime(t time.Time) string {

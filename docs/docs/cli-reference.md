@@ -245,6 +245,15 @@ invocations make separate captures and may legitimately differ; HTML's embedded
 JSON is the exact capture for that report. Unknown response fields fail closed;
 update the CLI together with the supported server schema.
 
+Text and HTML reports show observation gaps by resource endpoint, separately
+before and after the captured graph read. For example, `v1/pods` with
+`list_permission_denied` identifies a missing observation instead of treating
+the result as complete. Initial-delivery and watch flags, CRD/Gatekeeper source
+limits, and API-inventory state, check time, stale/stopped/limited flags remain
+visible even when later evidence recovers. Missing records say unavailable;
+no recorded gaps only qualifies the supplied rows. A complete API inventory
+enumerates advertised endpoints, not collector coverage or effective permissions.
+
 Exports contain sensitive topology even though no Secret values are included.
 Review access before sharing. `--out` protects newly created files; shell
 redirection has the permissions and overwrite behavior of your shell. If a
