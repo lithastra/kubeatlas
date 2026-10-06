@@ -8,6 +8,8 @@ const {pathToFileURL} = require('node:url');
 
 const fromCore = createRequire(require.resolve('@docusaurus/core/package.json'));
 const fromBundler = createRequire(require.resolve('@docusaurus/bundler'));
+const fromDevServer = createRequire(fromCore.resolve('webpack-dev-server'));
+const fromEditor = createRequire(fromDevServer.resolve('launch-editor'));
 
 test('Docusaurus worker options retain task results and ignore inherited filenames', async () => {
   const {default: Tinypool} = await import(pathToFileURL(fromCore.resolve('tinypool')).href);
@@ -49,4 +51,24 @@ test('Docusaurus cssnano preset retains selector, calc and media output', async 
   assert.equal(result.css,
     '.a,.b{color:red;margin:3px 0 0}@media (min-width:600px){.a:hover{color:blue}}');
   assert.deepEqual(result.warnings(), []);
+});
+
+test('Docusaurus editor commands preserve quoted paths and arguments', () => {
+  const guessEditor = fromEditor('./guess');
+  const shellQuote = fromEditor('shell-quote');
+  assert.deepEqual(guessEditor('code --goto "docs/guide with spaces.md:12:3"'),
+    ['code', '--goto', 'docs/guide with spaces.md:12:3']);
+  const args = ['code', '--goto', "docs/editor's guide #1.md:12:3"];
+  assert.deepEqual(shellQuote.parse(shellQuote.quote(args)), args);
+});
+
+test('editor shell quoting rejects line terminators after a comment token', () => {
+  const shellQuote = fromEditor('shell-quote');
+  for (const terminator of ['\n', '\r', '\u2028', '\u2029']) {
+    assert.throws(() => shellQuote.quote(['code', {comment: 'fixture'}, `first${terminator}second`]),
+      TypeError);
+  }
+  assert.doesNotThrow(() => shellQuote.quote(['code', {comment: 'fixture'}, 'ordinary argument']));
+  assert.deepEqual(shellQuote.parse(shellQuote.quote(['code', 'first\nsecond'])),
+    ['code', 'first\nsecond']);
 });

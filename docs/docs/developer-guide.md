@@ -96,7 +96,11 @@ pin official upstream releases through these overrides:
 | Mermaid 11 | KaTeX 0.18.2 | Real browser rendering of ordinary and mathematical flowcharts, plus inherited trust rejection |
 | Istanbul's load-nyc-config 1.1.0 | js-yaml 4.3.2 | YAML config inheritance, typed values, malformed input, and unsafe tag rejection |
 
-These releases cross the consumers' declared version ranges and require
+The documentation lockfile also resolves launch-editor's `shell-quote` dependency
+to 1.11.0 within its existing `^1.8.4` range. Consumer checks cover quoted editor
+paths and rejection of line terminators in tokens following a comment.
+
+The override releases cross the consumers' declared version ranges and require
 compatibility review. The YAML override removes the old argparse dependency on
 sprintf-js. Remove an override when its consumer accepts a patched upstream
 range, then regenerate the lockfile and rerun the consumer checks:
