@@ -213,6 +213,14 @@ state, check time, generation/revision, stale/stopped/limited flags, and at most
 `not_advertised`, `other_version_advertised`, `unsupported_shape`, or `unknown`
 before/after the read. Negative assessment requires a fresh complete inventory
 and checks every advertised version; it does not assert operator installation.
+
+In the development Web UI, expand **API observation details** below the ordinary
+impact results to inspect the captured before/after inventory, optional API
+assessments, and advertised endpoints without captured registration evidence.
+The check time and stale/stopped/limited flags remain visible; expanding this
+section makes no new request. These are resource-type metadata, not affected
+object counts. An empty endpoint list does not establish complete collector
+coverage. JSON/HTML downloads retain the same capture behind the visible result.
 `unobservedApis` names list/watch endpoints without captured registration
 evidence, excluding core Secret endpoints. Inventory changes invalidate the
 ordinary window; these fields leave authorization coverage independent.

@@ -2,6 +2,7 @@ import { Alert, Box, Button, Stack, Typography } from '@mui/material';
 
 import { impactErrorMessage } from '../api/impact';
 import type { ImpactCoverage, ImpactFacet, ImpactResponse } from '../api/impactTypes';
+import { ImpactAPICoverage } from './ImpactAPICoverage';
 import { ImpactExportControls } from './ImpactExportControls';
 
 interface BlastRadiusPanelProps {
@@ -46,6 +47,7 @@ function ImpactResult({ response }: { response: ImpactResponse }) {
       </Box>
       <ImpactExportControls response={response} />
       <Facet title="Observed relationships" facet={a} coverage={a.observation?.ordinary} relation={a.relation} />
+      {a.observation ? <ImpactAPICoverage coverage={a.observation.ordinary} /> : null}
       <details>
         <summary>Reference field evidence ({a.referenceEvidence.length})</summary>
         <Typography variant="body2">Optional does not mean harmless; refresh behavior does not prove application reload.</Typography>
