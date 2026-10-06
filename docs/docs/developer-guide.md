@@ -83,6 +83,50 @@ bash test/verify/phase0.sh
 
 ## Repository tooling
 
+### JavaScript dependency overrides
+
+Use `npm ci` with the committed lockfiles and keep `npm audit --audit-level=low`
+enabled. Some consumers currently request older dependency ranges. The manifests
+pin official upstream releases through these overrides:
+
+| Consumer | Override | Compatibility coverage |
+|---|---|---|
+| Docusaurus 3.10.2 | tinypool 2.1.2 | Worker options, concurrent task results, inherited filename rejection, and SSG builds |
+| CSS plugins using selector-parser 6.1.4 | postcss-selector-parser 7.1.6 | The Docusaurus cssnano preset's selector, calc, and media output |
+| Mermaid 11 | KaTeX 0.18.2 | Real browser rendering of ordinary and mathematical flowcharts, plus inherited trust rejection |
+| Istanbul's load-nyc-config 1.1.0 | js-yaml 4.3.2 | YAML config inheritance, typed values, malformed input, and unsafe tag rejection |
+
+These releases cross the consumers' declared version ranges and require
+compatibility review. The YAML override removes the old argparse dependency on
+sprintf-js. Remove an override when its consumer accepts a patched upstream
+range, then regenerate the lockfile and rerun the consumer checks:
+
+```bash
+cd docs
+npm ci
+npm audit --audit-level=low
+npm run test:dependencies
+npm run typecheck
+npm run build
+
+cd ../web
+npm ci
+npm audit --audit-level=low
+npm run lint
+npm run typecheck
+npm run typecheck:e2e
+npm test -- --runInBand
+npm run build
+npx playwright install chromium
+npm run test:dependencies:browser
+```
+
+The browser dependency checks start a local Vite fixture and do not require a
+Kubernetes cluster. The production build and synthetic impact suites remain
+separate checks in CI.
+
+### Portable tools
+
 Commit reusable build, test, fixture, and release tools with documented
 prerequisites and configurable inputs. Bash and Python are valid test tools,
 but a script must not depend on a contributor's home directory, private

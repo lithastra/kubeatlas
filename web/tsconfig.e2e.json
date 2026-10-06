@@ -11,5 +11,5 @@
     "noEmit": true,
     "types": ["@playwright/test", "node"]
   },
-  "include": ["tests/e2e", "playwright.config.ts", "playwright.impact.config.ts", "playwright.impact-live.config.ts"]
+  "include": ["tests/e2e", "playwright.config.ts", "playwright.impact.config.ts", "playwright.impact-live.config.ts", "playwright.dependencies.config.ts"]
 }

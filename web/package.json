@@ -12,11 +12,12 @@
     "typecheck": "tsc --noEmit",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "lint": "eslint .",
-    "pretest": "node --test test-stubs/ts-jest-transformer.check.cjs",
+    "pretest": "node --test test-stubs/ts-jest-transformer.check.cjs test-stubs/upstream-dependencies.check.cjs",
     "test": "jest",
     "test:e2e": "playwright test",
     "test:impact-browser": "playwright test --config playwright.impact.config.ts",
-    "test:impact-live": "playwright test --config playwright.impact-live.config.ts"
+    "test:impact-live": "playwright test --config playwright.impact-live.config.ts",
+    "test:dependencies:browser": "playwright test --config playwright.dependencies.config.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.13.0",
@@ -64,5 +65,13 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "overrides": {
+    "@istanbuljs/load-nyc-config@1.1.0": {
+      "js-yaml": "4.3.2"
+    },
+    "mermaid": {
+      "katex": "0.18.2"
+    }
   }
 }

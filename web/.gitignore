@@ -6,5 +6,6 @@ coverage/
 .vite/
 .DS_Store
 playwright-report/
+playwright-dependencies-report/
 test-results/
 .playwright/
