@@ -95,16 +95,29 @@ async function selectRoot(page: Page, entry: Entry, origin: string) {
     for (let n = 0; n <= index; n++) await canvas.press('ArrowRight');
     await canvas.press('Enter');
   }
-  const response = page.waitForResponse((r) => {
-    const url = new URL(r.url());
-    return url.pathname === `/api/v1/impact/${entry.namespace}/${entry.kind}/${entry.rootName}` &&
-      url.searchParams.get('relation') === entry.relation && url.searchParams.get('max_depth') === String(entry.depth) &&
-      (url.searchParams.get('cluster') || '') === entry.cluster;
-  }).then(async (received) => {
-    // Read eagerly instead of retaining a Response across later UI updates.
-    expect(received.status()).toBe(200);
-    return received.text();
+  let captured: { status: number; raw: string } | undefined;
+  await page.exposeFunction('captureImpactResponse', (status: number, raw: string) => {
+    captured = { status, raw };
   });
+  await page.evaluate((target) => {
+    const nativeFetch = window.fetch.bind(window);
+    const capture = (window as typeof window & {
+      captureImpactResponse: (status: number, raw: string) => Promise<void>;
+    }).captureImpactResponse;
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const response = await nativeFetch(...args);
+      const url = new URL(response.url);
+      if (url.pathname === target.pathname && url.searchParams.get('relation') === target.relation &&
+          url.searchParams.get('max_depth') === String(target.depth) &&
+          (url.searchParams.get('cluster') || '') === target.cluster) {
+        // Drain a native clone before the application's cleanup aborts the fetch.
+        // Return the original response with its body, headers and status intact.
+        await capture(response.status, await response.clone().text());
+      }
+      return response;
+    };
+  }, { pathname: `/api/v1/impact/${entry.namespace}/${entry.kind}/${entry.rootName}`,
+    relation: entry.relation, depth: entry.depth, cluster: entry.cluster });
   await page.getByRole('button', { name: /Analyze impact/ }).click();
   if (entry.depth !== 5) {
     await page.getByRole('combobox', { name: /^Maximum depth / }).click();
@@ -114,7 +127,9 @@ async function selectRoot(page: Page, entry: Entry, origin: string) {
     await page.getByRole('combobox', { name: /^Relation / }).click();
     await page.getByRole('option', { name: 'Dependencies — resources this depends on', exact: true }).click();
   }
-  return response;
+  await expect.poll(() => captured !== undefined, { message: 'matching native impact response captured' }).toBe(true);
+  expect(captured!.status).toBe(200);
+  return captured!.raw;
 }
 
 for (const entry of matrix.cases) {
