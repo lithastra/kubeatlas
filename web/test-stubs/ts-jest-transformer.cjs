@@ -7,16 +7,19 @@ const tsJest = require('ts-jest').default;
 const adapterHash = createHash('sha256').update(readFileSync(__filename)).digest('hex');
 const inlineMap = /(^|\r?\n)(\/\/# sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,)([A-Za-z0-9+/=]+)(\r?\n)?$/;
 
-// ts-jest 29.4.13 emits file URLs. Istanbul 5 treats those as relative paths,
+// ts-jest emits file URLs or absolute paths. Istanbul 5 treats those as relative paths,
 // producing broken LCOV source references and non-portable HTML filenames.
 // Keep the original mappings/content and Babel coverage provider; normalize
 // only local source names before Jest instruments the transformed code.
 function normalizeMap(map, sourcePath) {
   return {
     ...map,
-    sources: map.sources.map((source) => source.startsWith('file:')
-      ? path.relative(path.dirname(sourcePath), fileURLToPath(source)).split(path.sep).join('/')
-      : source),
+    sources: map.sources.map((source) => {
+      const localPath = source.startsWith('file:') ? fileURLToPath(source) : source;
+      return path.isAbsolute(localPath)
+        ? path.relative(path.dirname(sourcePath), localPath).split(path.sep).join('/')
+        : source;
+    }),
   };
 }
 
