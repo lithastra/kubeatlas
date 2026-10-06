@@ -206,6 +206,9 @@ jobs:
         run: npm run test:impact-browser
       - working-directory: web
         run: npm run test:impact-live
+      - name: Verify Mermaid and KaTeX consumers in Chromium
+        working-directory: web
+        run: npm run test:dependencies:browser
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -213,6 +216,7 @@ jobs:
           path: |
             web/playwright-report/
             web/playwright-live-report/
+            web/playwright-dependencies-report/
             web/test-results/
           retention-days: 7
 

@@ -100,6 +100,10 @@ async function selectRoot(page: Page, entry: Entry, origin: string) {
     return url.pathname === `/api/v1/impact/${entry.namespace}/${entry.kind}/${entry.rootName}` &&
       url.searchParams.get('relation') === entry.relation && url.searchParams.get('max_depth') === String(entry.depth) &&
       (url.searchParams.get('cluster') || '') === entry.cluster;
+  }).then(async (received) => {
+    // Read eagerly instead of retaining a Response across later UI updates.
+    expect(received.status()).toBe(200);
+    return received.text();
   });
   await page.getByRole('button', { name: /Analyze impact/ }).click();
   if (entry.depth !== 5) {
@@ -110,9 +114,7 @@ async function selectRoot(page: Page, entry: Entry, origin: string) {
     await page.getByRole('combobox', { name: /^Relation / }).click();
     await page.getByRole('option', { name: 'Dependencies — resources this depends on', exact: true }).click();
   }
-  const received = await response;
-  expect(received.status()).toBe(200);
-  return received.text();
+  return response;
 }
 
 for (const entry of matrix.cases) {
