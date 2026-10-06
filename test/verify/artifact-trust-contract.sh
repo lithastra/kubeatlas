@@ -37,7 +37,7 @@ id_token_grants=$(grep -Fc 'id-token: write' "$RELEASE_WORKFLOW")
 [[ "$id_token_grants" -eq 3 ]] || fail "only the three signing jobs may receive OIDC tokens"
 
 require_text "$RELEASE_WORKFLOW" 'sigstore/cosign-installer@v4.1.2'
-require_text "$RELEASE_WORKFLOW" 'oras-project/setup-oras@v2.0.1'
+require_text "$RELEASE_WORKFLOW" 'oras-project/setup-oras@v2.0.2'
 require_text "$RELEASE_WORKFLOW" 'version: 1.3.3'
 require_text "$RELEASE_WORKFLOW" 'name: Anonymous signed core artifacts on clean Kubernetes'
 require_text "$RELEASE_WORKFLOW" 'if: always()'
