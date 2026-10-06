@@ -58,7 +58,7 @@ GraphStore v2 clean-up that surfaces `graphstore_version` on
 | **v1.5.1** | ✅ Released | Explicit CloudNativePG prerequisite, retained Tier 2 data by default, reproducible PostgreSQL + AGE image, and enforced upgrade, recovery, uninstall-retention, and snapshot release evidence. |
 | **v1.5.2** | ✅ Released | Secret relationships remain reference-only while Secret objects, values, identifying metadata, and historical event payloads are excluded or scrubbed. |
 | **v1.6.0** | ✅ Released | Production-operability signals and runbooks, source platform/upgrade/restore validation, and verified public OCI artifacts. One-hour functional scope; no endurance or dedicated performance acceptance claim. |
-| **v1.7.0** | In development; M3 source/synthetic delivery reviewed | Bounded paths, reference explanations, RBAC associations, observation continuity, cached availability, and an authorized v1-only impact API have tests. Six synthetic scenarios connect production Web, actual CLI and live Go HTTP; CI builds/tests the Web bundle. Source/synthetic delivery review is complete; frozen deployment integration and M4 acceptance remain pending. PR #72 remains a draft; not released. |
+| **v1.7.0** | In development; Web/CLI integration available | Server-backed impact analysis provides bounded paths, reference explanations, separate RBAC associations, observation continuity, and cached availability. Web and CLI exports retain the captured result. The Web UI also shows before/after API inventory, optional API assessments, and advertised endpoints without captured observation. Frozen deployment integration and M4 acceptance remain pending; v1.7 is not released. |
 | **Further out** | 💭 Sketch | Cloud-resource integration, third-party platform deep-dives, federation cross-cluster edge inference; a possible future `v1alpha1` retirement (which would version a v2.0). |
 
 ## v1.7.0 — explainable impact analysis (in development)
@@ -112,6 +112,12 @@ The first Web slice now connects resource-detail and concrete topology nodes to
 the server impact API, with explicit dependents/dependencies, bounded depth,
 server counts and path highlights, separate authorization, and observation/history
 warnings. Cluster switches and abandoned requests cannot reuse old results.
+Expand **API observation details** to inspect captured before/after discovery
+state, check time and stale/stopped/limited flags, optional API version/shape
+assessments, and advertised endpoints without captured registration evidence.
+Expanding the section makes no new request. Complete discovery enumeration does
+not establish successful watches, effective permissions, or complete collector
+coverage; empty endpoint lists cannot close those gaps.
 The CLI now reads the same API envelope and exports text, JSON, or self-contained
 HTML, with exact query/identity checks, bounded reads, private non-overwriting
 file output, and no local fallback. Portable actual-handler tests establish

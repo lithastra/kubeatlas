@@ -1321,21 +1321,21 @@ existing live PetClinic suite remains a separate smoke check. See the fixture
 README and `npm --prefix web run test:impact-browser` after a production build.
 This automation does not close real-environment integration or M4 gates.
 
-### M3 source and synthetic delivery review
+### M3 Web/CLI integration {/* #m3-source-and-synthetic-delivery-review */}
 
-The M3 source/evidence review is complete. This status supersedes the historical
-pending client/export/review notes in the individual slices above; it is not
-candidate or deployed-environment acceptance. [PR #72](https://github.com/lithastra/kubeatlas/pull/72)
-records the exact reviewed head and CI results, and remains a draft until
-separately reviewed and merged.
+The development Web UI and CLI consume the v1 impact API for scoped counts,
+representative paths, reference evidence, and observation limits. JSON/HTML
+exports retain the captured result. These capabilities supersede the historical
+pending client/export notes in the individual slices above. They are available
+in development source; v1.7 remains unreleased and candidate acceptance is pending.
 
-| Gate | Reviewed evidence and conclusion |
+| Capability | Behavior and limits |
 | --- | --- |
-| At least five complete Web flows and CLI/report parity | The six-case matrix satisfies the local scenario requirement. Go API tests independently check handwritten graph oracles and the entire captures; CLI tests consume all six in text/JSON/HTML. The live Chromium suite runs all six against the actual Go HTTP server and executes the compiled CLI for JSON/HTML in the same session. Only the six capture clock fields differ between separate requests; every other field must match. |
-| Production Web delivery | CI builds with `tsc --noEmit && vite build`. Nine transport-substituted checks run through `vite preview`; seven live checks load the same `web/dist` through the actual Go static handler, routes and middleware. The live suite has no API or WebSocket substitution, and server reuse is disabled. |
-| Capture fidelity and consent | Browser replies deliberately retain noncanonical whitespace and a final newline, so reserialization fails exact JSON/HTML assertions. Downloads require consent and make no extra query. Query changes reset consent. HTML has no active/external elements and retains its restrictive CSP. Unit tests additionally cover large integer/timestamp text, hostile strings, duplicate keys and unsupported private payloads. |
-| Identity and cluster boundaries | Browser requests check GET, limit 200 and the detail UID; federated topology deliberately has no captured UID. Identity mismatch and 403 hide results/exports. Switching to west clears east, including an in-flight refresh delivered late. Live checks configure the actual `RBACScope`: east-only visibility, missing/unknown token and denied west statuses, Web refresh hiding a previous capture after denial, and CLI failure without creating a report. `TestImpactAPIAuthorizationBeforeEveryRead` independently checks denied requests do not read graph/evidence. Synthetic credentials and rules do not prove an operator's external authentication configuration. |
-| Counts, paths and limitations | Shared fixtures keep ordinary and authorization counts separate, expand representative paths, qualify reference-only Secrets, truncation and incomplete empty results. Portable shell/highlight tests cover filter-independent queries, exact ordinary edge highlights and focus/inert behavior. Earlier four-viewport browser evidence and the narrow resource flow remain bounded layout checks. |
+| Server-backed analysis | Select a concrete resource in its cluster to inspect dependents or dependencies, server counts and representative paths. Canvas filters do not narrow the analysis scope. |
+| Captured exports | Web JSON/HTML downloads require sensitive-topology consent and make no extra analysis query. Query changes reset consent. CLI reports use private, non-overwriting files. HTML has no active/external elements and retains its restrictive CSP. |
+| API observation details | Expand the Web section to inspect before/after inventory state, check time and stale/stopped/limited flags, optional API presence/version/shape assessments, and advertised endpoints without captured registration evidence. It reads the existing capture without another request. |
+| Identity and cluster boundaries | UID conflicts and denied queries hide results and exports. Cluster switches clear old results, including late responses. Authorization scope is applied before graph/evidence reads; deployed external authentication still requires candidate validation. |
+| Counts, paths and limitations | Ordinary and authorization counts remain separate. Secret targets are reference-only; truncation and incomplete empty results stay qualified. Inventory enumeration is not proof of successful watches, effective permissions or complete graph observation. Empty endpoint lists do not establish complete collector coverage. |
 
 The previously identified live-HTTP repeatability gap is closed by
 `web/tests/e2e/impact-live.spec.ts`. The opt-in Go test runner reuses the matrix
@@ -1362,11 +1362,11 @@ npm --prefix web run test:impact-live
 Before M4 acceptance, exercise the frozen candidate's actual Web/API/CLI path
 under its configured external authentication, including allowed/denied member
 scope, expected-UID replacement, known references, initial sync and list/watch
-failure qualification on Tier 1 and Tier 2. This deployment evidence is absent;
-the green PetClinic smoke and older upgrade jobs do not supply it. Richer API
-inventory presentation, complete collector/version coverage and per-member
-history/discovery evidence remain the documented limitations, rather than
-silently becoming satisfied by the synthetic client review.
+failure qualification on Tier 1 and Tier 2. Frozen-candidate deployment validation
+remains pending. API inventory presentation does not close complete collector
+coverage, version equivalence, or per-member history/discovery gaps. Federated
+members currently have no production inventory worker, so their inventory stays
+unavailable. Discovery errors, stale evidence and limits cannot prove absence.
 
 M4 verifies upgrade from the latest v1.6 patch, frozen supported Kubernetes
 versions, existing API compatibility, Secret sentinel checks, bounded query
