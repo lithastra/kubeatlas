@@ -23,11 +23,11 @@ const config = {
 
   // CSS imports become identity proxies so component tests can mount
   // without a real bundler. SVG imports (Vite resolves them via
-  // ?url / ?raw at build time) stub to a string so design primitives
+  // ?url / ?raw / ?no-inline at build time) stub to a string so design primitives
   // that consume the local icon sprite load under Jest too.
   moduleNameMapper: {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
-    '\\.svg(\\?(url|raw))?$': '<rootDir>/test-stubs/svg.js',
+    '\\.svg(\\?(url|raw|no-inline))?$': '<rootDir>/test-stubs/svg.js',
   },
 
   // React Router 7 uses the standard encoding APIs during module load.

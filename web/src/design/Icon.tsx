@@ -11,9 +11,9 @@
  * ============================================================ */
 import type { CSSProperties } from 'react';
 
-// Vite resolves `?url` to the post-build asset URL so the sprite is
-// served once and consumers reference symbols via <use href="url#id">.
-import spriteUrl from './icons.svg?url';
+// External <use> references require a same-origin asset. Prevent Vite
+// from inlining this small sprite as an opaque-origin data URL.
+import spriteUrl from './icons.svg?no-inline';
 
 export type AtlasIconName =
   | 'compass'

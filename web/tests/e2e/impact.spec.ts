@@ -132,6 +132,11 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 360, height: 800 
     const transport = await fixtureTransport(page, (route) => route.fulfill({ contentType: 'application/json', body: raw }));
     await openResource(page);
     await expect(page).toHaveTitle(/KubeAtlas/);
+    const compass = page.locator('use[href$="#atlas-icon-compass"]');
+    const spriteHref = await compass.getAttribute('href');
+    expect(spriteHref).not.toBeNull();
+    expect(new URL(spriteHref!, page.url()).origin).toBe(new URL(page.url()).origin);
+    await expect.poll(() => compass.evaluate((element) => (element as SVGGraphicsElement).getBBox().width)).toBeGreaterThan(0);
     await expect(page.getByText('2 observed · 1 direct · 1 indirect', { exact: true })).toBeVisible();
     await expect(page.locator('vite-error-overlay')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
