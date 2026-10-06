@@ -41,6 +41,17 @@ test('nested and sibling source paths use portable separators', () => {
   assert.deepEqual(readMap(result).sources, ['../shared/value.ts']);
 });
 
+test('absolute filesystem sources become relative paths on both map representations', () => {
+  const sibling = path.join(rootDir, 'src', 'shared', 'value.ts');
+  const sourceMap = { ...map, sources: [sourcePath, sibling] };
+  const expected = { ...sourceMap, sources: ['source #%.ts', '../shared/value.ts'] };
+  assert.deepEqual(readMap(normalizeResult(inlineResult(sourceMap), sourcePath)), expected);
+  for (const value of [sourceMap, JSON.stringify(sourceMap)]) {
+    assert.deepEqual(normalizeResult({ code: source, map: value }, sourcePath).map, expected);
+  }
+  assert.deepEqual(sourceMap.sources, [sourcePath, sibling]);
+});
+
 test('existing relative paths and non-file URLs are preserved', () => {
   const sources = ['source.ts', '../shared/value.ts', 'https://example.invalid/source.ts'];
   assert.deepEqual(readMap(normalizeResult(inlineResult({ ...map, sources }), sourcePath)).sources, sources);
