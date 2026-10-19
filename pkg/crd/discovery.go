@@ -59,6 +59,7 @@ type Discovery struct {
 	rego            RegoEvaluator
 	logger          *slog.Logger
 	clusterID       string
+	memberRepair    *discovery.MemberRepair
 	runs            sync.WaitGroup
 	coverage        *operations.CoverageTracker
 	coverageSession *operations.CoverageSession
@@ -108,6 +109,11 @@ func WithCoverage(tracker *operations.CoverageTracker) Option {
 // The empty default preserves standalone IDs and coverage.
 func WithClusterID(cluster string) Option {
 	return func(d *Discovery) { d.clusterID = cluster }
+}
+
+// WithMemberRepair repairs retained rows only while their endpoint is active.
+func WithMemberRepair(repair *discovery.MemberRepair) Option {
+	return func(d *Discovery) { d.memberRepair = repair }
 }
 
 // WithRegoEvaluator wires an evaluator. Without it, CRD events still
@@ -331,6 +337,13 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 
 	d.families[identity.name] = family
 	family.refs++
+	if d.memberRepair != nil {
+		d.runs.Add(1)
+		go func() {
+			defer d.runs.Done()
+			d.memberRepair.Run(informerCtx, gvr, kind, coverage, registration.HasSynced, nil)
+		}()
+	}
 	d.runs.Add(1)
 	go func() {
 		defer d.runs.Done()
@@ -407,6 +420,13 @@ func (d *Discovery) handleUpsert(ctx context.Context, gvr schema.GroupVersionRes
 	}
 	r := discovery.UnstructuredToResource(u, kind)
 	r.ClusterID = d.clusterID
+	if d.memberRepair != nil {
+		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
 	if err := d.store.UpsertResource(ctx, r); err != nil {
 		if ctx.Err() != nil {
 			return
@@ -464,6 +484,13 @@ func (d *Discovery) handleDelete(ctx context.Context, gvr schema.GroupVersionRes
 	}
 	r := discovery.UnstructuredToResource(u, kind)
 	r.ClusterID = d.clusterID
+	if d.memberRepair != nil {
+		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
 	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
 		if ctx.Err() != nil {
 			return

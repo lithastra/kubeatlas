@@ -1149,6 +1149,63 @@ These checks do not establish complete collector coverage, served-version
 equivalence, Gatekeeper policy effectiveness, missed-delete repair, member
 history continuity, or real-deployment/M4 acceptance.
 
+### M2 member-scoped missed-delete repair follow-up
+
+Production member bundles now reconcile retained graph rows for actively
+registered canonical core endpoints, selected CRD endpoints and generated
+Gatekeeper Constraint endpoints. After initial handler delivery, each endpoint
+runs an immediate repair round and repeats every five minutes. This repairs
+objects deleted while a member was detached/restarted and delete writes that
+failed after their informer callback had already been consumed. Ordinary local
+cache resync still does not relist Kubernetes or replay a missing delete.
+
+Each round captures candidates from the owning member and exact Kind/API version
+before requesting a fresh all-namespace list with empty `resourceVersion`, no
+selectors and page size 500. Every continuation page must succeed with the same
+nonempty snapshot version before any deletion is allowed. Incomplete, denied,
+expired, malformed or over-limit lists cannot authorize a sweep. Work is limited
+to one repair round at a time per member, a ten-second deadline including queue
+and delivery-lock waits, 10,000 candidates/listed objects and 32 pages. Repair
+does not change informer list/watch options, require new Kubernetes verbs, or
+run inside an impact request.
+
+Only missing names become deletion candidates. Same-name presence of any UID
+protects a replacement. Atomic store deletion compares member identity, API
+version, UID and resourceVersion with the captured candidate, then cascades
+incident edges in the same memory critical section or PostgreSQL/AGE transaction.
+Rows changed during the list are retained for a later round. GraphStore v2's
+method set and the public wire schemas remain unchanged; a store without the
+optional conditional-delete capability records a persistence gap and does not
+fall back to an unsafe read followed by unconditional deletion.
+
+Object callbacks and repair deletion share a member-local identity lock through
+the complete resource/extraction/edge-write pipeline. An in-flight extractor
+cannot write incident edges after repair deletes its resource. Other object
+identities remain independent, and lock entries are released after their last
+owner/waiter. Registration cancellation stops its repair work; bundle shutdown
+joins those workers before the member name is reusable. Core repair emits a
+delete notification/history enqueue only after a committed deletion, at repair
+detection time. A failed ordinary core delete no longer emits a success receipt.
+
+Failed repair reads, malformed lists and work limits retain a sticky processing
+gap; failed graph reads/deletes or unavailable conditional deletion retain a
+persistence gap. Successful later repair does not reset earlier coverage gaps,
+assert a drained watch backlog, or reconstruct the time of an upstream deletion.
+Unversioned/reference-only nodes, Secrets, different API versions, unregistered
+or retired endpoints, and other members are not swept. CRD/template disappearance
+and API unavailability alone are not proof that retained instances are absent.
+
+Portable race tests exercise the production member factory across reattachment,
+all three collector paths, member and standalone isolation, retained older API
+versions, complete pagination, page failure/expiry, malformed/limited lists,
+same-name replacement and concurrent updates, failed watch-delete repair on a
+scheduled round, success-only receipts, sticky gaps, bounded concurrency,
+blocked extraction and cancellation/join. Both store backends implement the
+same conditional-delete contract tests; PostgreSQL/AGE execution requires the
+separate container-backed test environment. These local tests do not establish
+real-cluster reliability, cross-version or retired-endpoint cleanup, complete
+collector coverage, member history continuity, or M4 acceptance.
+
 ### M3 server-backed Web analysis: first slice
 
 The standalone resource-detail page now offers an explicit **Analyze impact**
@@ -1439,8 +1496,9 @@ under its configured external authentication, including allowed/denied member
 scope, expected-UID replacement, known references, initial sync and list/watch
 failure qualification on Tier 1 and Tier 2. Frozen-candidate deployment validation
 remains pending. API inventory presentation does not close complete collector
-coverage, version equivalence, missed-delete repair, or per-member history
-qualification. Federated members run their own bounded inventory, CRD and
+coverage, version equivalence, cross-version/retired-endpoint cleanup, or
+per-member history qualification. Active member endpoints have bounded
+missed-delete repair as described above. Federated members run their own bounded inventory, CRD and
 Gatekeeper workers as described above; failed, denied, stale, unsupported or
 limited evidence remains qualified and cannot prove absence.
 

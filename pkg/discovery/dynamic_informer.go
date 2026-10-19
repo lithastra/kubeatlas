@@ -230,6 +230,14 @@ func (m *DynamicInformerManager) Has(gvr schema.GroupVersionResource) bool {
 	return ok
 }
 
+// HasSynced reports initial handler delivery for the active registration.
+func (m *DynamicInformerManager) HasSynced(gvr schema.GroupVersionResource) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	h := m.informers[gvr]
+	return h != nil && h.synced()
+}
+
 // ActiveGVRs returns a snapshot of every GVR with a running informer.
 func (m *DynamicInformerManager) ActiveGVRs() []schema.GroupVersionResource {
 	m.mu.RLock()

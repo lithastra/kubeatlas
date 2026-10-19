@@ -42,7 +42,7 @@ func memberDynamicClient(t *testing.T) *dynamicfake.FakeDynamicClient {
 		memberCRDs:        {Object: map[string]any{"kind": "CustomResourceDefinition", "apiVersion": "apiextensions.k8s.io/v1", "metadata": map[string]any{"name": "foos.example.com", "uid": "same-crd-uid"}, "spec": map[string]any{"group": "example.com", "names": map[string]any{"kind": "Foo", "plural": "foos"}, "scope": "Namespaced", "versions": []any{map[string]any{"name": "v1", "served": true, "storage": true}}}}},
 		memberFoos:        {Object: map[string]any{"kind": "Foo", "apiVersion": "example.com/v1", "metadata": map[string]any{"name": "same", "namespace": "default", "uid": "same-foo-uid", "resourceVersion": "1"}}},
 		memberTemplates:   {Object: map[string]any{"kind": "ConstraintTemplate", "apiVersion": "templates.gatekeeper.sh/v1", "metadata": map[string]any{"name": "k8srequiredlabels"}, "spec": map[string]any{"crd": map[string]any{"spec": map[string]any{"names": map[string]any{"kind": "K8sRequiredLabels"}}}}}},
-		memberConstraints: {Object: map[string]any{"kind": "K8sRequiredLabels", "apiVersion": "constraints.gatekeeper.sh/v1beta1", "metadata": map[string]any{"name": "same", "resourceVersion": "1"}}},
+		memberConstraints: {Object: map[string]any{"kind": "K8sRequiredLabels", "apiVersion": "constraints.gatekeeper.sh/v1beta1", "metadata": map[string]any{"name": "same", "uid": "same-constraint-uid", "resourceVersion": "1"}}},
 	}
 	for gvr, obj := range objects {
 		if err := client.Tracker().Create(gvr, obj, obj.GetNamespace()); err != nil {

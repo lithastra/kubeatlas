@@ -85,6 +85,24 @@ var CoreGVRs = []schema.GroupVersionResource{
 	{Group: "wgpolicyk8s.io", Version: "v1alpha2", Resource: "clusterpolicyreports"},
 }
 
+// Only canonical endpoints have an unambiguous repair kind when their initial
+// list is empty. Unknown custom WithGVRs inputs fail closed instead of guessing
+// a Kind from a plural (ConfigMap/PVC/RBAC names cannot be safely title-cased).
+func coreRepairKind(gvr schema.GroupVersionResource) string {
+	if !slices.Contains(CoreGVRs, gvr) {
+		return ""
+	}
+	return map[string]string{
+		"namespaces": "Namespace", "pods": "Pod", "services": "Service", "configmaps": "ConfigMap",
+		"persistentvolumeclaims": "PersistentVolumeClaim", "serviceaccounts": "ServiceAccount",
+		"deployments": "Deployment", "replicasets": "ReplicaSet", "statefulsets": "StatefulSet", "daemonsets": "DaemonSet",
+		"jobs": "Job", "cronjobs": "CronJob", "horizontalpodautoscalers": "HorizontalPodAutoscaler",
+		"ingresses": "Ingress", "networkpolicies": "NetworkPolicy", "gateways": "Gateway", "httproutes": "HTTPRoute",
+		"roles": "Role", "rolebindings": "RoleBinding", "clusterroles": "ClusterRole", "clusterrolebindings": "ClusterRoleBinding",
+		"clusterpolicies": "ClusterPolicy", "policies": "Policy", "policyreports": "PolicyReport", "clusterpolicyreports": "ClusterPolicyReport",
+	}[gvr.Resource]
+}
+
 // optionalGroups is the set of API groups whose absence on the cluster
 // is expected (typically CRD-installed). Discovery checks these and
 // drops missing GVRs rather than failing startup.

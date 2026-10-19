@@ -80,9 +80,24 @@ or operator-absence assertion.
 
 Removing a member or shutting down cancels all of its collectors and waits for
 in-flight dynamic callbacks before the name can be reattached. Other members
-continue independently. CRD version equivalence, missed-delete repair, complete
-collector coverage and per-member history continuity are not established by
-this collection feature. Frozen-candidate deployment validation remains pending.
+continue independently.
+
+Active canonical core, selected CRD and generated Constraint endpoints also run
+background missed-delete repair after initial handler delivery and every five
+minutes. One round at a time per member uses fresh paginated lists, a ten-second
+deadline, page size 500, a 10,000-object bound and at most 32 pages. It requires
+the same list permission as collection and issues no Secret request. Only a
+complete valid list can authorize removal of a missing resource in that member
+and exact Kind/API version. Atomic UID/resourceVersion checks preserve graph
+rows that changed during the round; deletion cascades incident edges. Failed
+rounds retain coverage gaps and later rounds can repair remaining rows without
+clearing earlier evidence of a gap.
+
+Different API versions, unregistered/retired endpoints, unversioned rows and
+reference-only nodes are retained. Stopping a member or removing a CRD/template
+does not itself sweep its instances. CRD version equivalence, complete collector
+coverage, member history continuity and real deployment acceptance remain open.
+Frozen-candidate deployment validation remains pending.
 
 ## RBAC visibility (F-206)
 

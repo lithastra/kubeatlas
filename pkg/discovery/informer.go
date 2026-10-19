@@ -104,6 +104,7 @@ type InformerManager struct {
 	resyncPeriod       time.Duration
 	coverage           *operations.CoverageTracker
 	coverageSession    *operations.CoverageSession
+	memberRepair       *MemberRepair
 
 	// Remember only successful resource writes, not merely informer delivery.
 	// Each GVR's handler is serial, but different GVRs run concurrently.
@@ -204,6 +205,11 @@ func WithAPIInventory(dc k8sdiscovery.DiscoveryInterface) InformerOption {
 	return func(m *InformerManager) { m.inventoryDiscovery = dc }
 }
 
+// WithMemberRepair enables bounded reconciliation for active member endpoints.
+func WithMemberRepair(repair *MemberRepair) InformerOption {
+	return func(m *InformerManager) { m.memberRepair = repair }
+}
+
 // NewInformerManager constructs an InformerManager using the dynamic
 // client from c. Pass options to override defaults.
 func NewInformerManager(dyn dynamic.Interface, store graph.GraphStore, opts ...InformerOption) *InformerManager {
@@ -247,7 +253,8 @@ func (c *Client) Dynamic() dynamic.Interface {
 // until ctx is done. Returns ctx.Err() on shutdown.
 func (m *InformerManager) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer func() { cancel(); m.factory.Shutdown() }()
+	var repairs sync.WaitGroup
+	defer func() { cancel(); m.factory.Shutdown(); repairs.Wait() }()
 	if m.coverage != nil && m.inventoryDiscovery != nil {
 		done := make(chan struct{})
 		go func() { runAPIInventory(ctx, m.inventoryDiscovery, m.coverage, m.clusterID); close(done) }()
@@ -287,6 +294,19 @@ func (m *InformerManager) Start(ctx context.Context) error {
 			return fmt.Errorf("register handler for %s: %w", gvr, err)
 		}
 		registrations[gvr] = registration
+		if m.memberRepair != nil {
+			repairs.Add(1)
+			go func() {
+				defer repairs.Done()
+				m.memberRepair.Run(ctx, gvr, coreRepairKind(gvr), m.coverageSession, registration.HasSynced, func(r graph.Resource) {
+					m.persistedMu.Lock()
+					delete(m.persisted, resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name})
+					m.persistedMu.Unlock()
+					m.snapshotSink.Enqueue(graph.ResourceEvent{ClusterID: r.ClusterID, Namespace: r.Namespace, Kind: r.Kind, Name: r.Name, UID: string(r.UID), ResourceVersion: r.ResourceVersion, EventType: graph.EventTypeDelete})
+					m.broadcaster("delete", r.Namespace, r.Kind, r.Name)
+				})
+			}()
+		}
 	}
 
 	m.factory.Start(ctx.Done())
@@ -302,6 +322,9 @@ func (m *InformerManager) Start(ctx context.Context) error {
 	syncs := m.factory.WaitForCacheSync(ctx.Done())
 	for gvr, ok := range syncs {
 		if !ok {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			return fmt.Errorf("informer for %s failed to sync", gvr)
 		}
 	}
@@ -330,6 +353,13 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	}
 	r := UnstructuredToResource(u, m.kindFor(gvr, u))
 	r.ClusterID = m.clusterID
+	if m.memberRepair != nil {
+		unlock, err := m.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
 	key := resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name}
 	version := resourceWriteVersion{uid: string(r.UID), resourceVersion: r.ResourceVersion}
 	versioned := version.uid != "" && version.resourceVersion != ""
@@ -427,9 +457,17 @@ func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVers
 	if m.clusterID != "" {
 		id = m.clusterID + ":" + id
 	}
+	if m.memberRepair != nil {
+		unlock, err := m.memberRepair.LockResource(ctx, id)
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
 	if err := m.store.DeleteResource(ctx, id); err != nil {
 		m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		slog.Warn("delete resource failed", "id", id, "err", err)
+		return
 	}
 
 	// Record the delete in the F-111 snapshot stream. Data is nil —

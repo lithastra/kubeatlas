@@ -110,10 +110,13 @@ using each member's own kubeconfig and retain member-scoped cached evidence.
 Member removal and shutdown join the worker before allowing same-name
 replacement. Member bundles also run scoped CRD/Gatekeeper collectors, with
 member-prefixed resource/edge identities, isolated source evidence, scoped rule
-caches and extractor reads, and joined dynamic callback shutdown. Complete
-collector coverage, version equivalence, missed-delete repair and per-member
-history qualification remain pending; registered types and inventory enumeration
-do not close those gaps.
+caches and extractor reads, and joined dynamic callback shutdown. Active member
+endpoints now run bounded fresh-list reconciliation for missed deletes, with
+atomic UID/version-checked removal and incident-edge cascading. Failed or partial
+lists never authorize deletion, and successful repair does not reset historical
+coverage gaps. Complete collector coverage, version equivalence, cleanup across
+retired endpoints/API versions and per-member history qualification remain
+pending; registered types and inventory enumeration do not close those gaps.
 The first Web slice now connects resource-detail and concrete topology nodes to
 the server impact API, with explicit dependents/dependencies, bounded depth,
 server counts and path highlights, separate authorization, and observation/history

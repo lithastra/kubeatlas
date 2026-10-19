@@ -17,6 +17,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -65,6 +66,8 @@ type Discovery struct {
 	factory         dynamicinformer.DynamicSharedInformerFactory
 	pollEvery       time.Duration
 	clusterID       string
+	memberRepair    *discovery.MemberRepair
+	repairs         sync.WaitGroup
 	coverage        *operations.CoverageTracker
 	coverageSession *operations.CoverageSession
 	metaCoverage    *operations.CoverageSession
@@ -82,6 +85,11 @@ func WithCoverage(tracker *operations.CoverageTracker) Option {
 // WithClusterID binds constraint identities and source evidence to one member.
 func WithClusterID(cluster string) Option {
 	return func(d *Discovery) { d.clusterID = cluster }
+}
+
+// WithMemberRepair supplies the owning member's bounded repair worker.
+func WithMemberRepair(repair *discovery.MemberRepair) Option {
+	return func(d *Discovery) { d.memberRepair = repair }
 }
 
 // WithLogger swaps the structured logger.
@@ -154,7 +162,7 @@ func (d *Discovery) Start(ctx context.Context) error {
 	managerDone := make(chan struct{})
 	var managerErr error
 	go func() { managerErr = d.dynMgr.Start(ctx); close(managerDone) }()
-	defer func() { cancel(); <-managerDone }()
+	defer func() { cancel(); <-managerDone; d.repairs.Wait() }()
 	for !d.dynMgr.Started() {
 		select {
 		case <-managerDone:
@@ -275,6 +283,15 @@ func (d *Discovery) onTemplate(ctx context.Context, obj any) {
 		if d.coverageSession != nil && coverage == nil {
 			d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
 		}
+		if d.memberRepair != nil {
+			d.repairs.Add(1)
+			go func() {
+				defer d.repairs.Done()
+				// Wait for the dynamic manager to publish this registration;
+				// build runs under its lock before the informer is installed.
+				d.memberRepair.Run(child, gvr, kind, coverage, func() bool { return d.dynMgr.HasSynced(gvr) }, nil)
+			}()
+		}
 		return d.constraintHandler(child, kind, coverage)
 	}); err != nil {
 		d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
@@ -322,6 +339,13 @@ func (d *Discovery) handleConstraint(ctx context.Context, kind string, obj any, 
 	}
 	r := discovery.UnstructuredToResource(u, kind)
 	r.ClusterID = d.clusterID
+	if d.memberRepair != nil {
+		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
 	if err := d.store.UpsertResource(ctx, r); err != nil {
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: upsert constraint", "id", r.ID(), "err", err)
@@ -360,6 +384,13 @@ func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj
 	}
 	r := discovery.UnstructuredToResource(u, kind)
 	r.ClusterID = d.clusterID
+	if d.memberRepair != nil {
+		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
 	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: delete constraint", "id", r.ID(), "err", err)

@@ -151,16 +151,52 @@ func (s *Store) UpsertResource(ctx context.Context, r graph.Resource) error {
 // partial failure cannot leak orphan edges in either backend.
 func (s *Store) DeleteResource(ctx context.Context, id string) error {
 	return s.withAGETx(ctx, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx,
-			`DELETE FROM public.edges WHERE from_id = $1 OR to_id = $1`, id); err != nil {
-			return fmt.Errorf("postgres.DeleteResource: cascade edges %s: %w", id, err)
-		}
-		if _, err := tx.Exec(ctx,
-			`DELETE FROM public.resources WHERE id = $1`, id); err != nil {
-			return fmt.Errorf("postgres.DeleteResource: row %s: %w", id, err)
-		}
-		return deleteVertex(ctx, tx, id)
+		return deleteResourceTx(ctx, tx, id)
 	})
+}
+
+func deleteResourceTx(ctx context.Context, tx pgx.Tx, id string) error {
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM public.edges WHERE from_id = $1 OR to_id = $1`, id); err != nil {
+		return fmt.Errorf("postgres.DeleteResource: cascade edges %s: %w", id, err)
+	}
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM public.resources WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("postgres.DeleteResource: row %s: %w", id, err)
+	}
+	return deleteVertex(ctx, tx, id)
+}
+
+// DeleteResourceVersion locks the row before checking the observation identity;
+// the row, SQL edges and AGE vertex are removed in the same transaction.
+func (s *Store) DeleteResourceVersion(ctx context.Context, expected graph.Resource) (bool, error) {
+	if !graph.ValidResourceVersion(expected) {
+		return false, errors.New("invalid resource version for conditional deletion")
+	}
+	deleted := false
+	err := s.withAGETx(ctx, func(tx pgx.Tx) error {
+		var body []byte
+		err := tx.QueryRow(ctx, `SELECT data FROM public.resources WHERE id = $1 FOR UPDATE`, expected.ID()).Scan(&body)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("postgres.DeleteResourceVersion: read: %w", err)
+		}
+		var current storageBlob
+		if err := json.Unmarshal(body, &current); err != nil {
+			return fmt.Errorf("postgres.DeleteResourceVersion: decode: %w", err)
+		}
+		if !graph.SameResourceVersion(current.Resource, expected) {
+			return nil
+		}
+		if err := deleteResourceTx(ctx, tx, expected.ID()); err != nil {
+			return err
+		}
+		deleted = true
+		return nil
+	})
+	return deleted && err == nil, err
 }
 
 // UpsertEdge inserts or replaces the edge identified by
