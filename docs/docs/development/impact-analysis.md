@@ -1103,9 +1103,51 @@ one advertised inventory and one denied member, cached reads without new
 requests, no object/Secret requests, management/hidden-scope isolation,
 removal and reattachment, failed/unsupported discovery, in-flight cancellation,
 and same-name exclusion while workers drain. These are local implementation
-tests, not real-cluster or M4 acceptance. Per-member CRD/Gatekeeper collectors,
-complete collector coverage, version equivalence, and per-member history
-qualification remain open.
+tests, not real-cluster or M4 acceptance. This slice adds API inventory only;
+the next follow-up adds member CRD/Gatekeeper collection. Complete collector
+coverage, version equivalence, and per-member history qualification remain open.
+
+### M2 member-scoped CRD and Gatekeeper collection follow-up
+
+Production federation now gives each member one owned bundle containing its
+core/inventory informer, CRD discovery, and Gatekeeper discovery. All three use
+the member's own dynamic/discovery clients. CRD instances and constraints carry
+the member cluster ID before persistence or deletion, and CRD and Gatekeeper
+source evidence remains independent under that same member scope.
+
+The CRD collector retains served-version selection, CRD UID/shape reconciliation,
+per-type observation tokens and existing resource/edge retention semantics.
+Rego results are copied into the member's identity space; explicitly foreign
+edge endpoints are rejected with an extraction gap. The shared evaluation
+cache includes cluster ID as well as UID, resourceVersion and rule hash, so
+matching UID/version strings in different members cannot reuse one result.
+
+Gatekeeper uses that member's supported-template discovery check and existing
+dynamic Constraint registration. Extractor reads are restricted to the owning
+member even if an extractor omits or changes its filter; emitted edges must
+also stay in that member. Discovery absence/denial, failed list/watch, processing,
+extraction and write gaps keep their existing explicit qualifications. A
+permission failure does not become evidence of absence or stop another member.
+The worker never requests Secret objects. Existing loaded rule packs remain the
+configured startup set; this change does not add per-member pack acquisition.
+
+Member removal, parent cancellation and shutdown cancel and join the bundle's
+collectors, including running and retired dynamic informer callbacks. The member
+name is not available for reattachment until those callbacks finish. An early
+collector exit cancels and joins its own bundle and is recorded as a member
+error; it does not cancel sibling members. Shared dynamic metrics now sum the
+registered informers across members instead of being overwritten by each manager.
+No new discovery request enters the impact handler, and no v1alpha1 or impact
+wire-schema change is made.
+
+Portable race tests cover two same-name member datasets, CRD and Constraint
+identities/edges/deletes, independent source evidence, denied member discovery
+and lists, no Secret requests, scoped extractor reads, rejected foreign edges,
+cache separation, aggregate metrics and blocked-callback shutdown. The production
+member factory is exercised with fake Kubernetes clients, not a live cluster.
+These checks do not establish complete collector coverage, served-version
+equivalence, Gatekeeper policy effectiveness, missed-delete repair, member
+history continuity, or real-deployment/M4 acceptance.
 
 ### M3 server-backed Web analysis: first slice
 
@@ -1397,10 +1439,10 @@ under its configured external authentication, including allowed/denied member
 scope, expected-UID replacement, known references, initial sync and list/watch
 failure qualification on Tier 1 and Tier 2. Frozen-candidate deployment validation
 remains pending. API inventory presentation does not close complete collector
-coverage, version equivalence, or per-member history/dynamic-collector gaps.
-Federated members now run their own bounded API metadata worker as described
-above; failed, denied, stale, unsupported or limited discovery remains qualified
-and cannot prove absence.
+coverage, version equivalence, missed-delete repair, or per-member history
+qualification. Federated members run their own bounded inventory, CRD and
+Gatekeeper workers as described above; failed, denied, stale, unsupported or
+limited evidence remains qualified and cannot prove absence.
 
 M4 verifies upgrade from the latest v1.6 patch, frozen supported Kubernetes
 versions, existing API compatibility, Secret sentinel checks, bounded query

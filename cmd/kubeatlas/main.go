@@ -76,9 +76,8 @@ func (s *multiclusterStarter) Start(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// noopStarter parks until ctx is cancelled. Used in place of
-// crd.Discovery in multi-cluster mode, where per-cluster CRD discovery
-// is deferred to a future task (P3-T21 focus: core GVR informers).
+// noopStarter parks until ctx is cancelled. Federation starts CRD/Gatekeeper
+// collectors inside each member bundle instead of these standalone slots.
 type noopStarter struct{}
 
 func (noopStarter) Start(ctx context.Context) error {
@@ -814,12 +813,10 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		}
 		mcKubeconfigs = kubeconfigs
 		mcMgr = multicluster.New(graphStore,
-			multicluster.WithDiscoveryFactory(multicluster.DefaultDiscoveryInformerFactory(baseInformerOpts...)),
+			multicluster.WithDiscoveryFactory(memberInformerFactory(baseInformerOpts, operationsMonitor.Coverage(), regoEngine, extractor.Default(), dynMetrics)),
 		)
-		// CRD discovery and Gatekeeper discovery are per-cluster work
-		// that doesn't fit the single-shared-informer model. P3-T21
-		// ships the core-GVR federation; per-cluster CRD/policy
-		// discovery is a follow-up.
+		// Each member bundle owns its core, CRD and Gatekeeper collectors.
+		// The two standalone component slots remain parked in federation mode.
 		crdStarter = noopStarter{}
 		gkStarter = noopStarter{}
 		// Report the live attached-cluster count in telemetry.

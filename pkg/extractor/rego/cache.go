@@ -14,7 +14,7 @@ import (
 )
 
 // defaultCacheSize is the LRU cap. Sized to comfortably hold the
-// (UID, resourceVersion, ruleHash) entries for a 5K-resource cluster
+// (cluster, UID, resourceVersion, ruleHash) entries for a 5K-resource cluster
 // times a handful of rules. Operators can override via Engine option
 // (P2-T9 step 3 keeps this small and configurable rather than
 // unbounded — guide §1.7 perf budget assumes warm cache, never
@@ -35,6 +35,7 @@ const defaultCacheSize = 10000
 // resourceVersion would mistakenly hit. K8s guarantees
 // resourceVersion is monotonic on real change, so we trust it.)
 type CacheKey struct {
+	ClusterID       string
 	UID             string
 	ResourceVersion string
 	RuleHash        string

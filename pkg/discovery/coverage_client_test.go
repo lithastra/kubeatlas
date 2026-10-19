@@ -378,3 +378,42 @@ func TestInformerCoverageProcessingAndPersistenceGaps(t *testing.T) {
 		})
 	}
 }
+
+func TestMemberCoreShutdownJoinsBlockedGraphCallback(t *testing.T) {
+	object := resyncObject("ConfigMap", "blocked-member", "uid", "1")
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{configMapGVR: "ConfigMapList"}, object)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once atomic.Bool
+	store := &coverageBlockingStore{GraphStore: memory.New(), before: func() {
+		if once.CompareAndSwap(false, true) {
+			close(entered)
+			<-release
+		}
+	}}
+	manager := NewInformerManager(client, store, WithClusterID("east"), WithGVRs([]schema.GroupVersionResource{configMapGVR}))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- manager.Start(ctx) }()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("core callback missing")
+	}
+	cancel()
+	select {
+	case <-done:
+		close(release)
+		t.Fatal("member core returned before callback stopped")
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("cancelled core returned success")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("core callback did not join")
+	}
+}

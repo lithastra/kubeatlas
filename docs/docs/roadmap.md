@@ -108,9 +108,12 @@ available without claiming version equivalence or missed-delete repair.
 Federated member informers now run the same bounded API inventory worker
 using each member's own kubeconfig and retain member-scoped cached evidence.
 Member removal and shutdown join the worker before allowing same-name
-replacement. Complete collector coverage, version equivalence, per-member
-CRD/Gatekeeper discovery and history qualification remain pending; healthy
-registered types and inventory enumeration do not close those gaps.
+replacement. Member bundles also run scoped CRD/Gatekeeper collectors, with
+member-prefixed resource/edge identities, isolated source evidence, scoped rule
+caches and extractor reads, and joined dynamic callback shutdown. Complete
+collector coverage, version equivalence, missed-delete repair and per-member
+history qualification remain pending; registered types and inventory enumeration
+do not close those gaps.
 The first Web slice now connects resource-detail and concrete topology nodes to
 the server impact API, with explicit dependents/dependencies, bounded depth,
 server counts and path highlights, separate authorization, and observation/history

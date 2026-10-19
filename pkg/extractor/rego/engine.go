@@ -305,6 +305,7 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 		}
 
 		key := CacheKey{
+			ClusterID:       r.ClusterID,
 			UID:             string(r.UID),
 			ResourceVersion: r.ResourceVersion,
 			RuleHash:        cm.meta.RuleHash,

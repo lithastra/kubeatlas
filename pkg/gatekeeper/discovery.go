@@ -64,6 +64,7 @@ type Discovery struct {
 	logger          *slog.Logger
 	factory         dynamicinformer.DynamicSharedInformerFactory
 	pollEvery       time.Duration
+	clusterID       string
 	coverage        *operations.CoverageTracker
 	coverageSession *operations.CoverageSession
 	metaCoverage    *operations.CoverageSession
@@ -72,10 +73,15 @@ type Discovery struct {
 // Option configures Discovery.
 type Option func(*Discovery)
 
-// WithCoverage records this standalone extraction pipeline separately from CRD
+// WithCoverage records this extraction pipeline separately from CRD
 // discovery, even where they happen to observe the same Kubernetes objects.
 func WithCoverage(tracker *operations.CoverageTracker) Option {
 	return func(d *Discovery) { d.coverage = tracker }
+}
+
+// WithClusterID binds constraint identities and source evidence to one member.
+func WithClusterID(cluster string) Option {
+	return func(d *Discovery) { d.clusterID = cluster }
 }
 
 // WithLogger swaps the structured logger.
@@ -130,7 +136,7 @@ func (d *Discovery) Start(ctx context.Context) error {
 	defer cancel()
 	if d.coverage != nil {
 		var err error
-		d.coverageSession, err = d.coverage.BeginSource("", operations.CoverageSourceGatekeeper, time.Now())
+		d.coverageSession, err = d.coverage.BeginSource(d.clusterID, operations.CoverageSourceGatekeeper, time.Now())
 		if err != nil {
 			return err
 		}
@@ -180,6 +186,7 @@ func (d *Discovery) Start(ctx context.Context) error {
 		return err
 	}
 
+	defer func() { cancel(); d.factory.Shutdown() }()
 	d.factory.Start(ctx.Done())
 	if d.metaCoverage != nil {
 		go func() {
@@ -314,12 +321,16 @@ func (d *Discovery) handleConstraint(ctx context.Context, kind string, obj any, 
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
+	r.ClusterID = d.clusterID
 	if err := d.store.UpsertResource(ctx, r); err != nil {
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: upsert constraint", "id", r.ID(), "err", err)
 		return
 	}
-	edges, err := d.extractor.ExtractAll(ctx, r, d.store)
+	edges, err := d.extractor.ExtractAll(ctx, r, memberLister{store: d.store, cluster: d.clusterID})
+	if err == nil {
+		edges, err = discovery.ScopeEdgesToCluster(edges, d.clusterID)
+	}
 	if err != nil {
 		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
 		d.logger.Warn("gatekeeper: extract constraint edges", "id", r.ID(), "err", err)
@@ -348,6 +359,7 @@ func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
+	r.ClusterID = d.clusterID
 	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: delete constraint", "id", r.ID(), "err", err)
@@ -383,4 +395,18 @@ func toUnstructured(obj any) (*unstructured.Unstructured, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// A custom extractor cannot broaden its read scope by omitting/changing a filter.
+type memberLister struct {
+	store   graph.GraphStore
+	cluster string
+}
+
+func (l memberLister) ListResources(ctx context.Context, filter graph.Filter) ([]graph.Resource, error) {
+	if l.cluster == "" {
+		return l.store.ListResources(ctx, filter)
+	}
+	filter.ClusterID = l.cluster
+	return l.store.ListResourcesInCluster(ctx, l.cluster, filter)
 }

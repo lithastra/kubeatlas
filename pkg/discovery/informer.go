@@ -247,7 +247,7 @@ func (c *Client) Dynamic() dynamic.Interface {
 // until ctx is done. Returns ctx.Err() on shutdown.
 func (m *InformerManager) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	defer func() { cancel(); m.factory.Shutdown() }()
 	if m.coverage != nil && m.inventoryDiscovery != nil {
 		done := make(chan struct{})
 		go func() { runAPIInventory(ctx, m.inventoryDiscovery, m.coverage, m.clusterID); close(done) }()

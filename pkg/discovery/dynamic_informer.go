@@ -41,6 +41,7 @@ type DynamicInformerManager struct {
 	logger  *slog.Logger
 	metrics *DynamicMetrics
 
+	runs      sync.WaitGroup
 	mu        sync.RWMutex
 	baseCtx   context.Context
 	started   bool
@@ -175,9 +176,12 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 		return fmt.Errorf("dynamic informer add %s: %w", gvr.String(), err)
 	}
 
-	go informer.Run(informerCtx.Done())
+	m.runs.Add(1)
+	go func() { defer m.runs.Done(); informer.Run(informerCtx.Done()) }()
 	if coverage != nil {
+		m.runs.Add(1)
 		go func() {
+			defer m.runs.Done()
 			if cache.WaitForCacheSync(informerCtx.Done(), registration.HasSynced) {
 				coverage.InitialDeliveryComplete(gvr)
 			}
@@ -185,7 +189,7 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 	}
 
 	m.informers[gvr] = &dynamicHandle{cancel: cancel, synced: registration.HasSynced, coverage: coverage}
-	m.metrics.setActive(len(m.informers))
+	m.metrics.addActive(1)
 	m.logger.Info("dynamic informer registered",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource))
 	return nil
@@ -204,7 +208,7 @@ func (m *DynamicInformerManager) Remove(gvr schema.GroupVersionResource) {
 	delete(m.informers, gvr)
 	h.cancel()
 	h.coverage.Stop(time.Now())
-	m.metrics.setActive(len(m.informers))
+	m.metrics.addActive(-1)
 	m.logger.Info("dynamic informer removed",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource))
 }
@@ -240,14 +244,16 @@ func (m *DynamicInformerManager) ActiveGVRs() []schema.GroupVersionResource {
 // removeAll cancels every informer. Called on Start's ctx cancellation.
 func (m *DynamicInformerManager) removeAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	active := len(m.informers)
 	for gvr, h := range m.informers {
 		h.cancel()
 		h.coverage.Stop(time.Now())
 		delete(m.informers, gvr)
 	}
 	m.started = false
-	m.metrics.setActive(0)
+	m.metrics.addActive(-active)
+	m.mu.Unlock()
+	m.runs.Wait()
 }
 
 // DynamicMetrics holds the dynamic-informer counters surfaced on
@@ -261,7 +267,7 @@ type DynamicMetrics struct {
 // NewDynamicMetrics returns a zeroed metrics sink.
 func NewDynamicMetrics() *DynamicMetrics { return &DynamicMetrics{} }
 
-func (m *DynamicMetrics) setActive(n int) { m.active.Store(int64(n)) }
+func (m *DynamicMetrics) addActive(n int) { m.active.Add(int64(n)) }
 func (m *DynamicMetrics) incErrors()      { m.errors.Add(1) }
 
 // DynamicMetricsSnapshot is an immutable read of the counters.

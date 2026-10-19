@@ -52,14 +52,37 @@ forbidden or failed discovery round is shown as such; it does not imply an
 operator is absent or that a resource can be changed safely. Discovery metadata
 is not proof of list/watch permission, successful observation, or effective
 RBAC permissions. No Secret objects are requested by this worker, and no
-additional collection permissions are needed for inventory. Per-member
-CRD/Gatekeeper collectors and history qualification remain separate work.
+additional collection permissions are needed for inventory. CRD/Gatekeeper
+object collection has separate read-permission requirements described below.
 
 Rounds retain the ten-second deadline, five-minute polling interval,
 ten-minute expiry, and bounded endpoint inventory. Removing a member or
 shutting down cancels and joins its worker; reattaching the name starts a new
 inventory generation. v1.7 is unreleased and real deployment acceptance remains
 pending.
+
+## Member CRD and Gatekeeper collection (v1.7 development)
+
+Each member bundle also runs CRD and Gatekeeper discovery using that member's
+clients. Custom-resource instances and Constraints, their derived edges, and
+source-coverage records retain the member cluster ID. Identical names in two
+members do not share a graph identity or a Rego evaluation-cache entry.
+
+Member credentials need read-only list/watch access to
+`apiextensions.k8s.io/v1/customresourcedefinitions` and the custom-resource
+endpoints being collected. Gatekeeper additionally needs discovery access to
+its supported template API and list/watch access to
+`templates.gatekeeper.sh/v1/constrainttemplates` and generated
+`constraints.gatekeeper.sh/v1beta1` Constraint types. This feature does not
+grant permissions or read Secret objects. A denied or unavailable endpoint
+retains explicit discovery/list/watch coverage gaps; it is not a safe-change
+or operator-absence assertion.
+
+Removing a member or shutting down cancels all of its collectors and waits for
+in-flight dynamic callbacks before the name can be reattached. Other members
+continue independently. CRD version equivalence, missed-delete repair, complete
+collector coverage and per-member history continuity are not established by
+this collection feature. Frozen-candidate deployment validation remains pending.
 
 ## RBAC visibility (F-206)
 

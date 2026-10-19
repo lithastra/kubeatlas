@@ -58,6 +58,8 @@ type Discovery struct {
 	store           graph.GraphStore
 	rego            RegoEvaluator
 	logger          *slog.Logger
+	clusterID       string
+	runs            sync.WaitGroup
 	coverage        *operations.CoverageTracker
 	coverageSession *operations.CoverageSession
 	metaCoverage    *operations.CoverageSession
@@ -97,10 +99,15 @@ type informerEntry struct {
 // option pattern as pkg/discovery.InformerManager.
 type Option func(*Discovery)
 
-// WithCoverage supplies standalone CRD-source evidence, independent of core
-// informers. Federation does not run this collector or infer member coverage.
+// WithCoverage supplies CRD-source evidence independently of core informers.
 func WithCoverage(tracker *operations.CoverageTracker) Option {
 	return func(d *Discovery) { d.coverage = tracker }
+}
+
+// WithClusterID binds resources, rule edges and source evidence to one member.
+// The empty default preserves standalone IDs and coverage.
+func WithClusterID(cluster string) Option {
+	return func(d *Discovery) { d.clusterID = cluster }
 }
 
 // WithRegoEvaluator wires an evaluator. Without it, CRD events still
@@ -160,15 +167,23 @@ func (d *Discovery) Start(ctx context.Context) error {
 		return errors.New("crd.Discovery.Start: nil store")
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer func() {
+		cancel()
+		if d.factory != nil {
+			d.factory.Shutdown()
+		}
+		d.shutdown()
+		d.coverageSession.Stop(time.Now())
+	}()
 	if d.coverage != nil {
 		var err error
-		d.coverageSession, err = d.coverage.BeginSource("", operations.CoverageSourceCRD, time.Now())
+		d.coverageSession, err = d.coverage.BeginSource(d.clusterID, operations.CoverageSourceCRD, time.Now())
 		if err != nil {
 			return err
 		}
 		d.metaCoverage = d.beginCoverageType(crdGVR)
 	}
-	defer func() { d.shutdown(); d.coverageSession.Stop(time.Now()) }()
 	d.factory = dynamicinformer.NewDynamicSharedInformerFactory(discovery.ObserveCoverageClient(d.dyn, d.metaCoverage), defaultResyncPeriod)
 
 	metaInformer := d.factory.ForResource(crdGVR).Informer()
@@ -214,10 +229,11 @@ func (d *Discovery) beginCoverageType(gvr schema.GroupVersionResource) *operatio
 // driven by the parent ctx and will exit on its own.
 func (d *Discovery) shutdown() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	for name := range d.informers {
 		d.stopLocked(name)
 	}
+	d.mu.Unlock()
+	d.runs.Wait()
 }
 
 // onCRDAdd reconciles the selection from the ordered metadata informer stream.
@@ -315,7 +331,9 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 
 	d.families[identity.name] = family
 	family.refs++
+	d.runs.Add(1)
 	go func() {
+		defer d.runs.Done()
 		// Run waits for the handler processor, including in-flight callbacks.
 		informer.Run(informerCtx.Done())
 		d.mu.Lock()
@@ -326,7 +344,9 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 		}
 	}()
 	if coverage != nil {
+		d.runs.Add(1)
 		go func() {
+			defer d.runs.Done()
 			if cache.WaitForCacheSync(informerCtx.Done(), registration.HasSynced) {
 				coverage.InitialDeliveryComplete(gvr)
 			}
@@ -386,6 +406,7 @@ func (d *Discovery) handleUpsert(ctx context.Context, gvr schema.GroupVersionRes
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
+	r.ClusterID = d.clusterID
 	if err := d.store.UpsertResource(ctx, r); err != nil {
 		if ctx.Err() != nil {
 			return
@@ -400,6 +421,9 @@ func (d *Discovery) handleUpsert(ctx context.Context, gvr schema.GroupVersionRes
 		return
 	}
 	edges, err := d.rego.EvaluateForResource(ctx, r)
+	if err == nil {
+		edges, err = discovery.ScopeEdgesToCluster(edges, d.clusterID)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return
@@ -439,6 +463,7 @@ func (d *Discovery) handleDelete(ctx context.Context, gvr schema.GroupVersionRes
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
+	r.ClusterID = d.clusterID
 	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
 		if ctx.Err() != nil {
 			return
