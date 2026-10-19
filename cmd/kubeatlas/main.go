@@ -814,7 +814,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		}
 		mcKubeconfigs = kubeconfigs
 		mcMgr = multicluster.New(graphStore,
-			multicluster.WithFactory(multicluster.DefaultInformerFactory(baseInformerOpts...)),
+			multicluster.WithDiscoveryFactory(multicluster.DefaultDiscoveryInformerFactory(baseInformerOpts...)),
 		)
 		// CRD discovery and Gatekeeper discovery are per-cluster work
 		// that doesn't fit the single-shared-informer model. P3-T21

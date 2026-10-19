@@ -936,9 +936,9 @@ stability. The built-in authorization facet keeps its independent requirements.
 Provider inventory identity, times, vocabulary, shape, bounds, uniqueness, and
 ownership are validated before graph reads and disclosure. The response uses
 the existing authorized cluster scope, five-second request budget, and combined
-2 MiB cap. The production wiring currently supplies standalone inventory only;
-federated members keep unavailable inventory instead of using the default
-cluster's APIs. Injected clients lacking contextual discovery stay unknown.
+2 MiB cap. This initial slice supplied standalone inventory only; the member
+worker follow-up below adds production federation wiring. Injected clients
+lacking contextual discovery stay unknown.
 
 Portable tests exercise the real client-go HTTP discovery path, cancellation,
 aggregated failures, the core/v1 404 fallback, malformed metadata, all served
@@ -1073,6 +1073,39 @@ Secret exclusion, pruning, and returned ownership. Disposable PostgreSQL tests
 run the aggregate under a role allowed to read only timestamps, scope, and kind,
 with no payload/identity/count access. These checks establish retained-metadata
 behavior, not real-cluster continuity, recovery, performance, or release acceptance.
+
+### M2 member-scoped API inventory follow-up
+
+The production federation path now creates a discovery client from each
+member's own kubeconfig, alongside its dynamic client. Each member informer
+owns the existing bounded API metadata worker and records inventory under its
+operator-selected cluster ID. It never substitutes the management cluster's
+inventory. Impact requests continue to authorize member scope before reading
+cached evidence; no discovery is added to the request path or wire schema.
+
+The worker retains the standalone limits: a ten-second round, five-minute
+polling interval, ten-minute evidence expiry, at most 64 group versions and
+256 endpoint descriptors. It reads discovery metadata only, never Secret
+objects or other object collections. A member's discovery denial or failure
+records its own sanitized qualification without stopping sibling informers.
+Missing contextual discovery remains unknown. Discovery success does not
+clear list/watch, handler, persistence, or other observation gaps.
+
+Removing a member, stopping the manager, or canceling its parent context
+cancels and joins the member worker before its informer returns. Removal and
+shutdown retain the member name until workers finish, preventing an old
+inventory worker from overlapping a same-name replacement. Reattachment then
+starts a new inventory generation. Existing dynamic-only factory users remain
+supported and do not construct a discovery client.
+
+Portable race tests exercise two member-specific loopback discovery endpoints,
+one advertised inventory and one denied member, cached reads without new
+requests, no object/Secret requests, management/hidden-scope isolation,
+removal and reattachment, failed/unsupported discovery, in-flight cancellation,
+and same-name exclusion while workers drain. These are local implementation
+tests, not real-cluster or M4 acceptance. Per-member CRD/Gatekeeper collectors,
+complete collector coverage, version equivalence, and per-member history
+qualification remain open.
 
 ### M3 server-backed Web analysis: first slice
 
@@ -1364,9 +1397,10 @@ under its configured external authentication, including allowed/denied member
 scope, expected-UID replacement, known references, initial sync and list/watch
 failure qualification on Tier 1 and Tier 2. Frozen-candidate deployment validation
 remains pending. API inventory presentation does not close complete collector
-coverage, version equivalence, or per-member history/discovery gaps. Federated
-members currently have no production inventory worker, so their inventory stays
-unavailable. Discovery errors, stale evidence and limits cannot prove absence.
+coverage, version equivalence, or per-member history/dynamic-collector gaps.
+Federated members now run their own bounded API metadata worker as described
+above; failed, denied, stale, unsupported or limited discovery remains qualified
+and cannot prove absence.
 
 M4 verifies upgrade from the latest v1.6 patch, frozen supported Kubernetes
 versions, existing API compatibility, Secret sentinel checks, bounded query

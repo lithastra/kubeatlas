@@ -39,6 +39,28 @@ The federated surface is served under `/api/v1/federation/*`:
 | `GET /api/v1/federation/clusters` | The attached member clusters. |
 | `GET /api/v1/federation/graph?cluster=a,b` | A merged (or per-cluster, `level=cluster`) view across the named clusters. |
 
+## Impact API inventory (v1.7 development)
+
+In development source, each member informer periodically reads that member's
+API discovery metadata using its own kubeconfig. The impact response includes
+cached, cluster-scoped inventory evidence; **API observation details** in the
+Web result shows its before/after state. These reads run in the background,
+not when a user opens or exports an impact result.
+
+Discovery uses the member credentials' existing discovery permissions. A
+forbidden or failed discovery round is shown as such; it does not imply an
+operator is absent or that a resource can be changed safely. Discovery metadata
+is not proof of list/watch permission, successful observation, or effective
+RBAC permissions. No Secret objects are requested by this worker, and no
+additional collection permissions are needed for inventory. Per-member
+CRD/Gatekeeper collectors and history qualification remain separate work.
+
+Rounds retain the ten-second deadline, five-minute polling interval,
+ten-minute expiry, and bounded endpoint inventory. Removing a member or
+shutting down cancels and joins its worker; reattaching the name starts a new
+inventory generation. v1.7 is unreleased and real deployment acceptance remains
+pending.
+
 ## RBAC visibility (F-206)
 
 By default every caller can see every attached cluster. When you run one

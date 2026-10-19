@@ -105,9 +105,12 @@ absence. CRD registration now follows selected endpoint/kind/scope/UID changes,
 with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
 handoff. Unserved CRDs stop collection; retired evidence and graph data remain
 available without claiming version equivalence or missed-delete repair.
-Complete collector coverage, version equivalence, and per-member
-dynamic/inventory discovery remain pending; healthy registered types do not
-close those gaps.
+Federated member informers now run the same bounded API inventory worker
+using each member's own kubeconfig and retain member-scoped cached evidence.
+Member removal and shutdown join the worker before allowing same-name
+replacement. Complete collector coverage, version equivalence, per-member
+CRD/Gatekeeper discovery and history qualification remain pending; healthy
+registered types and inventory enumeration do not close those gaps.
 The first Web slice now connects resource-detail and concrete topology nodes to
 the server impact API, with explicit dependents/dependencies, bounded depth,
 server counts and path highlights, separate authorization, and observation/history
