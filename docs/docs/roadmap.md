@@ -106,7 +106,11 @@ bounded scoped capabilities; unscoped alpha history aliases reject federation
 access. Snapshot Web views now bind to the selected member, separate caches and
 clear stale results/highlights during scope changes. Read-only `kubeatlas snapshot
 list`/`diff` commands send explicit member scope without retries or API fallback.
-Member-specific marker creation remains pending.
+The internal trigger now creates one member-specific marker from atomic scoped
+stored-graph counts, behind the existing operator boundary and member visibility
+checks. It never retries an unknown write outcome or clears history gaps.
+Member-aware trigger CLI/scheduling, deployed PostgreSQL qualification and M4
+acceptance remain pending.
 The unreleased v1 impact API now authorizes cluster scope before reads and
 combines the evidence under a five-second deadline and 2 MiB response cap.
 Standalone CRD and Gatekeeper discovery now contribute separate bounded

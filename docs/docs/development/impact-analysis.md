@@ -1453,6 +1453,60 @@ production build with synthetic API/WS transport at desktop and mobile sizes;
 it does not establish real-cluster behavior, PostgreSQL deployment performance,
 member-specific marker creation, complete retained history or M4 acceptance.
 
+### M2 internal member marker creation follow-up
+
+`POST /api/_internal/snapshot/trigger` now requires snapshots to be enabled and
+uses the same exact-member visibility/attachment checks as the history reads.
+Federation requires one member, standalone selects only unlabelled graph rows,
+and no all-member fan-out or global fallback occurs. Visibility is not write
+permission: deployment/network controls must continue to restrict this internal
+operator surface. No public write UI, Kubernetes write, or new permission grant
+is introduced.
+
+The optional `SnapshotMarkerRecorder` preserves the GraphStore v2 method set.
+Memory counts and appends under one cancellable write lock. PostgreSQL counts
+and inserts with one parameterized `INSERT ... SELECT` statement, observing one
+MVCC snapshot. The edge join requires both stored endpoint resources in the
+selected member, excluding dangling and cross-member tuples. Counts include
+reference-only graph nodes and do not materialize or return graph payloads. The
+handler echoes the stored receipt's counts and trigger, plus an optional named
+`clusterId`, and rejects invalid or foreign receipts. Existing memory marker-ring
+retention and legacy append semantics are unchanged.
+
+Recording shares the two-request analysis admission, uses a cooperative
+five-second context, and remains synchronous so there is no abandoned mutation
+worker. PostgreSQL also sets a five-second statement timeout; rollback cleanup
+can take up to another second. This is not hard preemption of a faulty provider.
+Errors are closed; expiry or a commit error can leave an unknown write outcome.
+There is no implicit retry or idempotency guarantee, and operator repetition can
+create additional markers. A successful marker does not drain the writer,
+repair missing events, establish complete history, or qualify recovery.
+
+Portable tests cover member/empty-scope counts, dangling and cross-member edges,
+parameterized metacharacter scopes, persisted receipts, concurrent count
+consistency, cancellation without delayed writes, disabled/unsupported stores,
+authorization before attachment/storage, invalid queries, late/foreign receipts,
+closed errors, no retries and shared admission. The PostgreSQL contract test is
+registered but skipped by `-short`; source compilation does not establish its
+runtime SQL behavior or deployed performance. V1 OpenAPI gains the selector and
+optional member echo; the frozen alpha specification stays unchanged.
+
+The legacy trigger CLI and Helm CronJob still lack member selection and bearer
+credential configuration, so federation unscoped requests fail closed. Their
+member-aware extension, actual PostgreSQL execution and M4 cluster acceptance
+remain pending. No real cluster is required for this local source/test slice.
+
+Local validation passed the graph/store/API/history-client short race suites,
+changed-code lint, vet, CGO-free build, frozen-alpha compatibility and docs build.
+The expanded `go test -short -race -p 1 ./...` gate is **not green**: the existing
+`TestMemberFactoryBindsRecordingAndJoinsOnlyOwnPendingWrites` blocked-west failure
+also reproduced using a read-only overlay of pre-change HEAD; the existing
+`TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment` returned ten east
+events instead of eight in the expanded run, but twenty pre-change focused runs
+did not reproduce it. Its cause remains unresolved; this is not evidence that
+the overall v1.7 regression gate or cluster acceptance passed. A full lint run
+also reports an unchanged `QF1001` in `impact_availability.go`.
+
 ### M3 server-backed Web analysis: first slice
 
 The standalone resource-detail page now offers an explicit **Analyze impact**

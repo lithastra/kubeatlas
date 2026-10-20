@@ -212,13 +212,49 @@ a busy budget returns 429. Timed-out workers retain admission until they finish,
 and cannot write late success. Provider errors are closed messages; responses
 use `Cache-Control: no-store` and `Vary: Authorization`.
 
-This change adds read-side scope checks, not member-specific marker creation,
-authorization for the internal trigger endpoint, a complete audit stream or
-verified recovery. Existing unlabelled aggregate markers are excluded from
-named-member results. The internal trigger remains an operator/ClusterIP-only
-surface and does not gain a member selector. The Web and read-only snapshot CLI
-clients described below supply explicit member scope; the trigger command keeps
-its operator-only behavior.
+These read-side checks do not establish a complete audit stream or verified
+recovery. Existing unlabelled aggregate markers are excluded from named-member
+results. The internal marker-creation follow-up below adds a member selector;
+it does not add write authorization to the visibility rules. The Web and
+read-only snapshot CLI clients supply explicit member scope independently of
+that operator-only write path.
+
+## Internal member markers (v1.7 development)
+
+With snapshots enabled, an operator can send one
+`POST /api/_internal/snapshot/trigger?cluster=prod&trigger=manual` to record a
+marker for one attached member. Federation requires exactly one member; there
+is no all-member fan-out. Member visibility is checked before attachment or
+storage access. Standalone requests omit `cluster` and count only unlabelled
+rows, without assigning legacy observations to a member.
+
+Both resource and edge counts and the marker append share one stored-graph
+observation: a critical section in memory, a single SQL statement in PostgreSQL.
+An edge counts only when both resource endpoints exist in the selected member.
+Reference-only graph nodes count as resource rows; Secret values are never read.
+The success response echoes the persisted counts, trigger and duration, plus
+`clusterId` for a named member. The optional store capability must be explicitly
+implemented; there is no fallback to global counters or legacy append.
+
+This route must remain behind the deployment's internal operator access boundary.
+Cluster visibility rules constrain member selection; they **do not grant write or
+administrator permission**. The shared two-request analysis admission returns
+429 when busy. Store work has a cooperative five-second deadline; PostgreSQL also
+sets a five-second statement timeout. Disabled snapshots or an unsupported store
+return 503. Invalid selection returns 400; visibility failures return 401/403 and
+an authorized detached member returns 404. Provider failures return closed 500
+errors; expiry during recording returns 504. Errors or timeouts can leave an
+unknown write outcome, especially around commit. The handler never retries; an
+operator repeat is another write and may create a second marker.
+
+A marker is graph-observation metadata, not a Kubernetes full sync, drained
+history-writer barrier, backup, or recovery point. It does not clear known
+history gaps. The legacy `snapshot trigger` CLI and Helm CronJob do not yet send
+member selection or bearer credentials: their unscoped requests fail closed in
+federation (400, or 401/403 with visibility rules), and remain usable in enabled
+standalone mode. Member-aware CLI/scheduling and real PostgreSQL/cluster
+qualification remain separate work. The v1 OpenAPI advertises the selector and
+optional member echo; the frozen v1alpha1 specification is unchanged.
 
 ## History clients (v1.7 development)
 
@@ -268,9 +304,9 @@ also has a ten-second client cap. Response input/output is capped at 2 MiB.
 List responses echo their member identity; the existing diff schema does not.
 Diff scope is bound to the request and the trusted server's authorization, not
 an invented response field. These are retained metadata summaries and do not
-qualify continuous collection or recovery. `snapshot trigger`, member-specific
-marker creation, kubectl-plugin history commands and M4 acceptance remain outside
-this client change.
+qualify continuous collection or recovery. `snapshot trigger` CLI member selection,
+kubectl-plugin history commands and M4 acceptance remain outside this client
+change. Internal marker creation is described separately above.
 
 ## RBAC visibility (F-206)
 

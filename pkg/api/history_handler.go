@@ -75,12 +75,12 @@ func (s *Server) historyScope(r *http.Request) (string, impactReply) {
 	}
 	// The alpha surface gains no selector or response fields. Its unscoped
 	// aliases cannot bypass member authorization, even when RBAC is disabled.
-	if apiVersionFor(r) == APIVersionV1Alpha1 && (s.clusterLister != nil || allow != nil) {
+	if strings.HasPrefix(r.URL.Path, apiPrefixV1Alpha1) && (s.clusterLister != nil || allow != nil) {
 		return "", impactFailure(http.StatusServiceUnavailable, CodeUnavailable, "unscoped history is unavailable; use the v1 history API with an explicit cluster")
 	}
 	values, present := r.URL.Query()["cluster"]
 	cluster := ""
-	if apiVersionFor(r) == APIVersionV1 && present {
+	if (apiVersionFor(r) == APIVersionV1 || r.URL.Path == "/api/_internal/snapshot/trigger") && present {
 		if len(values) != 1 {
 			return "", impactFailure(http.StatusBadRequest, CodeInvalidArgument, "select exactly one cluster")
 		}

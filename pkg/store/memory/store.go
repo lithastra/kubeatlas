@@ -500,15 +500,7 @@ func (s *Store) AppendEvent(_ context.Context, e graph.ResourceEvent) error {
 func (s *Store) AppendSnapshotMeta(_ context.Context, m graph.SnapshotMeta) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.eventSeq++
-	m.ID = s.eventSeq
-	if m.Timestamp.IsZero() {
-		m.Timestamp = time.Now()
-	}
-	s.snapshotMeta = append(s.snapshotMeta, m)
-	if len(s.snapshotMeta) > maxMemoryEvents {
-		s.snapshotMeta = append([]graph.SnapshotMeta(nil), s.snapshotMeta[len(s.snapshotMeta)-maxMemoryEvents:]...)
-	}
+	s.appendSnapshotMetaLocked(m)
 	return nil
 }
 

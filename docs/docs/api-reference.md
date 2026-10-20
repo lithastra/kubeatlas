@@ -420,15 +420,37 @@ curl -s 'http://localhost:8080/api/v1/snapshots/diff?from=1h&to=now' | jq .
 
 ### `POST /api/_internal/snapshot/trigger`
 
-Writes one `snapshot_meta` marker anchoring the diff endpoint to a
-known full-sync point. **Internal** — served only on the ClusterIP
-Service, never exposed through Ingress. The periodic full-sync
-`CronJob` is the intended caller; `kubeatlas snapshot trigger`
-reaches it from the CLI.
+Writes one `snapshot_meta` observation marker when snapshots are enabled.
+In v1.7 development, resource and edge counts and append share one atomic
+stored-graph observation for the selected member. Edges with missing endpoints
+or endpoints in different members do not count. This does not perform a Kubernetes
+full sync, drain the history writer, or verify a backup or recovery point.
+
+**Internal operator access is required.** Keep this path behind the deployment's
+internal access boundary. Member read visibility is an additional restriction,
+not a grant of write or administrator permission.
 
 | Query param | Required | Meaning |
 |---|---|---|
-| `trigger` | no | Marker kind: `periodic` or `manual` (default `manual`) |
+| `cluster` | in federation | Exactly one attached, visible member; omit in standalone mode to select only unlabelled rows |
+| `trigger` | no | Marker kind: `periodic` or `manual` (default `manual`); repeated values are rejected |
+
+A successful response contains `trigger`, `resourceCount`, `edgeCount` and
+`durationMs`; named-member responses additionally echo `clusterId`. The v1
+OpenAPI documents this development contract without changing the frozen alpha
+specification. Missing explicit scoped-recorder capability or disabled snapshots
+returns 503; invalid selection returns 400; authorization returns 401/403; an
+authorized absent member returns 404. Shared two-request analysis capacity
+returns 429. Recording has a cooperative five-second store deadline, plus a
+PostgreSQL statement timeout; expiry returns 504, and other provider errors
+return closed 500 errors. An error or timeout can leave an unknown write outcome.
+There is no automatic retry; another operator POST may create another marker.
+
+The existing `snapshot trigger` CLI and Helm CronJob still send unscoped requests
+without bearer credentials. They remain usable in enabled standalone mode and
+fail closed in federation; member-aware CLI/scheduling is pending. See
+[internal member markers](./installation/multicluster.md#internal-member-markers-v17-development)
+for the exact scope and remaining qualification.
 
 ## Search
 

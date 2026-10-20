@@ -59,12 +59,15 @@ Dropping under overload protects the informer, but leaves a known history gap.
 Monitor the queue and write-loss counters; a later successful write or periodic
 marker cannot reconstruct a discarded event or prove a complete diff window.
 
-### Full-sync markers
+<a id="full-sync-markers" />
+
+### Observation markers
 
 Alongside the event stream, KubeAtlas writes **snapshot markers** —
-rows in `snapshot_meta` that record "at this timestamp the cluster
-held N observed resources". Counts are separate graph observations, not an
-atomic historical graph or backup. The diff reads its supplied time window;
+rows in `snapshot_meta` that record "at this timestamp the stored graph
+held N observed resources". In v1.7 development, resource and edge counts and
+marker append share one atomic stored-graph observation. A marker does not
+contain an atomic historical graph or backup. The diff reads its supplied time window;
 a marker neither fills missing events nor proves a recoverable snapshot.
 Markers are written:
 
@@ -74,7 +77,20 @@ Markers are written:
 - **manually**, via `kubeatlas snapshot trigger` or a direct
   `POST` to the internal trigger endpoint.
 
-`GET /api/v1/snapshots` lists these markers, most-recent first.
+`GET /api/v1/snapshots` lists these markers, most-recent first. In v1.7
+federation, the internal POST requires exactly one attached `cluster` and checks
+member visibility before counting or writing. An edge counts only when both
+endpoints exist in that member. Empty standalone scope counts only unlabelled
+rows. Counts include reference-only graph nodes and do not prove current
+Kubernetes state, drained history delivery, or complete retained history.
+
+Snapshots must be explicitly enabled. The endpoint remains an internal operator
+surface; read visibility alone is not write authorization. The existing trigger
+CLI and Helm CronJob have no member selector or bearer-credential configuration,
+so their unscoped requests fail closed in federation. A write error or timeout
+may have an unknown outcome; there is no automatic retry or idempotency guarantee.
+See [internal member markers](../installation/multicluster.md#internal-member-markers-v17-development)
+for budgets, response codes and pending deployment qualification.
 
 ## Retention
 
@@ -104,7 +120,7 @@ The Web UI surfaces snapshot diffs in two places:
 
 - The dedicated **Snapshots page** — a window-picker driven view
   with three tables (Added / Removed / Modified) plus a timeline
-  of recent full-sync markers; the same data the API surfaces, in
+  of recent observation markers; the same data the API surfaces, in
   a denser tabular form.
 
   ![Snapshots page — window-picker presets, Added / Removed / Modified diff tables, snapshot-marker timeline.](/img/snapshots.png)
