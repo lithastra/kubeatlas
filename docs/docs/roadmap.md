@@ -103,8 +103,10 @@ known loss or establish continuous history. Standalone dynamic-source history,
 continuous retained history and verified recovery points remain pending. Existing
 v1 snapshot list/diff routes now authorize and read one attached member through
 bounded scoped capabilities; unscoped alpha history aliases reject federation
-access. Member-specific marker creation and snapshot Web/CLI member selection
-remain pending.
+access. Snapshot Web views now bind to the selected member, separate caches and
+clear stale results/highlights during scope changes. Read-only `kubeatlas snapshot
+list`/`diff` commands send explicit member scope without retries or API fallback.
+Member-specific marker creation remains pending.
 The unreleased v1 impact API now authorizes cluster scope before reads and
 combines the evidence under a five-second deadline and 2 MiB response cap.
 Standalone CRD and Gatekeeper discovery now contribute separate bounded

@@ -1,53 +1,64 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 
+import { useClusterSelection } from '../shell/ClusterSelectionContext';
 import { ApiError, fetchJSON } from './client';
+import { useFederationClusters, type FederationClustersResponse } from './federation';
 import type { DiffResult, SnapshotListResponse } from './types';
+
+export interface HistoryScope {
+  // null is unresolved/blocked; empty string is explicitly standalone.
+  clusterId: string | null;
+  message: string | null;
+}
+
+export function resolveHistoryScope(data: FederationClustersResponse | undefined, selected: string | null, failed: boolean): HistoryScope {
+  if (failed) return { clusterId: null, message: 'History scope is unavailable. Check cluster access and refresh the page.' };
+  if (!data) return { clusterId: null, message: 'Checking history scope…' };
+  if (data.mode === 'single' && !data.clusters?.length) return { clusterId: '', message: null };
+  if (data.mode === 'federated' || data.clusters?.length) {
+    if (selected && data.clusters?.includes(selected)) return { clusterId: selected, message: null };
+    return { clusterId: null, message: 'Select one attached cluster in the cluster strip to read its history.' };
+  }
+  return { clusterId: null, message: 'History scope is unavailable. This server must report its single-cluster or federated mode.' };
+}
+
+export function useHistoryScope(): HistoryScope {
+  const { selected } = useClusterSelection();
+  const fleet = useFederationClusters();
+  return resolveHistoryScope(fleet.data, selected, fleet.isError);
+}
 
 const apiBase = '/api/v1';
 
-// useSnapshots wraps GET /api/v1/snapshots — the list of periodic
-// full-sync markers. Returns 503 on Tier 1 / snapshots-disabled
-// installs; the UI surfaces that case as "snapshots not enabled"
-// rather than a generic error toast.
-export function useSnapshots(): UseQueryResult<SnapshotListResponse, ApiError> {
+// All callers explicitly bind a scope. No unscoped fallback or automatic
+// failure retry; cached data is never shown while a replacement read is active.
+export function useSnapshots(cluster: string | null): UseQueryResult<SnapshotListResponse, ApiError> {
+  const params = new URLSearchParams();
+  if (cluster) params.set('cluster', cluster);
+  const suffix = params.size ? `?${params.toString()}` : '';
   return useQuery<SnapshotListResponse, ApiError>({
-    queryKey: ['snapshots'],
-    queryFn: ({ signal }) =>
-      fetchJSON<SnapshotListResponse>(`${apiBase}/snapshots`, { signal }),
-    // Snapshot markers tick on a chart-configured cron (default 5m);
-    // re-polling every 60s keeps the timeline lively without thrashing.
-    refetchInterval: 60_000,
-    retry: (_, err) =>
-      // A 503 means snapshots aren't enabled — don't retry, surface
-      // the dedicated banner immediately.
-      !(err instanceof ApiError) || err.status !== 503,
+    queryKey: ['snapshots', cluster],
+    enabled: cluster !== null,
+    queryFn: ({ signal }) => fetchJSON<SnapshotListResponse>(`${apiBase}/snapshots${suffix}`, { signal }),
+    staleTime: 0,
+    refetchInterval: (query) => query.state.error ? false : 60_000,
+    refetchOnReconnect: false,
+    retry: false,
   });
 }
 
-// useSnapshotDiff wraps GET /api/v1/snapshots/diff. `from` and `to`
-// accept the same wire format as the server: "now", a duration
-// ("5m" / "1h" / "7d", read as "ago"), or an RFC3339 timestamp.
-// `namespace` empty diffs the whole cluster. The query is disabled
-// when `from` is empty so the picker can mount before a window has
-// been chosen.
-export function useSnapshotDiff(
-  from: string,
-  to: string,
-  namespace: string,
-): UseQueryResult<DiffResult, ApiError> {
+export function useSnapshotDiff(from: string, to: string, namespace: string, cluster: string | null): UseQueryResult<DiffResult, ApiError> {
   const params = new URLSearchParams();
   if (from) params.set('from', from);
   if (to) params.set('to', to);
   if (namespace) params.set('namespace', namespace);
-
+  if (cluster) params.set('cluster', cluster);
   return useQuery<DiffResult, ApiError>({
-    queryKey: ['snapshot-diff', from, to, namespace],
-    enabled: from !== '',
-    queryFn: ({ signal }) =>
-      fetchJSON<DiffResult>(`${apiBase}/snapshots/diff?${params.toString()}`, { signal }),
-    retry: (_, err) =>
-      // 503 means snapshots aren't enabled — same Tier 1 short-circuit
-      // as useSnapshots. Other server errors get the default retries.
-      !(err instanceof ApiError) || err.status !== 503,
+    queryKey: ['snapshot-diff', cluster, from, to, namespace],
+    enabled: from !== '' && cluster !== null,
+    queryFn: ({ signal }) => fetchJSON<DiffResult>(`${apiBase}/snapshots/diff?${params.toString()}`, { signal }),
+    staleTime: 0,
+    refetchOnReconnect: false,
+    retry: false,
   });
 }

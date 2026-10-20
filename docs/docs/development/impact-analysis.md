@@ -1415,6 +1415,44 @@ history, recoverable snapshots, scoped internal marker creation, snapshot Web/CL
 member selection or M4 acceptance. Detached retained scopes require reattachment
 before this read API can query them. See the [multi-cluster history contract](../installation/multicluster.md#scoped-history-reads-v17-development).
 
+### Existing history-client member selection follow-up
+
+The snapshot page, topology decoration and change-log panel now derive history
+scope from the existing cluster selection and federation mode. They disable reads
+for the all-members view, detached selections, unavailable mode evidence and
+cluster-list failure. Empty configured federations remain explicitly federated;
+only confirmed standalone mode selects unlabelled history. No effect copies
+derived scope into additional state. Query keys include the selected member,
+abort signals flow to transport, and late results cannot replace a different
+member's query. Loading/error states hide cached rows and reset old decorations.
+Full resource IDs include member prefixes and the actual empty namespace;
+aggregated nodes are never decorated as resource instances. Member rows remain
+plain text until member-aware resource-detail navigation is available.
+
+History requests do not retry or fall back to global reads. Marker polling uses
+the existing one-minute interval only while reads succeed. Server error text is
+shown for authorization/budget/capacity/deadline failures; 503 no longer falsely
+means that history is necessarily disabled. Credentials continue through the
+existing same-origin transport, with no token UI or persistence.
+
+The main CLI previously had only `snapshot trigger`. New read-only `snapshot list`
+and `snapshot diff` commands use the bounded `historyclient` package, one GET and
+explicit `--cluster`; they reject repeated/empty/multiple scope flags, redirects,
+unknown metadata fields, unexpected content types, oversized bodies and invalid
+list counts/scopes. Bearer credentials come only from `KUBEATLAS_TOKEN`, remote
+HTTP is rejected, and provider error bodies/URLs are not echoed. Typed metadata
+is validated and reserialized for stdout, so this is distinct from the exact-wire
+impact capture/export contract. The diff schema has no member echo: its scope
+relies on the requested URL and the trusted server, not a fabricated guarantee.
+The internal trigger write and kubectl-plugin commands are unchanged.
+
+Portable checks exercise real API/client integration, CLI scope/auth/error
+handling, Web cache and delayed-response isolation, member/cluster-scoped canvas
+identity, blocked scopes and unavailable/error states. Browser QA uses the
+production build with synthetic API/WS transport at desktop and mobile sizes;
+it does not establish real-cluster behavior, PostgreSQL deployment performance,
+member-specific marker creation, complete retained history or M4 acceptance.
+
 ### M3 server-backed Web analysis: first slice
 
 The standalone resource-detail page now offers an explicit **Analyze impact**

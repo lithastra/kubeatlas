@@ -6,8 +6,9 @@ import type { EdgeType, View } from '../api/types';
 import { RadialMenu, type RadialMenuOption } from '../design';
 import { applyAtlasPalette, createCytoscape, paletteFor, updateCytoscape } from '../lib/cytoscape';
 import { applyImpactHighlight } from '../lib/impactHighlight';
+import { applySnapshotHighlight } from '../lib/snapshotHighlight';
 import type { ImpactResponse } from '../api/impactTypes';
-import { useSnapshotDiff } from '../api/snapshots';
+import { useHistoryScope, useSnapshotDiff } from '../api/snapshots';
 import { useBlastRadius, useDiffMode, useSearchOverlay } from '../shell';
 import { useAtlasTheme } from '../theme';
 
@@ -76,7 +77,9 @@ export function TopologyView({
   // a per-node flag that depends on the API result. The right panel
   // (DiffChangeLog) issues the same query — React Query dedupes by
   // key so it's one network call.
-  const { data: diffData } = useSnapshotDiff(diff.anchor ?? '', 'now', '');
+  const historyScope = useHistoryScope();
+  const diffQuery = useSnapshotDiff(diff.anchor ?? '', 'now', '', historyScope.clusterId);
+  const diffData = !diffQuery.isFetching && !diffQuery.isError ? diffQuery.data : undefined;
 
   // Effect 1: create / update cytoscape from props.view.
   useEffect(() => {
@@ -177,28 +180,8 @@ export function TopologyView({
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    cy.batch(() => {
-      cy.nodes().forEach((n) => {
-        n.removeData('added');
-        n.removeData('removed');
-        n.removeData('modified');
-      });
-      if (!diff.active || !diffData) return;
-      const idFor = (ns: string, kind: string, name: string) => `${ns || '_'}/${kind}/${name}`;
-      for (const e of diffData.added ?? []) {
-        const n = cy.getElementById(idFor(e.namespace, e.kind, e.name));
-        if (n.length) n.data('added', true);
-      }
-      for (const e of diffData.removed ?? []) {
-        const n = cy.getElementById(idFor(e.namespace, e.kind, e.name));
-        if (n.length) n.data('removed', true);
-      }
-      for (const e of diffData.modified ?? []) {
-        const n = cy.getElementById(idFor(e.namespace, e.kind, e.name));
-        if (n.length) n.data('modified', true);
-      }
-    });
-  }, [diff.active, diffData, view]);
+    applySnapshotHighlight(cy, diff.active ? diffData : undefined, historyScope.clusterId);
+  }, [diff.active, diffData, historyScope.clusterId, view]);
 
   // Effect 6: composite dim/brighten. Blast-radius mode wins when
   // active (every non-reachable node/edge dims, the reachable

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -15,18 +16,21 @@ import (
 )
 
 // runSnapshot is the `kubeatlas snapshot` subcommand group. Today
-// it has one sub-subcommand, `trigger`; the dispatch shape leaves
-// room for future ones (e.g. `snapshot list`).
+// it supports read-only list/diff and the separate internal trigger write.
 func runSnapshot(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "snapshot: missing subcommand (expected: trigger)")
+		fmt.Fprintln(os.Stderr, "snapshot: missing subcommand (expected: list, diff, trigger)")
 		return 1
 	}
 	switch args[0] {
+	case "list":
+		return runSnapshotRead(context.Background(), args[1:], false, os.Stdout, os.Stderr)
+	case "diff":
+		return runSnapshotRead(context.Background(), args[1:], true, os.Stdout, os.Stderr)
 	case "trigger":
 		return runSnapshotTrigger(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "snapshot: unknown subcommand %q (expected: trigger)\n", args[0])
+		fmt.Fprintf(os.Stderr, "snapshot: unknown subcommand %q (expected: list, diff, trigger)\n", args[0])
 		return 1
 	}
 }

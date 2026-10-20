@@ -216,9 +216,61 @@ This change adds read-side scope checks, not member-specific marker creation,
 authorization for the internal trigger endpoint, a complete audit stream or
 verified recovery. Existing unlabelled aggregate markers are excluded from
 named-member results. The internal trigger remains an operator/ClusterIP-only
-surface and does not gain a member selector. Web snapshot views and snapshot CLI
-commands do not yet supply the new federation selector; they cannot infer a
-member or silently retry without it.
+surface and does not gain a member selector. The Web and read-only snapshot CLI
+clients described below supply explicit member scope; the trigger command keeps
+its operator-only behavior.
+
+## History clients (v1.7 development)
+
+The snapshot page, topology diff canvas and diff change log use the existing
+cluster strip. In federation mode, select one attached member before reading
+history. The all-members view, a detached selection, unknown server mode or a
+failed cluster-list request pauses history reads and displays an explanation.
+An empty configured federation reports `mode: federated`, so it cannot be
+mistaken for a standalone installation. A confirmed standalone mode reads only
+unlabelled records and omits `cluster`, even when its visual “local” chip is
+selected.
+
+List/diff query keys include member scope. Switching members hides previous rows
+and clears highlights during the new read; late responses remain bound to their
+own query. Cache replay cannot substitute another member's data. Read failures
+are shown without automatic retries or fallback to unscoped APIs. A successful
+marker list may poll every minute; polling stops after an error. A 503 explains
+disabled history or unsupported scoped reads; 401/403/413/429/504 retain their
+server error meaning. Existing same-origin authentication is used; no bearer
+credential setting or browser persistence is added.
+
+Topology decorations use complete member-prefixed resource IDs, including the
+empty namespace of cluster-scoped resources. Aggregated nodes and same-named
+resources in other members are excluded. Member history rows render identity
+text until resource-detail routes support member scope; they do not navigate
+into a standalone detail page.
+
+The main `kubeatlas` CLI now provides two read-only commands:
+
+```bash
+kubeatlas snapshot list --server https://atlas.example --cluster prod
+kubeatlas snapshot diff --server https://atlas.example --cluster prod --from 1h --namespace demo
+```
+
+Use `KUBEATLAS_TOKEN` for optional bearer authentication; it is never a flag or
+URL parameter. Each command makes exactly one GET, validates the metadata schema
+and scope, and writes JSON to stdout; diagnostics go to stderr. There is no
+redirect, retry, kubeconfig inference, port-forward startup, API fallback, marker
+write or browser launch. Omit `--cluster` only for standalone scope; explicit
+empty, repeated or multiple-member values are rejected. `--from` is required for
+diff, `--to` defaults to `now`, and `--namespace` is an optional member-local
+filter. The API URL is `--server`, then `KUBEATLAS_URL`, then
+`http://127.0.0.1:8080`. HTTP requires literal loopback; remote servers require
+HTTPS. `--timeout` defaults to ten seconds (accepted range 1s–1m), and each read
+also has a ten-second client cap. Response input/output is capped at 2 MiB.
+
+List responses echo their member identity; the existing diff schema does not.
+Diff scope is bound to the request and the trusted server's authorization, not
+an invented response field. These are retained metadata summaries and do not
+qualify continuous collection or recovery. `snapshot trigger`, member-specific
+marker creation, kubectl-plugin history commands and M4 acceptance remain outside
+this client change.
 
 ## RBAC visibility (F-206)
 

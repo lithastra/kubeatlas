@@ -142,8 +142,11 @@ one attached member with `cluster`, for example
 selector. Both routes enforce member visibility before reading history; the
 unscoped v1alpha1 aliases do not provide a federation fallback. Standalone
 queries select only unlabelled records, without attributing legacy observations
-to a named member. The current Web/CLI snapshot clients do not yet send this
-federation selector.
+to a named member. The snapshot page and topology diff use the cluster strip:
+select one member to enable reads; “all clusters” pauses them. Switching members
+hides the previous results and clears member-specific highlights while loading.
+The read-only `kubeatlas snapshot list` and `snapshot diff --from 1h` commands
+accept `--cluster` for the same scope; `snapshot trigger` remains separate.
 
 Reads have fixed row, metadata, time and concurrency limits; a truncated or
 oversized read fails rather than returning a partial result. These summaries
