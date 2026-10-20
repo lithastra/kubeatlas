@@ -711,17 +711,22 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 
 	// API server options. snapWriter is nil unless Tier 2 + snapshots
 	// enabled; when set, /metrics surfaces its counters + queue depth.
-	// Retained metadata is sampled only in standalone mode. Global writer and
-	// legacy unlabelled marker evidence cannot qualify a federated member.
+	// Retained metadata is scoped independently from global writer metrics.
+	// Member observers are owned and joined by their member bundles.
 	var retainedHistory *snapshot.HistoryRetentionObserver
-	if snapWriter != nil && os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") != "true" {
+	var retainedMembers *snapshot.MemberHistoryRetention
+	if snapWriter != nil {
 		reader, _ := graphStore.(graph.HistoryBoundsReader)
-		retainedHistory = snapshot.NewHistoryRetentionObserver(reader, "", snapRetention)
-		go func() {
-			if err := retainedHistory.Start(ctx); err != nil {
-				slog.Error("history retention observer failed to start", "err", err)
-			}
-		}()
+		if os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") == "true" {
+			retainedMembers = snapshot.NewMemberHistoryRetention(reader, snapRetention)
+		} else {
+			retainedHistory = snapshot.NewHistoryRetentionObserver(reader, "", snapRetention)
+			go func() {
+				if err := retainedHistory.Start(ctx); err != nil {
+					slog.Error("history retention observer failed to start", "err", err)
+				}
+			}()
+		}
 	}
 	apiOpts := []api.ServerOption{
 		api.WithWebFS(webFS),
@@ -733,7 +738,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 			Availability: snapshot.NewAnalysisAvailabilityReader(operationsMonitor, snapWriter, snapshot.AnalysisAvailabilityConfig{
 				Durable: operationsCfg.StorageDurable, HistoryEnabled: snapEnabled,
 				Federated: os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") == "true", Retention: snapRetention,
-			}, snapshot.WithHistoryRetention(retainedHistory)),
+			}, snapshot.WithHistoryRetention(retainedHistory), snapshot.WithMemberHistoryRetention(retainedMembers)),
 		}),
 		api.WithTelemetry(telemetrySender),
 	}
@@ -813,7 +818,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		}
 		mcKubeconfigs = kubeconfigs
 		mcMgr = multicluster.New(graphStore,
-			multicluster.WithDiscoveryFactory(memberInformerFactory(baseInformerOpts, operationsMonitor.Coverage(), regoEngine, extractor.Default(), dynMetrics)),
+			multicluster.WithDiscoveryFactory(memberInformerFactory(baseInformerOpts, operationsMonitor.Coverage(), regoEngine, extractor.Default(), dynMetrics, retainedMembers)),
 		)
 		// Each member bundle owns its core, CRD and Gatekeeper collectors.
 		// The two standalone component slots remain parked in federation mode.

@@ -1008,7 +1008,9 @@ The standalone Tier 2 profile with history enabled now samples retained event
 and snapshot-marker metadata at startup and every five minutes. Each read has
 a five-second context budget. Impact requests load the fixed-size cache; they
 do not issue event/marker queries or refresh expired checks. Disabled history,
-Tier 1, and federation do not start this worker. An observer owns one configured
+Tier 1, and federation do not start this worker in the original standalone
+slice; the member-retention follow-up below adds scoped federation workers.
+An observer owns one configured
 cluster and retention duration, starts once, and marks its cache stopped when
 its context ends.
 
@@ -1062,8 +1064,9 @@ inconsistent timestamps, stale claims, unknown states, and failed checks that
 carry old success data. Provider-owned records are copied before returning.
 Authorization still precedes all evidence access, and the response retains its
 five-second total deadline and 2 MiB cap. Named members cannot inherit this
-standalone cache; member-specific writer/retention integration and visibility
-of the existing legacy history routes remain pending.
+standalone cache. Member retention is added in the follow-up below;
+member-specific writer lifecycle qualification and visibility of the existing
+legacy history routes remain pending.
 
 Portable tests cover cache-only request reads, blocked queries, cancellation,
 shutdown, expiry, failed/invalid evidence, writer-gap independence, and API
@@ -1205,6 +1208,58 @@ same conditional-delete contract tests; PostgreSQL/AGE execution requires the
 separate container-backed test environment. These local tests do not establish
 real-cluster reliability, cross-version or retired-endpoint cleanup, complete
 collector coverage, member history continuity, or M4 acceptance.
+
+### M2 member-scoped retained history metadata follow-up
+
+The Tier 2 federation profile with history enabled now gives each member bundle
+an independent retained-metadata observer. Construction alone neither registers
+a scope nor queries history. Starting the bundle publishes a new empty cache
+for its exact member name, samples event/marker bounds, and repeats every five
+minutes. Member removal and bundle shutdown cancel and join the observer,
+including an in-flight query. The same name stays reserved until that lifetime
+has returned; reattachment starts with `not_queried` evidence rather than the
+previous member cache. A stopped observation retains its stopped flag, checked
+window and freshness qualification. It does not become current on request reads.
+
+All observers use the existing optional `HistoryBoundsReader` capability with
+the named member and configured retention window. At most two member metadata
+reads run concurrently; waiting for that shared budget is included in the
+existing five-second read deadline. The registry retains at most 128 distinct
+member scopes, including stopped entries. Same-name replacement reuses its
+slot. An over-capacity member remains running but its uncached history metadata
+is `unsupported`, without a query or eviction of another member's evidence.
+Missing scoped storage capability is also `unsupported`; there is no fallback
+to unlabelled/global event or marker APIs.
+
+Impact requests read a fixed-size owned cache through an immutable published
+index. They do not wait for a membership mutation or running query, register a
+new observer, refresh stale evidence, or read the global writer counters.
+Authorization and attached-member checks still precede all impact evidence
+access. A member's `retentionEvidence.bounds.clusterId` must match the selected
+scope, and window, retention, durability, timestamp and freshness checks remain
+mandatory. Failed queries clear previous successful bounds; a failed or blocked
+member cannot supply evidence for another member.
+
+The existing `availability.evidence.history` shape now permits exact-member
+retention metadata independently of recording qualification. With these caches,
+`retentionNanos` is the configured window and `retainedData` reflects the cached
+metadata state. The parent history state remains `unsupported` with reason
+`history_cluster_scope_unavailable`, coverage remains `unknown`, and the writer
+observation-start timestamp remains zero. These fields mean that member-level
+recording lifecycle is not qualified; successfully reading retained timestamps
+does not qualify the shared writer, reset a recording gap, establish complete
+history or verify a recovery point. Existing unlabelled markers remain excluded
+from named-member reads. Legacy history-route visibility remains separate work.
+
+Portable race tests cover member/standalone/hidden-scope separation, Secret
+exclusion, bounds and payload/count non-disclosure, failed/unsupported and stale
+caches, fresh reattachment, duplicate exclusion while a query drains, cancellation
+of queued reads, bounded concurrent reads and registry capacity. Actual member
+factory tests verify ownership and joins. Actual impact-handler tests verify
+allowed responses, denied requests before cache access and repeated cache reads
+without database queries. These local checks do not establish deployed Tier 2
+performance, member writer loss accounting, continuous retained history,
+restorable snapshots, legacy history-route authorization or M4 acceptance.
 
 ### M3 server-backed Web analysis: first slice
 

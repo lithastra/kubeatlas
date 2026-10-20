@@ -89,8 +89,11 @@ optional bounded metadata-only event reader shared by memory and PostgreSQL.
 Standalone Tier 2 history now checks retained event bounds and marker existence
 in a bounded background read; analysis consumes the expiring cache. These
 metadata observations do not establish continuous history or a recoverable
-snapshot. Per-member recording/retention evidence, verified recovery points,
-and legacy history API visibility remain pending.
+snapshot. Tier 2 members with history enabled now have independent expiring
+retention-metadata caches owned by their member bundles. Scoped background reads
+and cache-only impact queries preserve member boundaries and do not qualify the
+shared writer. Per-member recording lifecycle/loss evidence, verified recovery
+points and legacy history API visibility remain pending.
 The unreleased v1 impact API now authorizes cluster scope before reads and
 combines the evidence under a five-second deadline and 2 MiB response cap.
 Standalone CRD and Gatekeeper discovery now contribute separate bounded

@@ -99,6 +99,33 @@ does not itself sweep its instances. CRD version equivalence, complete collector
 coverage, member history continuity and real deployment acceptance remain open.
 Frozen-candidate deployment validation remains pending.
 
+## Member retained history metadata (v1.7 development)
+
+When Tier 2 storage and snapshots/history recording are enabled, each running
+member bundle also owns a retained-metadata observer. It reads only that
+member's first/last retained non-Secret event timestamps and latest stored
+snapshot-marker timestamp within the configured retention window. Unlabelled
+legacy rows and other members are excluded. There is no event-payload, resource
+count or backup-content query in this feature.
+
+Observers sample at startup and every five minutes. Each read has a five-second
+deadline including waiting for a shared limit of two concurrent member reads.
+At most 128 distinct member caches are retained, including stopped scopes.
+An additional uncached member reports unsupported retention metadata without
+stopping graph collection or evicting another member's cache. Removing a member
+cancels and joins its observer; same-name reattachment replaces the old cache
+with a fresh unqueried lifetime.
+
+Authorized impact requests read the selected member's cache without a database
+query or refresh. Evidence expires after ten minutes and retains independent
+`stale`/`stopped` flags. `retainedData: observed` means only that its recorded
+window was read successfully. The parent history writer state remains
+`unsupported` with `history_cluster_scope_unavailable`, coverage remains unknown,
+and no global writer counters or start time are attributed to that member.
+Event bounds do not prove continuous history; a marker is not a backup or a
+verified recovery point. Member-specific recording-loss qualification and the
+visibility of existing legacy history routes remain separate work.
+
 ## RBAC visibility (F-206)
 
 By default every caller can see every attached cluster. When you run one

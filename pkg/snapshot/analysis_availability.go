@@ -35,6 +35,7 @@ type AnalysisAvailabilityReader struct {
 	writer   *Writer
 	cfg      AnalysisAvailabilityConfig
 	retained *HistoryRetentionObserver
+	members  *MemberHistoryRetention
 }
 
 type writerObservation struct {
@@ -46,6 +47,12 @@ type AnalysisAvailabilityOption func(*AnalysisAvailabilityReader)
 
 func WithHistoryRetention(observer *HistoryRetentionObserver) AnalysisAvailabilityOption {
 	return func(r *AnalysisAvailabilityReader) { r.retained = observer }
+}
+
+// WithMemberHistoryRetention supplies only named-member retained metadata.
+// It does not qualify the shared writer as a member recording lifecycle.
+func WithMemberHistoryRetention(registry *MemberHistoryRetention) AnalysisAvailabilityOption {
+	return func(r *AnalysisAvailabilityReader) { r.members = registry }
 }
 
 func NewAnalysisAvailabilityReader(storage StorageAvailabilityReader, writer *Writer, cfg AnalysisAvailabilityConfig, opts ...AnalysisAvailabilityOption) *AnalysisAvailabilityReader {
@@ -101,6 +108,17 @@ func (r *AnalysisAvailabilityReader) SnapshotAvailability(ctx context.Context, c
 	case r.cfg.Federated:
 		history.State = operations.HistoryUnsupported
 		history.Reasons = append(history.Reasons, operations.HistoryScopeUnknown)
+		if r.members != nil {
+			if r.members.retention != r.cfg.Retention {
+				return operations.AnalysisAvailability{}, ErrAnalysisAvailabilityConfig
+			}
+			retained, err := r.members.SnapshotRetention(ctx, cluster)
+			if err != nil {
+				return operations.AnalysisAvailability{}, err
+			}
+			history.Retention = r.cfg.Retention
+			applyRetainedMetadata(&history, retained)
+		}
 	case r.writer == nil:
 		history.Reasons = append(history.Reasons, operations.HistoryWriterMissing)
 	default:
@@ -113,13 +131,7 @@ func (r *AnalysisAvailabilityReader) SnapshotAvailability(ctx context.Context, c
 			if err != nil {
 				return operations.AnalysisAvailability{}, err
 			}
-			history.RetentionEvidence = &retained
-			switch retained.State {
-			case operations.RetentionObserved:
-				history.RetainedData = "observed"
-			case operations.RetentionFailed, operations.RetentionUnsupported:
-				history.RetainedData = "unavailable"
-			}
+			applyRetainedMetadata(&history, retained)
 		}
 		switch storage.State {
 		case operations.StorageUnknown:
@@ -141,6 +153,16 @@ func (r *AnalysisAvailabilityReader) SnapshotAvailability(ctx context.Context, c
 		retained.Stale = !retained.CheckedAt.IsZero() && captured.Sub(retained.CheckedAt) >= operations.HistoryRetentionMaxAge
 	}
 	return operations.AnalysisAvailability{ClusterID: cluster, CapturedAt: captured, Storage: storage, History: history}, nil
+}
+
+func applyRetainedMetadata(history *operations.HistoryAvailability, retained operations.HistoryRetentionEvidence) {
+	history.RetentionEvidence = &retained
+	switch retained.State {
+	case operations.RetentionObserved:
+		history.RetainedData = "observed"
+	case operations.RetentionFailed, operations.RetentionUnsupported:
+		history.RetainedData = "unavailable"
+	}
 }
 
 func (w *Writer) historyAvailability(retention time.Duration) operations.HistoryAvailability {

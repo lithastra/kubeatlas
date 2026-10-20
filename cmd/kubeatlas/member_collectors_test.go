@@ -101,7 +101,7 @@ func TestMemberFactoryCollectsIndependentCRDsAndGatekeeper(t *testing.T) {
 	tracker := operations.NewCoverageTracker(time.Minute)
 	metrics := discovery.NewDynamicMetrics()
 	var synced atomic.Int32
-	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods}), discovery.WithOnSynced(func() { synced.Add(1) })}, tracker, nil, extractor.Default(), metrics)
+	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods}), discovery.WithOnSynced(func() { synced.Add(1) })}, tracker, nil, extractor.Default(), metrics, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	east, west := memberDynamicClient(t), memberDynamicClient(t)
@@ -243,7 +243,7 @@ func TestMemberFactoryKeepsPermissionGapsScoped(t *testing.T) {
 	client.PrependReactor("list", "customresourcedefinitions", func(clienttesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewForbidden(memberCRDs.GroupResource(), "", errors.New("synthetic-private-member-denial"))
 	})
-	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods})}, tracker, nil, extractor.Default(), nil)
+	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods})}, tracker, nil, extractor.Default(), nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)

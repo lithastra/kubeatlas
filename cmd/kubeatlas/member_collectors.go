@@ -14,21 +14,26 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/multicluster"
 	"github.com/lithastra/kubeatlas/pkg/operations"
+	"github.com/lithastra/kubeatlas/pkg/snapshot"
 	kdiscovery "k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 )
 
-func memberInformerFactory(coreOpts []discovery.InformerOption, tracker *operations.CoverageTracker, rules crd.RegoEvaluator, ext gatekeeper.ExtractorRegistry, metrics *discovery.DynamicMetrics) multicluster.DiscoveryInformerFactory {
+func memberInformerFactory(coreOpts []discovery.InformerOption, tracker *operations.CoverageTracker, rules crd.RegoEvaluator, ext gatekeeper.ExtractorRegistry, metrics *discovery.DynamicMetrics, retained *snapshot.MemberHistoryRetention) multicluster.DiscoveryInformerFactory {
 	return func(name string, dyn dynamic.Interface, dc kdiscovery.DiscoveryInterface, store graph.GraphStore) multicluster.InformerStarter {
 		repair := discovery.NewMemberRepair(dyn, store, name)
 		opts := append(append([]discovery.InformerOption{}, coreOpts...), discovery.WithMemberRepair(repair))
 		coreFactory := multicluster.DefaultDiscoveryInformerFactory(opts...)
 		dynamicManager := discovery.NewDynamicInformerManager(dyn, discovery.WithDynamicMetrics(metrics))
-		return &memberCollectors{components: []componentStarter{
+		components := []componentStarter{
 			coreFactory(name, dyn, dc, store),
 			crd.New(dyn, store, crd.WithCoverage(tracker), crd.WithClusterID(name), crd.WithRegoEvaluator(rules), crd.WithMemberRepair(repair)),
 			gatekeeper.New(dyn, store, ext, dynamicManager, gatekeeper.WithCoverage(tracker), gatekeeper.WithClusterID(name), gatekeeper.WithDiscovery(dc), gatekeeper.WithMemberRepair(repair)),
-		}}
+		}
+		if retained != nil {
+			components = append(components, retained.ForMember(name))
+		}
+		return &memberCollectors{components: components}
 	}
 }
 

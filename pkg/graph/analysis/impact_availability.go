@@ -62,9 +62,12 @@ func readImpactAvailability(ctx context.Context, provider ImpactAvailabilityProv
 	}
 	evidence.History.Reasons = slices.Clone(evidence.History.Reasons)
 	if h := evidence.History.RetentionEvidence; h != nil {
-		// A selected member must not inherit the standalone cache or global
-		// writer evidence. Member retention integration is not enabled yet.
-		if cluster != "" || !active || !h.ValidFor(cluster, history.Retention, evidence.CapturedAt) {
+		// Member retention metadata is independent of the still-unqualified
+		// global writer. It requires its exact named scope and durable storage.
+		memberRetention := cluster != "" && history.State == operations.HistoryUnsupported &&
+			slices.Equal(history.Reasons, []operations.HistoryAvailabilityReason{operations.HistoryScopeUnknown}) &&
+			evidence.Storage.DurabilityKnown && evidence.Storage.Durable
+		if !(cluster == "" && active || memberRetention) || !h.ValidFor(cluster, history.Retention, evidence.CapturedAt) {
 			return operations.AnalysisAvailability{}, ErrImpactAvailability
 		}
 		owned := *h
@@ -158,7 +161,8 @@ func validImpactHistory(h operations.HistoryAvailability, captured time.Time) bo
 	case operations.HistoryDisabled:
 		return h.ObservationStartedAt.IsZero() && h.Retention == 0 && slices.Equal(h.Reasons, []operations.HistoryAvailabilityReason{operations.HistoryNotConfigured})
 	case operations.HistoryUnsupported:
-		return h.ObservationStartedAt.IsZero() && h.Retention == 0 && len(h.Reasons) == 1 && (h.Reasons[0] == operations.HistoryRequiresTier2 || h.Reasons[0] == operations.HistoryScopeUnknown)
+		retentionOK := h.Retention == 0 && h.RetentionEvidence == nil || h.Retention > 0 && h.RetentionEvidence != nil && slices.Equal(h.Reasons, []operations.HistoryAvailabilityReason{operations.HistoryScopeUnknown})
+		return h.ObservationStartedAt.IsZero() && retentionOK && len(h.Reasons) == 1 && (h.Reasons[0] == operations.HistoryRequiresTier2 || h.Reasons[0] == operations.HistoryScopeUnknown)
 	case operations.HistoryInitializing:
 		return h.ObservationStartedAt.IsZero() && h.Retention > 0 && !gap && slices.Contains(h.Reasons, operations.HistoryStartPending)
 	case operations.HistoryRecording:
