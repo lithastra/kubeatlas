@@ -129,9 +129,9 @@ separate work.
 
 ## Member recording state and loss (v1.7 development)
 
-Tier 2 members with history enabled bind their core informer event sink to an
-independent recording session. It uses the existing shared queue, configured
-workers and retry budget; this feature does not create a queue or worker pool
+Tier 2 members with history enabled bind their core, CRD instance and Gatekeeper
+constraint event sinks to one independent recording session per member. It uses
+the existing shared queue, configured workers and retry budget; this feature does not create a queue or worker pool
 for each member. Queue loss is attributed to the member whose event was
 discarded. Exhausted writes are attributed to the event's member. Another
 member's global drop/failure totals do not become this member's loss evidence.
@@ -141,8 +141,28 @@ registered member session. Pending-delivery qualification includes that member's
 in-flight writes. Known queue/write loss makes coverage partial and remains
 sticky through later success and same-name reattachment; otherwise coverage is
 unknown. Recording does not assert continuous history or complete source
-coverage. Separate CRD/Gatekeeper collectors still have no dedicated event
-history in this stream.
+coverage. CRD and Gatekeeper instance add/update/delete observations and their
+committed missed-delete repairs now use the same member token. The separate
+collectors do not create additional writer queues or workers.
+
+Overlapping member collectors use the graph's persisted UID/resourceVersion
+under their shared resource lock. An unchanged replay, same-version observation
+from another collector, served-version switch or same-name reattachment does not
+create another event. A served-version switch can still update the graph, and
+replays still derive edges. Receipt-read/resource-write failures produce no
+history; a later successful delivery can record the change. Deletes compare the
+stored incarnation atomically; duplicate deletes and old-UID tombstones leave
+replacement objects intact. Stopping a CRD/template registration retains its
+instances and emits no synthetic delete. Missing UID/version metadata leaves a
+processing gap and cannot qualify an event.
+
+Events contain identity metadata only. They record observation/persistence time,
+not the original Kubernetes creation/deletion time. Resource versions are opaque:
+independent watches can deliver different versions out of order, and the graph
+receipt does not provide a historical deduplication ledger or an ordered audit
+stream. Graph persistence and queued history delivery are separate operations;
+recording state and known loss remain qualified as above. Standalone dynamic
+collectors are not enabled for history by this member-only change.
 
 Member removal stops its collectors, then waits for its recording session's
 queued/in-flight writes before releasing the name. The shared writer stays

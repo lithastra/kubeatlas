@@ -67,6 +67,7 @@ type Discovery struct {
 	pollEvery       time.Duration
 	clusterID       string
 	memberRepair    *discovery.MemberRepair
+	resourceHistory *discovery.ResourceHistory
 	repairs         sync.WaitGroup
 	coverage        *operations.CoverageTracker
 	coverageSession *operations.CoverageSession
@@ -90,6 +91,12 @@ func WithClusterID(cluster string) Option {
 // WithMemberRepair supplies the owning member's bounded repair worker.
 func WithMemberRepair(repair *discovery.MemberRepair) Option {
 	return func(d *Discovery) { d.memberRepair = repair }
+}
+
+// WithResourceHistory supplies the member's shared history receipts and sink.
+// All participating collectors must use the same MemberRepair resource lock.
+func WithResourceHistory(history *discovery.ResourceHistory) Option {
+	return func(d *Discovery) { d.resourceHistory = history }
 }
 
 // WithLogger swaps the structured logger.
@@ -289,7 +296,7 @@ func (d *Discovery) onTemplate(ctx context.Context, obj any) {
 				defer d.repairs.Done()
 				// Wait for the dynamic manager to publish this registration;
 				// build runs under its lock before the informer is installed.
-				d.memberRepair.Run(child, gvr, kind, coverage, func() bool { return d.dynMgr.HasSynced(gvr) }, nil)
+				d.memberRepair.Run(child, gvr, kind, coverage, func() bool { return d.dynMgr.HasSynced(gvr) }, d.resourceHistory.RecordDelete)
 			}()
 		}
 		return d.constraintHandler(child, kind, coverage)
@@ -321,13 +328,17 @@ func (d *Discovery) onTemplateDelete(obj any) {
 // pipeline (which emits the ENFORCES edges); deletes cascade.
 func (d *Discovery) constraintHandler(ctx context.Context, kind string, coverage *operations.CoverageSession) cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj any) { d.handleConstraint(ctx, kind, obj, coverage) },
-		UpdateFunc: func(_, obj any) { d.handleConstraint(ctx, kind, obj, coverage) },
+		AddFunc:    func(obj any) { d.handleConstraintEvent(ctx, kind, obj, coverage, graph.EventTypeAdd) },
+		UpdateFunc: func(_, obj any) { d.handleConstraintEvent(ctx, kind, obj, coverage, graph.EventTypeUpdate) },
 		DeleteFunc: func(obj any) { d.handleConstraintDelete(ctx, kind, obj, coverage) },
 	}
 }
 
 func (d *Discovery) handleConstraint(ctx context.Context, kind string, obj any, coverage *operations.CoverageSession) {
+	d.handleConstraintEvent(ctx, kind, obj, coverage, graph.EventTypeAdd)
+}
+
+func (d *Discovery) handleConstraintEvent(ctx context.Context, kind string, obj any, coverage *operations.CoverageSession, eventType graph.EventType) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -346,7 +357,16 @@ func (d *Discovery) handleConstraint(ctx context.Context, kind string, obj any, 
 		}
 		defer unlock()
 	}
-	if err := d.store.UpsertResource(ctx, r); err != nil {
+	var writeErr error
+	if d.resourceHistory != nil {
+		_, writeErr = d.resourceHistory.Upsert(ctx, r, eventType)
+		if !graph.ValidResourceVersion(r) {
+			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+		}
+	} else {
+		writeErr = d.store.UpsertResource(ctx, r)
+	}
+	if err := writeErr; err != nil {
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: upsert constraint", "id", r.ID(), "err", err)
 		return
@@ -374,8 +394,13 @@ func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj
 		return
 	}
 	gvr := schema.GroupVersionResource{Group: constraintGroup, Version: constraintVersion, Resource: strings.ToLower(kind)}
-	if t, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+	switch t := obj.(type) {
+	case cache.DeletedFinalStateUnknown:
 		obj = t.Obj
+	case *cache.DeletedFinalStateUnknown:
+		if t != nil {
+			obj = t.Obj
+		}
 	}
 	u, ok := toUnstructured(obj)
 	if !ok {
@@ -391,7 +416,16 @@ func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj
 		}
 		defer unlock()
 	}
-	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
+	var deleteErr error
+	if d.resourceHistory != nil {
+		_, deleteErr = d.resourceHistory.Delete(ctx, r)
+		if !graph.ValidResourceVersion(r) {
+			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+		}
+	} else {
+		deleteErr = d.store.DeleteResource(ctx, r.ID())
+	}
+	if err := deleteErr; err != nil {
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: delete constraint", "id", r.ID(), "err", err)
 	}

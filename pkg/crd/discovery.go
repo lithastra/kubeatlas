@@ -60,6 +60,7 @@ type Discovery struct {
 	logger          *slog.Logger
 	clusterID       string
 	memberRepair    *discovery.MemberRepair
+	resourceHistory *discovery.ResourceHistory
 	runs            sync.WaitGroup
 	coverage        *operations.CoverageTracker
 	coverageSession *operations.CoverageSession
@@ -121,6 +122,12 @@ func WithMemberRepair(repair *discovery.MemberRepair) Option {
 // supplies the real *rego.Engine.
 func WithRegoEvaluator(r RegoEvaluator) Option {
 	return func(d *Discovery) { d.rego = r }
+}
+
+// WithResourceHistory supplies the member's shared history receipts and sink.
+// All participating collectors must use the same MemberRepair resource lock.
+func WithResourceHistory(history *discovery.ResourceHistory) Option {
+	return func(d *Discovery) { d.resourceHistory = history }
 }
 
 // WithLogger swaps the structured logger.
@@ -314,14 +321,14 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 	if family == nil {
 		family = &callbackFamily{}
 	}
-	upsert := func(obj any) {
+	upsert := func(obj any, eventType graph.EventType) {
 		family.mu.Lock()
 		defer family.mu.Unlock()
-		d.handleUpsert(informerCtx, gvr, kind, obj, coverage)
+		d.handleUpsertEvent(informerCtx, gvr, kind, obj, coverage, eventType)
 	}
 	registration, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    upsert,
-		UpdateFunc: func(_, obj any) { upsert(obj) },
+		AddFunc:    func(obj any) { upsert(obj, graph.EventTypeAdd) },
+		UpdateFunc: func(_, obj any) { upsert(obj, graph.EventTypeUpdate) },
 		DeleteFunc: func(obj any) {
 			family.mu.Lock()
 			defer family.mu.Unlock()
@@ -341,7 +348,7 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 		d.runs.Add(1)
 		go func() {
 			defer d.runs.Done()
-			d.memberRepair.Run(informerCtx, gvr, kind, coverage, registration.HasSynced, nil)
+			d.memberRepair.Run(informerCtx, gvr, kind, coverage, registration.HasSynced, d.resourceHistory.RecordDelete)
 		}()
 	}
 	d.runs.Add(1)
@@ -408,6 +415,10 @@ func (d *Discovery) stopLocked(name string) {
 // handleUpsert; we duplicate intentionally because the two pipelines
 // have different add-on hooks (built-in extractors vs Rego only).
 func (d *Discovery) handleUpsert(ctx context.Context, gvr schema.GroupVersionResource, kind string, obj any, coverage *operations.CoverageSession) {
+	d.handleUpsertEvent(ctx, gvr, kind, obj, coverage, graph.EventTypeAdd)
+}
+
+func (d *Discovery) handleUpsertEvent(ctx context.Context, gvr schema.GroupVersionResource, kind string, obj any, coverage *operations.CoverageSession, eventType graph.EventType) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -427,7 +438,16 @@ func (d *Discovery) handleUpsert(ctx context.Context, gvr schema.GroupVersionRes
 		}
 		defer unlock()
 	}
-	if err := d.store.UpsertResource(ctx, r); err != nil {
+	var writeErr error
+	if d.resourceHistory != nil {
+		_, writeErr = d.resourceHistory.Upsert(ctx, r, eventType)
+		if !graph.ValidResourceVersion(r) {
+			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+		}
+	} else {
+		writeErr = d.store.UpsertResource(ctx, r)
+	}
+	if err := writeErr; err != nil {
 		if ctx.Err() != nil {
 			return
 		}
@@ -491,7 +511,16 @@ func (d *Discovery) handleDelete(ctx context.Context, gvr schema.GroupVersionRes
 		}
 		defer unlock()
 	}
-	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
+	var deleteErr error
+	if d.resourceHistory != nil {
+		_, deleteErr = d.resourceHistory.Delete(ctx, r)
+		if !graph.ValidResourceVersion(r) {
+			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+		}
+	} else {
+		deleteErr = d.store.DeleteResource(ctx, r.ID())
+	}
+	if err := deleteErr; err != nil {
 		if ctx.Err() != nil {
 			return
 		}

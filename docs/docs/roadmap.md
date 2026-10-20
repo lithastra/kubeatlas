@@ -93,9 +93,14 @@ snapshot. Tier 2 members with history enabled now have independent expiring
 retention-metadata caches owned by their member bundles. Scoped background reads
 and cache-only impact queries preserve member boundaries. Member core-history
 sinks now carry their own recording lifecycle, pending delivery and sticky
-queue/write-loss evidence through the existing shared writer budget. Retained
-metadata does not clear those gaps or establish continuous history. Complete
-dynamic-source event history, verified recovery points and legacy history API
+queue/write-loss evidence through the existing shared writer budget. Member
+CRD-instance and Gatekeeper-constraint histories and committed missed-delete
+repairs now share that token. Persisted UID/version receipts suppress unchanged
+replay and same-current-version source overlap; atomic deletes preserve UID
+replacements. The receipts do not order opaque versions across watches or form
+a complete historical deduplication ledger. Retained metadata does not clear
+known loss or establish continuous history. Standalone dynamic-source history,
+continuous retained history, verified recovery points and legacy history API
 visibility remain pending.
 The unreleased v1 impact API now authorizes cluster scope before reads and
 combines the evidence under a five-second deadline and 2 MiB response cap.

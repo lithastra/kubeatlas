@@ -1269,9 +1269,9 @@ history sink to a member recording session before starting collectors. Initial
 core delivery, core updates/deletes and committed core missed-delete repair
 events use that session. The session observes its own start/cancellation/close,
 queued and in-flight delivery, queue loss and exhausted-write loss. It does not
-infer a member lifecycle or loss from global writer metrics. This is the current
-core history stream; separate CRD/Gatekeeper collectors still do not record
-their own event histories, and no complete history scope is asserted.
+infer a member lifecycle or loss from global writer metrics. This slice initially
+covered core events only; the following dynamic-history follow-up extends its
+member ingress. No complete history scope is asserted.
 
 The existing shared queue, configured worker count and per-event retry/backoff
 budget remain unchanged. A queue item carries its exact recording token. When
@@ -1322,6 +1322,61 @@ per-member drain/name exclusion, independent retained metadata and cache-only
 authorized disclosure. These establish local behavior, not deployed write
 reliability, complete dynamic-source history, continuous retention, verified
 recovery points, legacy history-route authorization or M4 acceptance.
+
+### M2 member dynamic-source history follow-up
+
+Production member bundles now supply one shared `ResourceHistory` to core,
+CRD-instance and Gatekeeper-constraint collectors, bound to the member recording
+token described above. A collector holds its existing member resource lock
+through graph receipt lookup, resource persistence, metadata enqueue and edge
+extraction. The graph's current UID/resourceVersion is the receipt; no extra
+object cache, queue, worker, Kubernetes API call or retry policy is introduced.
+All database work remains in background collection rather than the impact query
+path. GraphStore v2 and public response schemas remain unchanged.
+
+Only successful graph writes with verifiable UID/version identity can enqueue
+an add/update. A receipt-read failure does not establish a baseline and therefore
+stops that delivery with a persistence gap. A failed resource write does not
+advance the receipt or enqueue history. Unchanged cache replay and overlapping
+collectors observing the same current UID/version do not write another resource
+or event, while edge extraction still runs to repair target-arrival or earlier
+edge-write failures. A served-version switch updates the graph representation
+without manufacturing an object change. An Add callback for a previously stored
+UID with a new resourceVersion records an update; replacing a known UID records
+an add. Without a stored baseline the callback supplies the observation type;
+none of these events prove the Kubernetes creation time.
+
+Watch deletes read the stored incarnation and use the existing optional atomic
+`ResourceVersionDeleter` capability. Both stores already implement it. A failed
+read/delete enqueues no event; absence or an old-UID tombstone is a no-op, so a
+same-name replacement survives. A tombstone for the same UID may have an older
+resourceVersion or served version; successful deletion records the last stored
+receipt. Both dynamic collectors also enqueue deletes after their existing
+missed-delete workers commit under that lock. Overlapping repair/watch deletes
+therefore record only the successful removal. Retired CRD/template registrations
+retain graph rows and do not imply deletion. Unversioned objects can still be
+stored and extracted, but leave a processing gap and produce no history event;
+unverifiable deletes retain the row for future qualified repair.
+
+Events carry only member/resource identity metadata, never specs or status.
+They reuse the same bounded queue, workers, retry budget, member pending/loss
+accounting and drain/name-reservation lifecycle. The recording registry still
+contains no object identities. An unchanged object retained through member
+reattachment does not produce a fresh creation event. This does not establish
+that its earlier history was delivered: graph persistence and history enqueue
+are separate, and retained metadata cannot erase known loss.
+
+These receipts compare only the current graph version. Kubernetes resourceVersions
+are opaque; separate watches may observe different versions out of order. This
+feature neither sorts those versions nor retains a complete historical deduplication
+ledger. History coverage remains unknown, or partial with known delivery loss.
+Standalone dynamic collectors, continuous retained history, recovery verification,
+legacy history-route authorization and M4 cluster acceptance remain outside this
+slice. Portable tests cover write/read/delete failures, replay extraction,
+served-version changes, UID replacement and stale tombstones, concurrent shared
+receipts, actual production member-factory overlap, CRD/Gatekeeper repair history,
+member isolation, retirement without fabricated deletes and same-name reattachment.
+They establish local source/synthetic behavior, not deployed Tier 2 qualification.
 
 ### M3 server-backed Web analysis: first slice
 

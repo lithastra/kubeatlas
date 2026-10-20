@@ -24,16 +24,18 @@ func memberInformerFactory(coreOpts []discovery.InformerOption, tracker *operati
 		repair := discovery.NewMemberRepair(dyn, store, name)
 		opts := append(append([]discovery.InformerOption{}, coreOpts...), discovery.WithMemberRepair(repair))
 		var recording *snapshot.MemberRecordingSession
+		var history *discovery.ResourceHistory
 		if writer != nil {
 			recording = writer.ForMember(name)
-			opts = append(opts, discovery.WithSnapshotSink(recording))
+			history = discovery.NewResourceHistory(store, name, recording)
+			opts = append(opts, discovery.WithSnapshotSink(recording), discovery.WithResourceHistory(history))
 		}
 		coreFactory := multicluster.DefaultDiscoveryInformerFactory(opts...)
 		dynamicManager := discovery.NewDynamicInformerManager(dyn, discovery.WithDynamicMetrics(metrics))
 		components := []componentStarter{
 			coreFactory(name, dyn, dc, store),
-			crd.New(dyn, store, crd.WithCoverage(tracker), crd.WithClusterID(name), crd.WithRegoEvaluator(rules), crd.WithMemberRepair(repair)),
-			gatekeeper.New(dyn, store, ext, dynamicManager, gatekeeper.WithCoverage(tracker), gatekeeper.WithClusterID(name), gatekeeper.WithDiscovery(dc), gatekeeper.WithMemberRepair(repair)),
+			crd.New(dyn, store, crd.WithCoverage(tracker), crd.WithClusterID(name), crd.WithRegoEvaluator(rules), crd.WithMemberRepair(repair), crd.WithResourceHistory(history)),
+			gatekeeper.New(dyn, store, ext, dynamicManager, gatekeeper.WithCoverage(tracker), gatekeeper.WithClusterID(name), gatekeeper.WithDiscovery(dc), gatekeeper.WithMemberRepair(repair), gatekeeper.WithResourceHistory(history)),
 		}
 		if retained != nil {
 			components = append(components, retained.ForMember(name))
