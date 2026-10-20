@@ -119,12 +119,39 @@ with a fresh unqueried lifetime.
 Authorized impact requests read the selected member's cache without a database
 query or refresh. Evidence expires after ten minutes and retains independent
 `stale`/`stopped` flags. `retainedData: observed` means only that its recorded
-window was read successfully. The parent history writer state remains
-`unsupported` with `history_cluster_scope_unavailable`, coverage remains unknown,
-and no global writer counters or start time are attributed to that member.
+window was read successfully. Without a registered member recording session,
+the parent writer state remains `unsupported` with
+`history_cluster_scope_unavailable`. No global writer counters or start time
+are attributed to that member.
 Event bounds do not prove continuous history; a marker is not a backup or a
-verified recovery point. Member-specific recording-loss qualification and the
-visibility of existing legacy history routes remain separate work.
+verified recovery point. Visibility of existing legacy history routes remains
+separate work.
+
+## Member recording state and loss (v1.7 development)
+
+Tier 2 members with history enabled bind their core informer event sink to an
+independent recording session. It uses the existing shared queue, configured
+workers and retry budget; this feature does not create a queue or worker pool
+for each member. Queue loss is attributed to the member whose event was
+discarded. Exhausted writes are attributed to the event's member. Another
+member's global drop/failure totals do not become this member's loss evidence.
+
+Impact history state can now be `recording`, `degraded` or `stopped` for a
+registered member session. Pending-delivery qualification includes that member's
+in-flight writes. Known queue/write loss makes coverage partial and remains
+sticky through later success and same-name reattachment; otherwise coverage is
+unknown. Recording does not assert continuous history or complete source
+coverage. Separate CRD/Gatekeeper collectors still have no dedicated event
+history in this stream.
+
+Member removal stops its collectors, then waits for its recording session's
+queued/in-flight writes before releasing the name. The shared writer stays
+available to other member sessions. A new lifetime has its own start/pending
+state; old tokens cannot mutate it. Up to 128 distinct recording scopes retain
+qualified process state, including stopped entries. Additional scopes continue
+using the existing queue budget with unsupported member recording evidence.
+Retained-metadata observations remain independent and cannot erase recording
+loss, prove a lossless interval or verify a recovery point.
 
 ## RBAC visibility (F-206)
 

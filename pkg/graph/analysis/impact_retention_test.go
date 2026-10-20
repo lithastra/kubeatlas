@@ -41,9 +41,8 @@ func TestImpactMemberRetentionRequiresExactScopeWithoutWriterQualification(t *te
 		"valid scoped metadata": func(*operations.AnalysisAvailability) {},
 		"standalone metadata":   func(e *operations.AnalysisAvailability) { e.History.RetentionEvidence.Bounds.ClusterID = "" },
 		"hidden member":         func(e *operations.AnalysisAvailability) { e.History.RetentionEvidence.Bounds.ClusterID = "hidden" },
-		"borrowed writer lifecycle": func(e *operations.AnalysisAvailability) {
+		"recording with unqualified scope": func(e *operations.AnalysisAvailability) {
 			e.History.State = operations.HistoryRecording
-			e.History.Reasons = nil
 			e.History.ObservationStartedAt = e.CapturedAt.Add(-time.Minute)
 		},
 		"borrowed observation start": func(e *operations.AnalysisAvailability) {

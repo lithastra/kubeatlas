@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,6 +23,81 @@ import (
 type impactRetentionReader struct {
 	graph.HistoryBoundsReader
 	calls atomic.Int32
+}
+
+func TestImpactAPIMemberRecordingLossAndRetentionRemainIndependent(t *testing.T) {
+	store := seedImpactAPI(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	writer := snapshot.New(store, snapshot.Config{Workers: 1, QueueSize: 4}, nil)
+	writer.Start(ctx)
+	t.Cleanup(writer.Stop)
+	session := writer.ForMember("prod")
+	if err := session.Begin(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(session.Close)
+	reader := &impactRetentionReader{HistoryBoundsReader: store}
+	retained := snapshot.NewMemberHistoryRetention(reader, time.Hour)
+	availability := snapshot.NewAnalysisAvailabilityReader(nil, writer, snapshot.AnalysisAvailabilityConfig{Durable: true, HistoryEnabled: true, Federated: true, Retention: time.Hour}, snapshot.WithMemberHistoryRetention(retained))
+	s := New("", store, aggregator.NewRegistry(), WithClusterLister(&impactAPIClusters{clusters: []string{"prod"}}), WithClusterRBAC(multicluster.NewRBACScope([]multicluster.RBACRule{{Token: "prod-token", Clusters: []string{"prod"}}})), WithImpactEvidence(analysis.ImpactEvidenceProviders{Availability: availability}))
+	read := func() operations.HistoryAvailability {
+		t.Helper()
+		w := serveImpactTest(s, impactTestRequest(ctx, "/api/v1/impact/demo/ConfigMap/settings?cluster=prod", "prod-token"))
+		if w.Code != 200 {
+			t.Fatalf("member recording response=%d %s", w.Code, w.Body.String())
+		}
+		var response ImpactResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.Analysis.Availability.Evidence.History
+	}
+	if h := read(); h.State != operations.HistoryRecording || h.Coverage != operations.CoverageUnknown || h.ObservationStartedAt.IsZero() || h.RetainedData != "not_queried" {
+		t.Fatalf("running member incorrectly qualified retention: %+v", h)
+	}
+	session.Enqueue(graph.ResourceEvent{ClusterID: "hidden", Kind: "Pod", Name: "rejected-foreign-event", EventType: graph.EventTypeUpdate})
+	session.Enqueue(graph.ResourceEvent{ClusterID: "prod", Kind: "Pod", Name: "private-recorded-event", EventType: graph.EventTypeUpdate})
+	session.Close()
+	if h := read(); h.State != operations.HistoryStopped || h.Coverage != operations.CoveragePartial || !slices.Contains(h.Reasons, operations.HistoryQueueGap) {
+		t.Fatal("closed member lost its scoped delivery gap")
+	}
+	done := make(chan error, 1)
+	go func() { done <- retained.ForMember("prod").Start(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Error(err)
+			}
+		case <-time.After(time.Second):
+			t.Error("member metadata did not stop")
+		}
+	})
+	deadline := time.Now().Add(time.Second)
+	for {
+		e, _ := retained.SnapshotRetention(ctx, "prod")
+		if e.State == operations.RetentionObserved {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("retention did not observe recorded member event")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	fresh := writer.ForMember("prod")
+	if err := fresh.Begin(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(fresh.Close)
+	h := read()
+	if h.State != operations.HistoryDegraded || h.Coverage != operations.CoveragePartial || h.RetainedData != "observed" || h.RetentionEvidence.Bounds.ClusterID != "prod" || h.RetentionEvidence.Bounds.FirstEventAt.IsZero() || !slices.Contains(h.Reasons, operations.HistoryQueueGap) {
+		t.Fatalf("retained success erased member recording loss: %+v", h)
+	}
+	if reader.calls.Load() != 1 {
+		t.Fatal("member HTTP reads refreshed history")
+	}
 }
 
 func TestImpactAPIMemberRetainedMetadataAuthorizationAndCacheIsolation(t *testing.T) {

@@ -22,7 +22,7 @@ func TestMemberFactoryRepairsRetainedRowsWithMemberIsolation(t *testing.T) {
 	s := memory.New()
 	tracker := operations.NewCoverageTracker(time.Minute)
 	client := memberDynamicClient(t)
-	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods})}, tracker, nil, extractor.Default(), discovery.NewDynamicMetrics(), nil)
+	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods})}, tracker, nil, extractor.Default(), discovery.NewDynamicMetrics(), nil, nil)
 	// Stop and reattach the actual production bundle. These rows represent
 	// deletes missed while detached, not synthetic delete callbacks.
 	start := func() func() {
@@ -128,7 +128,7 @@ func TestMemberBundleJoinsBlockedRepairBeforeReleasingName(t *testing.T) {
 	row := graph.Resource{ClusterID: "east", Kind: "Pod", Namespace: "default", Name: "missed", GroupVersion: "v1", UID: "old-pod", ResourceVersion: "1"}
 	_ = s.UpsertResource(context.Background(), row)
 	tracker := operations.NewCoverageTracker(time.Minute)
-	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods})}, tracker, nil, extractor.Default(), discovery.NewDynamicMetrics(), nil)
+	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods})}, tracker, nil, extractor.Default(), discovery.NewDynamicMetrics(), nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	var released sync.Once

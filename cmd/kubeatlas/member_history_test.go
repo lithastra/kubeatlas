@@ -47,7 +47,7 @@ func TestMemberFactoryOwnsHistoryRetentionAcrossRemovalAndReattachment(t *testin
 	reader := &memberHistoryBounds{reader: store, entered: make(chan struct{}), release: make(chan struct{})}
 	retained := snapshot.NewMemberHistoryRetention(reader, time.Hour)
 	tracker := operations.NewCoverageTracker(time.Minute)
-	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods})}, tracker, nil, extractor.Default(), discovery.NewDynamicMetrics(), retained)
+	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods})}, tracker, nil, extractor.Default(), discovery.NewDynamicMetrics(), retained, nil)
 	start := func(cluster string) func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)

@@ -62,12 +62,13 @@ func readImpactAvailability(ctx context.Context, provider ImpactAvailabilityProv
 	}
 	evidence.History.Reasons = slices.Clone(evidence.History.Reasons)
 	if h := evidence.History.RetentionEvidence; h != nil {
-		// Member retention metadata is independent of the still-unqualified
-		// global writer. It requires its exact named scope and durable storage.
+		// Retained metadata and recording state are independent. Both registered
+		// member sessions and unsupported members require exact scoped metadata;
+		// global writer counters never qualify a member's recording lifecycle.
 		memberRetention := cluster != "" && history.State == operations.HistoryUnsupported &&
 			slices.Equal(history.Reasons, []operations.HistoryAvailabilityReason{operations.HistoryScopeUnknown}) &&
 			evidence.Storage.DurabilityKnown && evidence.Storage.Durable
-		if !(cluster == "" && active || memberRetention) || !h.ValidFor(cluster, history.Retention, evidence.CapturedAt) {
+		if !(active || memberRetention) || !h.ValidFor(cluster, history.Retention, evidence.CapturedAt) {
 			return operations.AnalysisAvailability{}, ErrImpactAvailability
 		}
 		owned := *h

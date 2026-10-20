@@ -818,7 +818,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		}
 		mcKubeconfigs = kubeconfigs
 		mcMgr = multicluster.New(graphStore,
-			multicluster.WithDiscoveryFactory(memberInformerFactory(baseInformerOpts, operationsMonitor.Coverage(), regoEngine, extractor.Default(), dynMetrics, retainedMembers)),
+			multicluster.WithDiscoveryFactory(memberInformerFactory(baseInformerOpts, operationsMonitor.Coverage(), regoEngine, extractor.Default(), dynMetrics, retainedMembers, snapWriter)),
 		)
 		// Each member bundle owns its core, CRD and Gatekeeper collectors.
 		// The two standalone component slots remain parked in federation mode.

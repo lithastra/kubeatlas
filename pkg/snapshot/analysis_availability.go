@@ -106,8 +106,10 @@ func (r *AnalysisAvailabilityReader) SnapshotAvailability(ctx context.Context, c
 		history.State = operations.HistoryUnsupported
 		history.Reasons = append(history.Reasons, operations.HistoryRequiresTier2)
 	case r.cfg.Federated:
-		history.State = operations.HistoryUnsupported
-		history.Reasons = append(history.Reasons, operations.HistoryScopeUnknown)
+		history = unsupportedMemberHistory()
+		if r.writer != nil {
+			history = r.writer.memberHistoryAvailability(cluster, r.cfg.Retention)
+		}
 		if r.members != nil {
 			if r.members.retention != r.cfg.Retention {
 				return operations.AnalysisAvailability{}, ErrAnalysisAvailabilityConfig
@@ -133,6 +135,8 @@ func (r *AnalysisAvailabilityReader) SnapshotAvailability(ctx context.Context, c
 			}
 			applyRetainedMetadata(&history, retained)
 		}
+	}
+	if history.State == operations.HistoryRecording || history.State == operations.HistoryInitializing || history.State == operations.HistoryDegraded || history.State == operations.HistoryStopped {
 		switch storage.State {
 		case operations.StorageUnknown:
 			history.Reasons = append(history.Reasons, operations.HistoryStorageUnknown)

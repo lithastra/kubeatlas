@@ -1243,7 +1243,8 @@ member cannot supply evidence for another member.
 The existing `availability.evidence.history` shape now permits exact-member
 retention metadata independently of recording qualification. With these caches,
 `retentionNanos` is the configured window and `retainedData` reflects the cached
-metadata state. The parent history state remains `unsupported` with reason
+metadata state. In this original metadata-only slice the parent history state
+remains `unsupported` with reason
 `history_cluster_scope_unavailable`, coverage remains `unknown`, and the writer
 observation-start timestamp remains zero. These fields mean that member-level
 recording lifecycle is not qualified; successfully reading retained timestamps
@@ -1260,6 +1261,67 @@ allowed responses, denied requests before cache access and repeated cache reads
 without database queries. These local checks do not establish deployed Tier 2
 performance, member writer loss accounting, continuous retained history,
 restorable snapshots, legacy history-route authorization or M4 acceptance.
+
+### M2 member-scoped recording lifecycle and loss follow-up
+
+Production Tier 2 members with history enabled now bind their core informer
+history sink to a member recording session before starting collectors. Initial
+core delivery, core updates/deletes and committed core missed-delete repair
+events use that session. The session observes its own start/cancellation/close,
+queued and in-flight delivery, queue loss and exhausted-write loss. It does not
+infer a member lifecycle or loss from global writer metrics. This is the current
+core history stream; separate CRD/Gatekeeper collectors still do not record
+their own event histories, and no complete history scope is asserted.
+
+The existing shared queue, configured worker count and per-event retry/backoff
+budget remain unchanged. A queue item carries its exact recording token. When
+overflow discards the oldest item, queue loss is recorded on the discarded
+item's member, rather than the incoming event's member. A rejected incoming
+event or exhausted store-write budget marks its own token. Foreign-cluster
+events are rejected, not silently retagged. Queued events remain metadata-only;
+the recording registry retains no object names, UIDs, namespaces or payloads.
+Global Prometheus counters retain their previous aggregate meaning.
+
+Bundle cancellation marks its recording session stopped. After collectors have
+joined, closing the session stops accepting delivery and waits for its own
+queued/in-flight writes. It neither closes the shared writer nor stops another
+member's session. The member name remains reserved until these writes finish,
+including a blocked sink that ignores cancellation. Same-name replacement gets
+a new start interval and pending-delivery count while inheriting previously
+known loss flags. Obsolete closed tokens cannot enqueue into or mutate the new
+session. Later successful writes, retained metadata reads and reattachment do
+not reset a known history gap.
+
+At most 128 member recording scopes, including stopped entries, retain qualified
+state in the process. Same-name replacement reuses the entry. Beyond that cap,
+events may still use the shared queue, but member recording remains explicitly
+unsupported rather than allocating an unbounded history registry or stopping
+graph collection. Legacy direct writer calls without a member token cannot
+qualify a member's lifecycle or loss. Disabled history and Tier 1 remain outside
+this feature.
+
+The existing impact history states now describe registered member sessions:
+`recording` means the member sink and shared writer are running; `degraded`
+records that member's known loss or unavailable storage; `stopped` retains its
+shutdown and loss qualification. `history_delivery_pending` includes its
+in-flight writes even when the shared queue appears empty. History coverage
+remains `unknown`, or `partial` for known delivery loss, never complete. Without
+a registered recording session the previous unsupported member qualification
+remains. Retained metadata is independent in all of these states, and exact
+member/window/durability/freshness validation remains mandatory. No v1alpha1,
+GraphStore v2 method-set or public wire-shape change is made.
+
+The writer now also serializes queue closure against non-blocking sends and
+ignores duplicate Start calls, preserving the configured worker budget and
+preventing a concurrent Stop/Enqueue from sending to a closed channel. Portable
+race tests exercise overflow ownership, scoped retry exhaustion, pending writes,
+foreign-event rejection, sticky loss on reattachment, stale-token exclusion,
+capacity, writer cancellation, concurrent shutdown and worker-budget preservation.
+Production member-factory and actual impact-handler tests verify ingress binding,
+per-member drain/name exclusion, independent retained metadata and cache-only
+authorized disclosure. These establish local behavior, not deployed write
+reliability, complete dynamic-source history, continuous retention, verified
+recovery points, legacy history-route authorization or M4 acceptance.
 
 ### M3 server-backed Web analysis: first slice
 

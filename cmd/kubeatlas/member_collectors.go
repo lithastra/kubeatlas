@@ -19,10 +19,15 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-func memberInformerFactory(coreOpts []discovery.InformerOption, tracker *operations.CoverageTracker, rules crd.RegoEvaluator, ext gatekeeper.ExtractorRegistry, metrics *discovery.DynamicMetrics, retained *snapshot.MemberHistoryRetention) multicluster.DiscoveryInformerFactory {
+func memberInformerFactory(coreOpts []discovery.InformerOption, tracker *operations.CoverageTracker, rules crd.RegoEvaluator, ext gatekeeper.ExtractorRegistry, metrics *discovery.DynamicMetrics, retained *snapshot.MemberHistoryRetention, writer *snapshot.Writer) multicluster.DiscoveryInformerFactory {
 	return func(name string, dyn dynamic.Interface, dc kdiscovery.DiscoveryInterface, store graph.GraphStore) multicluster.InformerStarter {
 		repair := discovery.NewMemberRepair(dyn, store, name)
 		opts := append(append([]discovery.InformerOption{}, coreOpts...), discovery.WithMemberRepair(repair))
+		var recording *snapshot.MemberRecordingSession
+		if writer != nil {
+			recording = writer.ForMember(name)
+			opts = append(opts, discovery.WithSnapshotSink(recording))
+		}
 		coreFactory := multicluster.DefaultDiscoveryInformerFactory(opts...)
 		dynamicManager := discovery.NewDynamicInformerManager(dyn, discovery.WithDynamicMetrics(metrics))
 		components := []componentStarter{
@@ -33,14 +38,17 @@ func memberInformerFactory(coreOpts []discovery.InformerOption, tracker *operati
 		if retained != nil {
 			components = append(components, retained.ForMember(name))
 		}
-		return &memberCollectors{components: components}
+		return &memberCollectors{components: components, recording: recording}
 	}
 }
 
 // A member owns all of its collectors. Any early exit cancels that member's
 // siblings, and Start joins every collector before releasing the member name.
 // Other members are owned independently by multicluster.Manager.
-type memberCollectors struct{ components []componentStarter }
+type memberCollectors struct {
+	components []componentStarter
+	recording  *snapshot.MemberRecordingSession
+}
 
 func (m *memberCollectors) Start(ctx context.Context) error {
 	if len(m.components) == 0 {
@@ -48,6 +56,12 @@ func (m *memberCollectors) Start(ctx context.Context) error {
 	}
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if m.recording != nil {
+		if err := m.recording.Begin(child); err != nil {
+			return err
+		}
+		defer m.recording.Close()
+	}
 	results := make(chan error, len(m.components))
 	for _, c := range m.components {
 		go func() { results <- c.Start(child) }()
