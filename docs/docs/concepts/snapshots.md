@@ -7,10 +7,10 @@ title: Historical snapshots
 
 The live graph answers *"what does the cluster look like now?"*.
 Snapshots answer the follow-up SREs actually ask during an
-incident: *"what changed?"*. When KubeAtlas records every resource
-add, update, and delete into an append-only event stream, the diff
-endpoint can replay a time window and tell you exactly which
-resources appeared, vanished, or were modified between two points.
+incident: *"what changes were observed?"*. KubeAtlas records resource
+add, update, and delete observations in an append-only metadata stream.
+The diff endpoint summarizes the retained observations in a time window;
+it cannot establish that every Kubernetes change was collected.
 
 ## Tier 2 only
 
@@ -55,19 +55,18 @@ informer**:
   than stalling the informer. Every shed event increments
   `kubeatlas_snapshot_queue_drop_total`.
 
-Dropping under sustained overload is a deliberate trade: a slightly
-incomplete event stream is acceptable; an informer that falls
-behind the API server is not. In practice the queue absorbs normal
-churn comfortably — drops only appear under pathological write
-storms, and the diff endpoint is anchored by periodic full-sync
-markers (below) so a few missed deltas do not compound.
+Dropping under overload protects the informer, but leaves a known history gap.
+Monitor the queue and write-loss counters; a later successful write or periodic
+marker cannot reconstruct a discarded event or prove a complete diff window.
 
 ### Full-sync markers
 
 Alongside the event stream, KubeAtlas writes **snapshot markers** —
 rows in `snapshot_meta` that record "at this timestamp the cluster
-held N resources". A marker is a known-good anchor the diff walks
-from. Markers are written:
+held N observed resources". Counts are separate graph observations, not an
+atomic historical graph or backup. The diff reads its supplied time window;
+a marker neither fills missing events nor proves a recoverable snapshot.
+Markers are written:
 
 - **periodically**, by the optional Helm `CronJob`
   (`snapshots.fullSyncSchedule`), which calls the internal
@@ -134,6 +133,25 @@ for the field-level *how*.
 
 See the [API reference](../api-reference.md#snapshots-tier-2) for
 the full request and response shapes.
+
+## Member-scoped reads (v1.7 development)
+
+In the unreleased v1.7 implementation, federation requests must explicitly select
+one attached member with `cluster`, for example
+`GET /api/v1/snapshots/diff?cluster=prod&from=1h`. Snapshot lists use the same
+selector. Both routes enforce member visibility before reading history; the
+unscoped v1alpha1 aliases do not provide a federation fallback. Standalone
+queries select only unlabelled records, without attributing legacy observations
+to a named member. The current Web/CLI snapshot clients do not yet send this
+federation selector.
+
+Reads have fixed row, metadata, time and concurrency limits; a truncated or
+oversized read fails rather than returning a partial result. These summaries
+classify retained observations, not original Kubernetes creation/deletion times.
+A marker does not fill history gaps or prove a restorable snapshot. See
+[scoped history reads](../installation/multicluster.md#scoped-history-reads-v17-development)
+for scope, limits and compatibility details. This is development behavior, not a
+change to the published v1.6 instructions below.
 
 ## Enabling snapshots
 

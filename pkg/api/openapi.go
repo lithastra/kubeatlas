@@ -99,6 +99,10 @@ func (s *Server) openAPIPathsFor(version string) map[string]any {
 // for ResourceDetailResponse, which carries the v1-only enrichment
 // fields).
 func openAPIOperationFor(r RouteInfo, version string) map[string]any {
+	if version == APIVersionV1 && (r.Pattern == "/api/v1alpha1/snapshots" || r.Pattern == "/api/v1alpha1/snapshots/diff") {
+		r.QueryParams = append(append([]ParamSpec{}, r.QueryParams...), ParamSpec{Name: "cluster", Type: "string", Description: "Exactly one attached member in federation; required in federated mode. Omit in standalone mode. Authorization precedes history reads."})
+		r.Description += " Selected-cluster reads are metadata-only and bounded to 1000 rows, 2 MiB and five seconds; overflow returns 413 rather than a partial diff/list. Empty standalone scope selects only unlabelled rows, whose legacy provenance is unknown. Recording/retention completeness and recovery are not implied."
+	}
 	op := openAPIOperation(r)
 	if version == APIVersionV1 && r.Response.SchemaRef == "ResourceDetailResponse" {
 		// Override the success-content $ref to point at the v1

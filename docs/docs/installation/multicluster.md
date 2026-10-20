@@ -124,8 +124,8 @@ the parent writer state remains `unsupported` with
 `history_cluster_scope_unavailable`. No global writer counters or start time
 are attributed to that member.
 Event bounds do not prove continuous history; a marker is not a backup or a
-verified recovery point. Visibility of existing legacy history routes remains
-separate work.
+verified recovery point. The scoped history reads described below separately
+apply member visibility to the existing snapshot list and diff routes.
 
 ## Member recording state and loss (v1.7 development)
 
@@ -172,6 +172,53 @@ qualified process state, including stopped entries. Additional scopes continue
 using the existing queue budget with unsupported member recording evidence.
 Retained-metadata observations remain independent and cannot erase recording
 loss, prove a lossless interval or verify a recovery point.
+
+## Scoped history reads (v1.7 development)
+
+With Tier 2 history enabled, the existing v1 snapshot list and diff routes now
+select exactly one member before reading retained metadata:
+
+```text
+GET /api/v1/snapshots?cluster=prod
+GET /api/v1/snapshots/diff?cluster=prod&from=1h&namespace=demo
+```
+
+In federation mode `cluster` is required, names one attached member, and cannot
+be repeated, comma-separated or empty. The bearer-token allow-set is checked
+before listing attachments or reading history. Missing credentials return 401,
+unrecognized credentials or a forbidden member return 403, and an authorized
+but unattached member returns 404. Removing a member does not delete retained
+history, but these routes require it to be attached before querying its scope.
+Disabled RBAC still requires the explicit member selector in federation mode.
+
+Standalone reads omit `cluster` and select only unlabelled rows. Such rows may
+include old federation observations with unknown provenance; they are never
+relabelled or assigned to a named member. The v1alpha1 parameter/response schemas
+remain frozen. Its unscoped history aliases return 503 in federation or with an
+authorized restricted caller; missing/invalid credentials still receive 401/403.
+They cannot serve as a global-read bypass for the v1 member selector.
+
+Both stores explicitly implement the scoped history capabilities. Wrappers must
+opt in; missing capabilities return 503 rather than falling back to global
+`ListEvents`/`ListSnapshotMeta`. Authorization and exact member filtering precede
+returned counts and limits. The list is limited to 1000 retained markers; diff
+reads at most 1000 retained non-Secret events. Aggregate metadata and the final
+response are capped at 2 MiB under a five-second request deadline. Any overflow
+or truncated event page returns 413 with no partial list/diff. A narrower diff
+window can fit the event budget; marker-list paging is not implemented.
+
+These requests share the existing two-request impact-analysis admission budget;
+a busy budget returns 429. Timed-out workers retain admission until they finish,
+and cannot write late success. Provider errors are closed messages; responses
+use `Cache-Control: no-store` and `Vary: Authorization`.
+
+This change adds read-side scope checks, not member-specific marker creation,
+authorization for the internal trigger endpoint, a complete audit stream or
+verified recovery. Existing unlabelled aggregate markers are excluded from
+named-member results. The internal trigger remains an operator/ClusterIP-only
+surface and does not gain a member selector. Web snapshot views and snapshot CLI
+commands do not yet supply the new federation selector; they cannot infer a
+member or silently retry without it.
 
 ## RBAC visibility (F-206)
 

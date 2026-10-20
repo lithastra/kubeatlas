@@ -369,7 +369,10 @@ for the design.
 
 ### `GET /api/v1/snapshots`
 
-Lists the recorded full-sync snapshot markers, most-recent first.
+Lists the recorded snapshot markers, most-recent first. In v1.7 development,
+use `?cluster=prod` to select one attached member in federation mode; omit
+`cluster` in standalone mode to select only unlabelled records. Named-member
+counts exclude unlabelled aggregate markers. The response schema is unchanged.
 
 ```json
 {
@@ -394,6 +397,22 @@ exceed the configured retention.
 
 `400` if `from` is missing or unparseable, if `from` is not before
 `to`, or if the window is wider than retention.
+
+For v1.7 development, both history reads additionally require exactly one
+`cluster` in federation mode (`?cluster=prod`); repeated, empty or comma-separated
+values return 400. Member visibility is checked before attachment/storage reads:
+401/403 for missing/denied authorization, 404 for an authorized unattached member.
+Standalone mode omits the selector and reads only unlabelled rows. The v1alpha1
+schemas remain frozen and its unscoped aliases reject federation/restricted
+reads rather than bypassing authorization.
+
+Reads are capped at 1000 retained rows, 2 MiB and five seconds. An oversized or
+truncated read returns 413 without partial results; missing explicit scoped-store
+capabilities return 503, shared analysis admission saturation returns 429, and
+request expiry returns 504. Provider failures return closed 500 errors. These
+are retained-observation summaries, not complete audit or recovery claims. See
+[scoped history reads](./installation/multicluster.md#scoped-history-reads-v17-development)
+for compatibility, client and marker-creation limits.
 
 ```bash
 curl -s 'http://localhost:8080/api/v1/snapshots/diff?from=1h&to=now' | jq .

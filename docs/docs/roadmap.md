@@ -100,8 +100,11 @@ replay and same-current-version source overlap; atomic deletes preserve UID
 replacements. The receipts do not order opaque versions across watches or form
 a complete historical deduplication ledger. Retained metadata does not clear
 known loss or establish continuous history. Standalone dynamic-source history,
-continuous retained history, verified recovery points and legacy history API
-visibility remain pending.
+continuous retained history and verified recovery points remain pending. Existing
+v1 snapshot list/diff routes now authorize and read one attached member through
+bounded scoped capabilities; unscoped alpha history aliases reject federation
+access. Member-specific marker creation and snapshot Web/CLI member selection
+remain pending.
 The unreleased v1 impact API now authorizes cluster scope before reads and
 combines the evidence under a five-second deadline and 2 MiB response cap.
 Standalone CRD and Gatekeeper discovery now contribute separate bounded

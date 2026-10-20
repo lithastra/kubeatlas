@@ -1378,6 +1378,43 @@ receipts, actual production member-factory overlap, CRD/Gatekeeper repair histor
 member isolation, retirement without fabricated deletes and same-name reattachment.
 They establish local source/synthetic behavior, not deployed Tier 2 qualification.
 
+### M2 existing snapshot-route member visibility follow-up
+
+Existing snapshot list/diff handlers now authorize before history reads and use
+explicit optional scoped capabilities. V1 federation requests select one attached
+`cluster`; standalone scope reads only unlabelled rows, with unknown legacy
+provenance. The frozen v1alpha1 query/response schemas gain no fields. Its
+unscoped history aliases reject federation/restricted access instead of bypassing
+the v1 selector. An authenticated forbidden scope is rejected before attachment
+lookup; denied requests never read storage or disclose hidden attachment names.
+
+`HistoryEventReader` supplies bounded metadata for diff classification. A new
+optional `HistoryMarkerReader` supplies exact-member marker lists in both stores
+without changing GraphStore v2. Filtering occurs before limits/counts. Memory
+reads its bounded test-support ring; PostgreSQL applies cluster equality and a
+1001-row lookahead in a read-only transaction with a five-second statement
+limit. The shared marker builder caps returned rows and metadata. PostgreSQL
+container tests are provided but are not established by short-mode local runs;
+no indexed scan-performance claim is made.
+
+Handlers reject truncated event pages, row/byte overflow, foreign metadata and
+out-of-order event projections rather than returning misleading partial diffs.
+They revalidate explicit adapters and emit closed provider-error text. Shared
+classification preserves the existing response shape and uses only authorized
+metadata. Final response encoding is capped at 2 MiB, with a five-second deadline
+and the existing shared two-request analysis admission budget. Cancelled/late
+workers cannot write success and retain admission until completion. Bodies are
+not cached and vary by Authorization.
+
+Portable route/store tests cover exact scope including empty legacy scope,
+same-UID events across members, denied reads before attachment/storage access,
+alpha alias rejection, explicit capability wrappers, Secret exclusion, scoped
+counts, overflow, cancellation, late workers and admission sharing. OpenAPI adds
+the v1 selector only. These checks do not qualify durable deployment, continuous
+history, recoverable snapshots, scoped internal marker creation, snapshot Web/CLI
+member selection or M4 acceptance. Detached retained scopes require reattachment
+before this read API can query them. See the [multi-cluster history contract](../installation/multicluster.md#scoped-history-reads-v17-development).
+
 ### M3 server-backed Web analysis: first slice
 
 The standalone resource-detail page now offers an explicit **Analyze impact**
