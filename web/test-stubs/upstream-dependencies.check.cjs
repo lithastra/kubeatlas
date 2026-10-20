@@ -1,16 +1,43 @@
 // Copyright 2026 The KubeAtlas Authors
 // SPDX-License-Identifier: Apache-2.0
 const assert = require('node:assert/strict');
-const {mkdtemp, writeFile, rm} = require('node:fs/promises');
+const {mkdtemp, readFile, writeFile, rm} = require('node:fs/promises');
 const {createRequire} = require('node:module');
 const os = require('node:os');
 const path = require('node:path');
 const {test} = require('node:test');
 
 const fromBabel = createRequire(require.resolve('babel-plugin-istanbul'));
-const {loadNycConfig} = fromBabel('@istanbuljs/load-nyc-config');
+const consumerPath = fromBabel.resolve('@istanbuljs/load-nyc-config');
+const fromConsumer = createRequire(consumerPath);
 
-test('Istanbul loads YAML coverage config with extensions and typed values', async () => {
+// Read the packages that the real consumer resolves, not an unrelated hoisted
+// copy. A changed lockfile does not update an existing node_modules tree.
+async function assertLockedParser() {
+  const root = path.resolve(__dirname, '..');
+  const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+  const lock = JSON.parse(await readFile(path.join(root, 'package-lock.json'), 'utf8'));
+  const verify = async (resolver, name) => {
+    const file = resolver.resolve(`${name}/package.json`);
+    const installed = JSON.parse(await readFile(file, 'utf8'));
+    const key = path.relative(root, path.dirname(file)).split(path.sep).join('/');
+    const locked = lock.packages[key];
+    assert.ok(locked, `${name} resolves outside the locked dependency tree: ${key}`);
+    assert.equal(installed.version, locked.version,
+      `${name} runtime version differs from package-lock.json at ${key}; reconcile installed dependencies without weakening this check`);
+    return {installed, file};
+  };
+  const consumer = await verify(fromBabel, '@istanbuljs/load-nyc-config');
+  const parser = await verify(fromConsumer, 'js-yaml');
+  const override = manifest.overrides[`@istanbuljs/load-nyc-config@${consumer.installed.version}`]?.['js-yaml'];
+  assert.ok(override, 'the Istanbul YAML override must remain explicit');
+  assert.equal(parser.installed.version, override, 'Istanbul must resolve the exact overridden YAML parser');
+  await verify(createRequire(parser.file), 'argparse');
+}
+
+test('Istanbul loads YAML coverage config with locked dependencies, extensions and typed values', async () => {
+  await assertLockedParser();
+  const {loadNycConfig} = fromBabel('@istanbuljs/load-nyc-config');
   const dir = await mkdtemp(path.join(os.tmpdir(), 'nyc-consumer-'));
   try {
     await writeFile(path.join(dir, 'package.json'), JSON.stringify({nyc: {reporter: ['lcov']}}));
