@@ -308,3 +308,51 @@ func TestMemberRecordingDuplicateWriterStartKeepsWorkerBudget(t *testing.T) {
 	}
 	release()
 }
+
+type memberPoolSaturationSink struct {
+	fakeSink
+	entered, release chan struct{}
+}
+
+func (s *memberPoolSaturationSink) AppendEvent(ctx context.Context, e graph.ResourceEvent) error {
+	if e.ClusterID == "east" {
+		s.entered <- struct{}{}
+		<-s.release
+	}
+	return s.fakeSink.AppendEvent(ctx, e)
+}
+
+func TestMemberRecordingSharesWorkersWithoutReservedMemberCapacity(t *testing.T) {
+	sink := &memberPoolSaturationSink{entered: make(chan struct{}, 2), release: make(chan struct{})}
+	w := runningMemberWriter(t, sink, Config{Workers: 2, QueueSize: 4})
+	east, west := beginMemberRecording(t, w, "east"), beginMemberRecording(t, w, "west")
+	var once sync.Once
+	release := func() { once.Do(func() { close(sink.release) }) }
+	t.Cleanup(release)
+	// The two independent east sources can occupy the entire shared pool.
+	for _, kind := range []string{"Pod", "Foo"} {
+		e := memberEvent("east", kind)
+		e.Kind = kind
+		east.Enqueue(e)
+	}
+	for range 2 {
+		select {
+		case <-sink.entered:
+		case <-time.After(time.Second):
+			t.Fatal("east did not occupy both shared workers")
+		}
+	}
+	west.Enqueue(memberEvent("west", "queued"))
+	if w.QueueDepth() != 1 || len(sink.stored()) != 0 || west.pending.Load() != 1 {
+		t.Fatal("blocked shared pool unexpectedly processed west delivery")
+	}
+	if h := memberHistory(t, w, "west"); !slices.Contains(h.Reasons, operations.HistoryDeliveryPending) || h.State != operations.HistoryRecording {
+		t.Fatal("queued member was reported as fully delivered", h)
+	}
+	release()
+	west.Close()
+	east.Close()
+	if len(sink.stored()) != 3 || w.Metrics().Snapshot().QueueDropped != 0 {
+		t.Fatal("releasing capacity did not drain both members without loss")
+	}
+}

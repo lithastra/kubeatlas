@@ -55,19 +55,21 @@ func runSnapshotRead(ctx context.Context, args []string, diff bool, out, diagnos
 		return 1
 	}
 	q.ClusterID = cluster.value
+	// Diagnostics are best-effort; a failed diagnostic write preserves the
+	// original failure exit status and must not trigger another API request.
 	if fs.NArg() != 0 || *timeout < time.Second || *timeout > time.Minute {
-		fmt.Fprintln(diagnostics, name+": invalid positional arguments or timeout (1s..1m)")
+		_, _ = fmt.Fprintln(diagnostics, name+": invalid positional arguments or timeout (1s..1m)")
 		return 1
 	}
 	bounded, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	data, err := historyclient.Fetch(bounded, *server, os.Getenv("KUBEATLAS_TOKEN"), q)
 	if err != nil {
-		fmt.Fprintf(diagnostics, "%s: %v\n", name, err)
+		_, _ = fmt.Fprintf(diagnostics, "%s: %v\n", name, err)
 		return 1
 	}
 	if _, err := out.Write(data); err != nil {
-		fmt.Fprintln(diagnostics, name+": cannot write history metadata")
+		_, _ = fmt.Fprintln(diagnostics, name+": cannot write history metadata")
 		return 1
 	}
 	return 0

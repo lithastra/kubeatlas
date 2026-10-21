@@ -6,6 +6,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -204,5 +205,77 @@ func TestMemberCoreHistoryUsesSharedReceiptAndReplaysExtraction(t *testing.T) {
 	mgr.handleDelete(ctx, configMapGVR, obj)
 	if len(sink.recorded()) != 2 {
 		t.Fatal("core delete was not deduplicated")
+	}
+}
+
+// Each watch preserves its own update/delete order, but independent watches may
+// deliver the same update after another watch has already committed deletion.
+// Current-row receipts are deliberately not a historical tombstone ledger.
+func TestResourceHistoryLateWatchUpdateAfterDeleteIsAnotherObservation(t *testing.T) {
+	for _, lateSources := range []int{1, 2} {
+		t.Run(fmt.Sprintf("late_sources_%d", lateSources), func(t *testing.T) {
+			ctx := context.Background()
+			store := memory.New()
+			sink := &resyncSink{}
+			history := NewResourceHistory(store, "east", sink)
+			repair := NewMemberRepair(nil, store, "east")
+			r := repairRow("same")
+			r.Kind, r.Namespace, r.GroupVersion = "K8sRequiredLabels", "", "constraints.gatekeeper.sh/v1beta1"
+			upsert := func(eventType graph.EventType) {
+				t.Helper()
+				unlock, err := repair.LockResource(ctx, r.ID())
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer unlock()
+				if _, err := history.Upsert(ctx, r, eventType); err != nil {
+					t.Fatal(err)
+				}
+			}
+			remove := func() {
+				t.Helper()
+				unlock, err := repair.LockResource(ctx, r.ID())
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer unlock()
+				if deleted, err := history.Delete(ctx, r); err != nil || !deleted {
+					t.Fatalf("delete: %v %v", deleted, err)
+				}
+			}
+			// Initial deliveries deduplicate against the same still-present receipt.
+			for range lateSources + 1 {
+				upsert(graph.EventTypeAdd)
+			}
+			r.ResourceVersion = "opaque-next"
+			upsert(graph.EventTypeUpdate)
+			remove()
+			for range lateSources {
+				upsert(graph.EventTypeUpdate) // A delayed update from another watch can restore the row.
+				got, err := store.GetResource(ctx, r.ID())
+				if err != nil || !graph.SameResourceVersion(got, r) {
+					t.Fatal("late observation was not stored", err)
+				}
+				remove() // That watch's later delete removes it again.
+			}
+			if _, err := store.GetResource(ctx, r.ID()); !errors.As(err, new(graph.ErrNotFound)) {
+				t.Fatal("final delete did not converge", err)
+			}
+			events := sink.recorded()
+			if len(events) != 3+2*lateSources {
+				t.Fatalf("unexpected observation count: %+v", events)
+			}
+			for i, e := range events {
+				want := graph.EventTypeUpdate
+				if i == 0 {
+					want = graph.EventTypeAdd
+				} else if i%2 == 0 {
+					want = graph.EventTypeDelete
+				}
+				if e.EventType != want || e.Data != nil || e.ClusterID != "east" {
+					t.Fatalf("invalid metadata observation: %+v", e)
+				}
+			}
+		})
 	}
 }

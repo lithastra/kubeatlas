@@ -40,6 +40,18 @@ func dynamicHistoryClient(t *testing.T) *dynamicfake.FakeDynamicClient {
 	return c
 }
 
+type memberHistoryExtractorFunc func(context.Context, graph.Resource, graph.ResourceLister) ([]graph.Edge, error)
+
+func (f memberHistoryExtractorFunc) ExtractAll(ctx context.Context, r graph.Resource, q graph.ResourceLister) ([]graph.Edge, error) {
+	return f(ctx, r, q)
+}
+
+type memberHistoryRegoFunc func(context.Context, graph.Resource) ([]graph.Edge, error)
+
+func (f memberHistoryRegoFunc) EvaluateForResource(ctx context.Context, r graph.Resource) ([]graph.Edge, error) {
+	return f(ctx, r)
+}
+
 func TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
@@ -48,7 +60,45 @@ func TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment(t *testing.T) {
 	t.Cleanup(writer.Stop)
 	tracker := operations.NewCoverageTracker(time.Minute)
 	var synced atomic.Int64
-	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods, memberConstraints}), discovery.WithOnSynced(func() { synced.Add(1) })}, tracker, nil, extractor.Default(), discovery.NewDynamicMetrics(), nil, writer)
+	// A committed history event acknowledges only the first overlapping source.
+	// Extraction runs after each source's receipt handling, including replays.
+	// Observe every source explicitly before advancing to the next watch phase.
+	type delivery struct{ source, cluster, kind, version string }
+	var deliveryMu sync.Mutex
+	delivered := map[delivery]bool{}
+	observe := func(source string, r graph.Resource) {
+		if r.Name != "same" {
+			return
+		}
+		deliveryMu.Lock()
+		defer deliveryMu.Unlock()
+		delivered[delivery{source, r.ClusterID, r.Kind, r.ResourceVersion}] = true
+	}
+	ext := extractor.Default()
+	probe := func(source string) memberHistoryExtractorFunc {
+		return func(ctx context.Context, r graph.Resource, q graph.ResourceLister) ([]graph.Edge, error) {
+			edges, err := ext.ExtractAll(ctx, r, q)
+			if err == nil {
+				observe(source, r)
+			}
+			return edges, err
+		}
+	}
+	rules := memberHistoryRegoFunc(func(_ context.Context, r graph.Resource) ([]graph.Edge, error) {
+		observe("crd", r)
+		return nil, nil
+	})
+	factory := memberInformerFactory([]discovery.InformerOption{discovery.WithCoverage(tracker), discovery.WithGVRs([]schema.GroupVersionResource{memberPods, memberConstraints}), discovery.WithOnSynced(func() { synced.Add(1) }), discovery.WithExtractor(probe("core"))}, tracker, rules, probe("gatekeeper"), discovery.NewDynamicMetrics(), nil, writer)
+	allDelivered := func(cluster, version string, initial bool) bool {
+		deliveryMu.Lock()
+		defer deliveryMu.Unlock()
+		for _, source := range []string{"core", "crd", "gatekeeper"} {
+			if !delivered[delivery{source, cluster, "K8sRequiredLabels", version}] {
+				return false
+			}
+		}
+		return delivered[delivery{"crd", cluster, "Foo", version}] && (!initial || delivered[delivery{"core", cluster, "Pod", version}])
+	}
 	for _, r := range []graph.Resource{
 		{ClusterID: "east", Kind: "Foo", Namespace: "default", Name: "gone", UID: "missing-foo", ResourceVersion: "old", GroupVersion: "example.com/v1"},
 		{ClusterID: "east", Kind: "K8sRequiredLabels", Name: "gone", UID: "missing-constraint", ResourceVersion: "old", GroupVersion: "constraints.gatekeeper.sh/v1beta1"},
@@ -95,7 +145,7 @@ func TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment(t *testing.T) {
 	east, west := dynamicHistoryClient(t), dynamicHistoryClient(t)
 	stopEast, stopWest := start("east", east), start("west", west)
 	awaitMember(t, "all member sources and repaired deletes", func() bool {
-		if synced.Load() != 2 || len(events("east")) < 5 || len(events("west")) < 3 {
+		if synced.Load() != 2 || len(events("east")) < 5 || len(events("west")) < 3 || !allDelivered("east", "1", true) || !allDelivered("west", "1", true) {
 			return false
 		}
 		for _, name := range []string{"east", "west"} {
@@ -121,7 +171,10 @@ func TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	awaitMember(t, "two actual updates", func() bool {
+	awaitMember(t, "all overlapping update handlers and two committed updates", func() bool {
+		if !allDelivered("east", "2", false) {
+			return false
+		}
 		count := 0
 		for _, e := range events("east") {
 			if e.EventType == graph.EventTypeUpdate {
@@ -172,10 +225,20 @@ func TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment(t *testing.T) {
 		}
 	}
 	previousGeneration := memberSources(t, tracker, "east")[operations.CoverageSourceCRD].Generation
+	deliveryMu.Lock()
+	for key := range delivered {
+		if key.cluster == "east" {
+			delete(delivered, key)
+		}
+	}
+	deliveryMu.Unlock()
 	stopFresh := start("east", east)
-	awaitMember(t, "reattached core and CRD receipt replay", func() bool {
+	awaitMember(t, "reattached core receipt replay and empty CRD delivery", func() bool {
+		deliveryMu.Lock()
+		replayed := delivered[delivery{"core", "east", "Pod", "1"}]
+		deliveryMu.Unlock()
 		source := memberSources(t, tracker, "east")[operations.CoverageSourceCRD]
-		if synced.Load() != 3 || source.Generation <= previousGeneration {
+		if synced.Load() != 3 || source.Generation <= previousGeneration || !replayed {
 			return false
 		}
 		for _, row := range source.Resources {
@@ -186,6 +249,17 @@ func TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment(t *testing.T) {
 		return false
 	})
 	stopFresh()
+	// Foo's CRD was retired above: retain its graph row without restarting
+	// its collection or mistaking an old probe receipt for a fresh replay.
+	deliveryMu.Lock()
+	retiredReplayed := delivered[delivery{"crd", "east", "Foo", "2"}]
+	deliveryMu.Unlock()
+	if retiredReplayed {
+		t.Fatal("reattachment resumed a retired CRD")
+	}
+	if r, err := store.GetResource(ctx, "east:default/Foo/same"); err != nil || r.ResourceVersion != "2" {
+		t.Fatal("reattachment changed the retained retired resource", err)
+	}
 	check("east", 8)
 }
 

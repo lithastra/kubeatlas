@@ -27,12 +27,14 @@ type memberRecordingEventSink struct {
 }
 
 func (s *memberRecordingEventSink) AppendEvent(ctx context.Context, e graph.ResourceEvent) error {
-	if e.ClusterID == "east" {
+	// Pin exactly the core delivery. Blocking every east event can occupy
+	// both shared workers now that CRD and Gatekeeper delivery is enabled.
+	if e.ClusterID == "east" && e.Kind == "Pod" {
 		s.eastOnce.Do(func() { close(s.entered) })
 		<-s.release
 	}
 	err := s.store.AppendEvent(ctx, e)
-	if e.ClusterID == "west" && err == nil {
+	if e.ClusterID == "west" && e.Kind == "Pod" && err == nil {
 		s.westOnce.Do(func() { close(s.westWritten) })
 	}
 	return err
@@ -69,7 +71,7 @@ func TestMemberFactoryBindsRecordingAndJoinsOnlyOwnPendingWrites(t *testing.T) {
 		t.Cleanup(stop)
 		return stop
 	}
-	stopEast, stopWest := start("east"), start("west")
+	stopEast := start("east")
 	var released sync.Once
 	release := func() { released.Do(func() { close(sink.release) }) }
 	t.Cleanup(release)
@@ -78,6 +80,25 @@ func TestMemberFactoryBindsRecordingAndJoinsOnlyOwnPendingWrites(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("member core event never reached shared writer")
 	}
+	awaitMember(t, "unblocked east dynamic events committed", func() bool {
+		events, err := store.ListEvents(context.Background(), "", time.Time{}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		kinds := map[string]bool{}
+		for _, e := range events {
+			if e.ClusterID == "east" {
+				if e.Kind == "Pod" {
+					t.Fatal("blocked core event committed before release")
+				}
+				kinds[e.Kind] = true
+			}
+		}
+		return kinds["Foo"] && kinds["K8sRequiredLabels"]
+	})
+	// Keep the fixture's initial burst within its four-slot queue instead of
+	// making this lifecycle assertion depend on worker startup scheduling.
+	stopWest := start("west")
 	select {
 	case <-sink.westWritten:
 	case <-time.After(3 * time.Second):

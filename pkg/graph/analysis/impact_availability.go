@@ -68,7 +68,7 @@ func readImpactAvailability(ctx context.Context, provider ImpactAvailabilityProv
 		memberRetention := cluster != "" && history.State == operations.HistoryUnsupported &&
 			slices.Equal(history.Reasons, []operations.HistoryAvailabilityReason{operations.HistoryScopeUnknown}) &&
 			evidence.Storage.DurabilityKnown && evidence.Storage.Durable
-		if !(active || memberRetention) || !h.ValidFor(cluster, history.Retention, evidence.CapturedAt) {
+		if !active && !memberRetention || !h.ValidFor(cluster, history.Retention, evidence.CapturedAt) {
 			return operations.AnalysisAvailability{}, ErrImpactAvailability
 		}
 		owned := *h

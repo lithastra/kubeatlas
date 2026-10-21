@@ -1496,16 +1496,67 @@ credential configuration, so federation unscoped requests fail closed. Their
 member-aware extension, actual PostgreSQL execution and M4 cluster acceptance
 remain pending. No real cluster is required for this local source/test slice.
 
-Local validation passed the graph/store/API/history-client short race suites,
-changed-code lint, vet, CGO-free build, frozen-alpha compatibility and docs build.
-The expanded `go test -short -race -p 1 ./...` gate is **not green**: the existing
-`TestMemberFactoryBindsRecordingAndJoinsOnlyOwnPendingWrites` blocked-west failure
-also reproduced using a read-only overlay of pre-change HEAD; the existing
+At marker-creation commit `cc389e7`, local graph/store/API/history-client short
+race suites, changed-code lint, vet, CGO-free build, frozen-alpha compatibility
+and docs build passed. The expanded `go test -short -race -p 1 ./...` gate was
+**not green**: `TestMemberFactoryBindsRecordingAndJoinsOnlyOwnPendingWrites`
+blocked west delivery (also reproduced with a pre-change source overlay), and
 `TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment` returned ten east
-events instead of eight in the expanded run, but twenty pre-change focused runs
-did not reproduce it. Its cause remains unresolved; this is not evidence that
-the overall v1.7 regression gate or cluster acceptance passed. A full lint run
-also reports an unchanged `QF1001` in `impact_availability.go`.
+events instead of eight. Twenty pre-change focused runs did not reproduce that
+count mismatch, so its cause was unresolved at that checkpoint. Full lint also
+reported `QF1001` in `impact_availability.go`. The follow-up below separates
+those historical results from the current regression contracts.
+
+### Member-history regression contracts
+
+The member-recording lifecycle fixture formerly blocked **every** east event.
+Once CRD and Gatekeeper delivery joined core delivery, two east events could
+occupy both shared writer workers. Per-member recording tokens isolate lifecycle,
+pending/loss evidence and draining; they do not reserve a worker or guarantee
+fair scheduling. A controlled pool-saturation test now holds both workers in
+east, verifies west remains queued/pending, then releases capacity and verifies
+both members drain without loss. The production-factory lifecycle test instead
+blocks only the east Pod event, confirms east dynamic events and the west Pod
+commit, and preserves its pending-write, independent removal and same-name
+exclusion assertions. It stages west startup after east's dynamic deliveries
+commit, keeping the initial burst within the existing four-slot queue rather
+than relying on worker startup scheduling. Worker count, queue size and retry
+budgets are unchanged.
+
+The overlap fixture formerly advanced to deletion after observing two committed
+update events. A committed event acknowledges only the first successful source;
+core, generic CRD and Gatekeeper callbacks are independent. A deterministic
+history test now delivers each watch's update/delete pair in source order while
+interleaving the watches. After a committed delete removes the graph receipt,
+a late upsert can reinsert the same UID and produce another metadata observation;
+its later delete removes it again. One late watch adds two events. This explains
+a mechanism consistent with the earlier extra update/delete pair, but the old
+log has no source attribution and does not identify which callback was late.
+
+Test-only extraction probes now acknowledge each source's initial and update
+handling before the overlap fixture advances to the next phase. Exact event
+counts and duplicate/payload assertions remain. Reattachment clears only the
+probe observations, waits for a fresh core callback and initial empty Constraint
+CRD delivery, and verifies the retired Foo CRD does not resume or mutate its
+retained graph row. No production ordering barrier, tombstone cache, watch,
+Kubernetes request or new history guarantee is introduced. ResourceVersions
+remain opaque; delayed cross-watch delivery can temporarily restore a deleted
+node and add observations. This limitation is now explicit in the recorder's
+contract and is not fixed by making the controlled fixture deterministic.
+
+Both formerly intermittent factory cases and both new controlled regression
+cases passed twenty short/race repetitions. The availability-validator lint
+expression now uses the equivalent `!active && !memberRetention` form. These
+portable checks do not qualify real-cluster behavior, PostgreSQL deployment,
+continuous history or recovery.
+
+The final expanded short/race suite passed. First-party lint
+(`./cmd/... ./pkg/... ./tools/...`), `go vet ./...`, CGO-free verification,
+alpha compatibility and docs checks passed. CLI diagnostic-write results are
+now explicitly best-effort, preserving the existing failure exit status and
+single-request behavior. The unrestricted `golangci-lint run ./...` still reports
+two `govet inline` suggestions in `web/node_modules/flatted/golang/pkg/flatted`;
+those third-party files and the lint configuration were not changed.
 
 ### M3 server-backed Web analysis: first slice
 

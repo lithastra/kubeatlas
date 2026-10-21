@@ -30,6 +30,8 @@ func NewResourceHistory(store graph.GraphStore, cluster string, sink SnapshotSin
 // Upsert records only a successfully committed change in observed UID/version.
 // A served-version switch can update the graph without creating a history event.
 // Replays still reach the caller's extractor, allowing failed/missing edge repair.
+// A late watch upsert after deletion can reinsert the same UID: the deleted row
+// no longer supplies a receipt. There is no cross-watch order or tombstone ledger.
 func (h *ResourceHistory) Upsert(ctx context.Context, r graph.Resource, eventType graph.EventType) (bool, error) {
 	if err := h.validate(ctx, r); err != nil {
 		return false, err

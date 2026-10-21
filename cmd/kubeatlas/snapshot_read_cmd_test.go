@@ -35,7 +35,9 @@ func TestSnapshotReadCommandScopeAuthOutputAndNoFallback(t *testing.T) {
 			t.Fatal("invalid input issued read or output")
 		}
 	}
-	denied := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "private-server-canary", 403) }))
+	denied := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "private-server-canary", http.StatusForbidden)
+	}))
 	defer denied.Close()
 	out.Reset()
 	errOut.Reset()
