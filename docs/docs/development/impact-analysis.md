@@ -1491,10 +1491,10 @@ registered but skipped by `-short`; source compilation does not establish its
 runtime SQL behavior or deployed performance. V1 OpenAPI gains the selector and
 optional member echo; the frozen alpha specification stays unchanged.
 
-The legacy trigger CLI and Helm CronJob still lack member selection and bearer
-credential configuration, so federation unscoped requests fail closed. Their
-member-aware extension, actual PostgreSQL execution and M4 cluster acceptance
-remain pending. No real cluster is required for this local source/test slice.
+The trigger-client follow-up below adds member selection and an existing-Secret
+credential reference to the CLI/CronJob path. Actual PostgreSQL execution and M4
+cluster acceptance remain pending. No real cluster is required for this local
+source/test slice.
 
 At marker-creation commit `cc389e7`, local graph/store/API/history-client short
 race suites, changed-code lint, vet, CGO-free build, frozen-alpha compatibility
@@ -1557,6 +1557,53 @@ now explicitly best-effort, preserving the existing failure exit status and
 single-request behavior. The unrestricted `golangci-lint run ./...` still reports
 two `govet inline` suggestions in `web/node_modules/flatted/golang/pkg/flatted`;
 those third-party files and the lint configuration were not changed.
+
+### Internal trigger CLI and single-member scheduling follow-up
+
+The main CLI's trigger path now uses `historyclient.Trigger`: one POST with
+explicit member/trigger scope, optional environment bearer credential, normal TLS
+trust, no environment proxy, no redirect/retry/fallback and a thirty-second
+ceiling. A fresh non-reusing transport prevents replay on a reused connection.
+Responses have a 4 KiB body and 64 KiB header cap. Typed validation requires all
+count/duration fields, nonnegative integers, the selected member and trigger;
+unknown/duplicate keys (including escaped duplicate names), null required
+fields, malformed/trailing/oversized data and interrupted receipt delivery are
+rejected. Provider bodies and credential-bearing URLs are never echoed. Only
+validated typed metadata is serialized to stdout; stdout failure remains an
+unknown acknowledgement outcome and cannot start another write.
+
+The CLI rejects repeated flags and invalid selection before dispatch. Help and
+parse errors do not print inherited or supplied credential URLs. HTTP is limited
+to literal loopback or exact `service.namespace.svc` / fully qualified
+`.svc.cluster.local` hostnames for the existing internal CronJob path. That
+syntactic exception does not establish pod, DNS or network trust; operators must
+trust the plaintext internal path before attaching credentials. Other remote
+addresses require HTTPS. The default is literal loopback, not localhost DNS.
+
+The chart can pass one `snapshots.trigger.cluster` and inject `KUBEATLAS_TOKEN`
+through an existing Secret's name/key. It neither renders plaintext token data
+nor adds Kubernetes permissions. Named standalone selection, partial references,
+and a selected member with visibility rules but no credential reference are
+rejected. Empty defaults preserve the standalone command; v1.7 federation still
+rejects an omitted member at runtime. No cluster union or per-member CronJob
+fan-out is added. New flags require a matching development image; the chart's
+v1.6.0 metadata/default image and all release artifacts are unchanged.
+
+The existing schedule, `Forbid` concurrency, 120-second deadline, Pod resources,
+NetworkPolicy source labels and disabled service-account token remain. Job
+`backoffLimit` is zero with `restartPolicy: Never`: failures do not trigger a
+replacement attempt through Job backoff. Later schedule ticks are distinct
+observations, not retries of an unknown commit. Kubernetes Job execution is not
+an exactly-once guarantee; controller duplicates or operator repetition can
+produce extra markers. History completeness, drained delivery, backups and
+recovery remain unqualified.
+
+Portable checks cover actual scoped API/client integration, CLI auth/validation
+and outcome codes, malformed/foreign/duplicate/truncated receipts, cancellation,
+redirect non-following, no retries, Secret-reference rendering and no-fan-out
+CronJob budgets. These are local source/loopback/rendering checks; no real
+cluster, PostgreSQL instance, image build/download or published artifact is
+established by this slice.
 
 ### M3 server-backed Web analysis: first slice
 

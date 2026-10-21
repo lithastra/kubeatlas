@@ -1,7 +1,8 @@
 // Copyright 2026 The KubeAtlas Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package historyclient reads one bounded, explicitly scoped history response.
+// Package historyclient reads scoped history metadata and records internal
+// operator markers through bounded, explicitly scoped single-request clients.
 // It never starts a cluster, discovers credentials or falls back to another API.
 package historyclient
 

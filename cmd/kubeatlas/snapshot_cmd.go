@@ -5,14 +5,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
-	"strings"
 	"time"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/historyclient"
 )
 
 // runSnapshot is the `kubeatlas snapshot` subcommand group. Today
@@ -35,64 +36,98 @@ func runSnapshot(args []string) int {
 	}
 }
 
-// runSnapshotTrigger is `kubeatlas snapshot trigger`: POST the
-// running KubeAtlas server's internal snapshot endpoint so it
-// records a full-sync marker. The F-111 CronJob invokes this; an
-// operator can also run it by hand.
-//
-// It deliberately does NOT touch the database directly — the
-// server owns the snapshot_meta write (consistent permissions +
-// one code path). The CLI is a thin HTTP client.
-//
-// Exit codes: 0 success, 1 usage / request error, 2 server returned
-// a non-200.
+// runSnapshotTrigger records one stored-graph observation through the internal
+// operator endpoint. Exit 0: validated receipt; 1: usage, request, receipt or
+// output failure; 2: non-200 response. Every invocation makes at most one POST.
 func runSnapshotTrigger(args []string) int {
+	return runSnapshotTriggerCommand(context.Background(), args, os.Stdout, os.Stderr)
+}
+
+// singleSnapshotFlag rejects repeated flags before dispatching a mutation.
+type singleSnapshotFlag struct {
+	flag.Value
+	set bool
+}
+
+func (v *singleSnapshotFlag) String() string {
+	if v == nil || v.Value == nil {
+		return ""
+	}
+	return v.Value.String()
+}
+
+func (v *singleSnapshotFlag) Set(raw string) error {
+	if v.set {
+		return errors.New("flag must occur exactly once")
+	}
+	if err := v.Value.Set(raw); err != nil {
+		return err
+	}
+	v.set = true
+	return nil
+}
+
+func runSnapshotTriggerCommand(ctx context.Context, args []string, out, diagnostics io.Writer) int {
 	fs := flag.NewFlagSet("snapshot trigger", flag.ContinueOnError)
-	server := fs.String("server", defaultSnapshotServer(),
-		"KubeAtlas API base URL. Defaults to $KUBEATLAS_URL, "+
-			"else http://localhost:8080.")
-	trigger := fs.String("trigger", "manual",
-		"Marker kind recorded in snapshot_meta: 'periodic' "+
-			"(CronJob) or 'manual' (operator).")
+	// Flag parsing errors can contain raw argument values. Keep inherited or
+	// explicitly supplied credential-bearing URLs out of diagnostic output.
+	fs.SetOutput(io.Discard)
+	// Resolve the environment only after parsing, so --help cannot print a
+	// credential-bearing URL inherited from KUBEATLAS_URL as a flag default.
+	server := fs.String("server", "", "Existing internal operator URL: HTTPS, literal loopback HTTP or service.namespace.svc HTTP. Defaults to KUBEATLAS_URL then http://127.0.0.1:8080.")
+	kind := fs.String("trigger", "manual", "One marker kind: manual or periodic. No retry or redirect; an error may have an unknown write outcome.")
+	var cluster historyClusterFlag
+	fs.Var(&cluster, "cluster", "One attached member (required for federation); omit for standalone. No fan-out or kubeconfig inference.")
+	timeout := fs.Duration("timeout", historyclient.TriggerTimeout, "Overall deadline (1s..30s). Optional bearer credential comes only from KUBEATLAS_TOKEN.")
+	fs.VisitAll(func(f *flag.Flag) { f.Value = &singleSnapshotFlag{Value: f.Value} })
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			fs.SetOutput(diagnostics)
+			_, _ = fmt.Fprintln(diagnostics, "Usage: kubeatlas snapshot trigger [flags]")
+			fs.PrintDefaults()
+		} else {
+			_, _ = fmt.Fprintln(diagnostics, "snapshot trigger: invalid flags; use --help")
+		}
 		return 1
 	}
-	if *trigger != "periodic" && *trigger != "manual" {
-		fmt.Fprintf(os.Stderr, "snapshot trigger: --trigger must be 'periodic' or 'manual' (got %q)\n", *trigger)
+	serverProvided := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "server" {
+			serverProvided = true
+		}
+	})
+	if !serverProvided {
+		*server = defaultSnapshotServer()
+	}
+	if fs.NArg() != 0 || *timeout < time.Second || *timeout > historyclient.TriggerTimeout {
+		_, _ = fmt.Fprintln(diagnostics, "snapshot trigger: invalid positional arguments or timeout (1s..30s)")
 		return 1
 	}
-
-	endpoint := strings.TrimRight(*server, "/") +
-		"/api/_internal/snapshot/trigger?trigger=" + url.QueryEscape(*trigger)
-
-	// A bounded timeout — the CronJob pod must not hang if the
-	// server is unreachable; let Kubernetes retry the Job instead.
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Post(endpoint, "application/json", http.NoBody)
+	bounded, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+	data, err := historyclient.Trigger(bounded, *server, os.Getenv("KUBEATLAS_TOKEN"), historyclient.TriggerQuery{ClusterID: cluster.value, Trigger: graph.SnapshotTrigger(*kind)})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "snapshot trigger: POST %s: %v\n", endpoint, err)
+		_, _ = fmt.Fprintf(diagnostics, "snapshot trigger: %v\n", err)
+		var status *historyclient.TriggerStatusError
+		if errors.As(err, &status) {
+			return 2
+		}
 		return 1
 	}
-	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "snapshot trigger: server returned %d: %s\n",
-			resp.StatusCode, strings.TrimSpace(string(body)))
-		return 2
+	if _, err := out.Write(data); err != nil {
+		_, _ = fmt.Fprintln(diagnostics, "snapshot trigger: cannot write receipt; marker outcome may be unknown; no automatic retry")
+		return 1
 	}
-	// Echo the server's JSON response so the CronJob log shows the
-	// cluster size recorded at trigger time.
-	fmt.Println(strings.TrimSpace(string(body)))
 	return 0
 }
 
 // defaultSnapshotServer resolves the API base URL: $KUBEATLAS_URL
 // if set (the Helm CronJob points it at the ClusterIP Service),
-// else localhost for an operator running the command beside a
+// else literal loopback for an operator running the command beside a
 // port-forward.
 func defaultSnapshotServer() string {
 	if v := os.Getenv("KUBEATLAS_URL"); v != "" {
 		return v
 	}
-	return "http://localhost:8080"
+	return "http://127.0.0.1:8080"
 }

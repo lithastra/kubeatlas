@@ -109,8 +109,11 @@ list`/`diff` commands send explicit member scope without retries or API fallback
 The internal trigger now creates one member-specific marker from atomic scoped
 stored-graph counts, behind the existing operator boundary and member visibility
 checks. It never retries an unknown write outcome or clears history gaps.
-Member-aware trigger CLI/scheduling, deployed PostgreSQL qualification and M4
-acceptance remain pending.
+The trigger CLI and single CronJob now pass explicit member selection and an
+optional existing-Secret credential, with validated bounded receipts and no
+redirect/application/Job retries. The chart retains its v1.6.0 image default;
+new member flags require a matching development image. Deployed PostgreSQL
+qualification and M4 acceptance remain pending.
 The unreleased v1 impact API now authorizes cluster scope before reads and
 combines the evidence under a five-second deadline and 2 MiB response cap.
 Standalone CRD and Gatekeeper discovery now contribute separate bounded

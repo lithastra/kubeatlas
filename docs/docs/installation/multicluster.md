@@ -249,11 +249,63 @@ operator repeat is another write and may create a second marker.
 
 A marker is graph-observation metadata, not a Kubernetes full sync, drained
 history-writer barrier, backup, or recovery point. It does not clear known
-history gaps. The legacy `snapshot trigger` CLI and Helm CronJob do not yet send
-member selection or bearer credentials: their unscoped requests fail closed in
-federation (400, or 401/403 with visibility rules), and remain usable in enabled
-standalone mode. Member-aware CLI/scheduling and real PostgreSQL/cluster
-qualification remain separate work. The v1 OpenAPI advertises the selector and
+history gaps. In v1.7 development, `kubeatlas snapshot trigger --cluster prod`
+now makes one scoped POST with an optional bearer credential from
+`KUBEATLAS_TOKEN`. No member is inferred from kubeconfig or an all-members view.
+The CLI rejects repeated flags and prints only a validated receipt. Non-200
+responses return exit 2; usage, transport, receipt or stdout errors return exit 1.
+A failed acknowledgement/output may follow a committed write: do not treat it
+as evidence that another POST is safe or idempotent.
+
+```bash
+# Existing internal operator endpoint; KUBEATLAS_TOKEN is supplied separately.
+kubeatlas snapshot trigger --server http://127.0.0.1:8080 --cluster prod
+```
+
+The trigger keeps its thirty-second client ceiling (`--timeout` accepts 1s..30s),
+rejects redirects and environment proxies, and caps the receipt body at 4 KiB
+with 64 KiB response headers. Required count/duration fields must be nonnegative
+integers; unknown/duplicate fields, foreign member echoes, wrong trigger kinds,
+trailing data and malformed responses are rejected without raw provider output.
+TLS uses normal trust verification. Plain HTTP is limited to literal loopback
+addresses or exact `service.namespace.svc` / `service.namespace.svc.cluster.local`
+hostnames. The latter exception supports the existing internal CronJob route;
+it proves neither pod location nor DNS authenticity. An operator must trust that
+plaintext internal network path before attaching a credential. Other remote
+servers require HTTPS. The default local URL is now `http://127.0.0.1:8080`;
+replace explicit `http://localhost:...` URLs with a literal loopback address.
+
+For an existing Tier 2 federation, the chart can pass one member and inject a
+credential from an existing Secret in the release namespace:
+
+```yaml
+# Select a matching v1.7 development image separately before using these fields.
+# The chart still defaults to v1.6.0; this change publishes no new image.
+snapshots:
+  enabled: true
+  trigger:
+    cluster: prod
+    tokenSecretRef:
+      name: kubeatlas-operator-token
+      key: token
+```
+
+The chart creates no token Secret and grants no Secret API permission. Both
+reference fields are required together; missing Secret data prevents Pod startup.
+A selected member requires federation; if visibility rules are configured, its
+trigger configuration must include the credential reference. The server still
+checks the token/member pairing. The chart preserves legacy standalone arguments
+when no new member/credential fields are supplied; an unscoped v1.7 federation
+trigger fails closed at runtime. This does not infer permission to write from
+read visibility: the internal operator boundary remains required.
+
+There is still one CronJob per release, no fan-out, the existing schedule,
+`concurrencyPolicy: Forbid`, 120-second Job deadline, resources, source labels and
+no service-account token. `backoffLimit` is now zero and `restartPolicy` stays
+`Never`. Each later schedule tick is a distinct observation, not a recovery retry.
+These settings do not guarantee exactly-once Kubernetes Job execution; duplicate
+execution or operator repeats may create extra markers. Real PostgreSQL/cluster
+qualification remains pending. V1 OpenAPI advertises the internal selector and
 optional member echo; the frozen v1alpha1 specification is unchanged.
 
 ## History clients (v1.7 development)
@@ -304,9 +356,9 @@ also has a ten-second client cap. Response input/output is capped at 2 MiB.
 List responses echo their member identity; the existing diff schema does not.
 Diff scope is bound to the request and the trusted server's authorization, not
 an invented response field. These are retained metadata summaries and do not
-qualify continuous collection or recovery. `snapshot trigger` CLI member selection,
-kubectl-plugin history commands and M4 acceptance remain outside this client
-change. Internal marker creation is described separately above.
+qualify continuous collection or recovery. The internal trigger CLI follow-up is
+described above; kubectl-plugin history commands and M4 acceptance remain outside
+this read-only client change.
 
 ## RBAC visibility (F-206)
 

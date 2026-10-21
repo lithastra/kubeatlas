@@ -44,3 +44,30 @@ func TestHistoryClientConsumesActualScopedAPI(t *testing.T) {
 		t.Fatal("client read a forbidden member")
 	}
 }
+
+func TestTriggerClientConsumesScopedInternalAPIWithoutFallback(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	for _, cluster := range []string{"", "prod", "hidden"} {
+		if err := store.UpsertResource(ctx, graph.Resource{ClusterID: cluster, Kind: "Pod", Namespace: "demo", Name: "same"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := New("", store, aggregator.NewRegistry(), WithSnapshots(time.Hour), WithClusterLister(&impactAPIClusters{clusters: []string{"prod", "hidden"}}), WithClusterRBAC(historyRBAC()))
+	server := httptest.NewServer(impactTestMux(s))
+	defer server.Close()
+	body, err := historyclient.Trigger(ctx, server.URL, "prod-token", historyclient.TriggerQuery{ClusterID: "prod", Trigger: graph.SnapshotTriggerManual})
+	var receipt historyclient.TriggerReceipt
+	if err != nil || json.Unmarshal(body, &receipt) != nil || receipt.ClusterID != "prod" || receipt.ResourceCount != 1 {
+		t.Fatalf("scoped mutation receipt: %s %v", body, err)
+	}
+	for _, scope := range []string{"hidden", ""} {
+		if body, err := historyclient.Trigger(ctx, server.URL, "prod-token", historyclient.TriggerQuery{ClusterID: scope, Trigger: graph.SnapshotTriggerManual}); body != nil || err == nil {
+			t.Fatal("unauthorized/unscoped trigger accepted")
+		}
+	}
+	markers, err := store.ListSnapshotMeta(ctx)
+	if err != nil || len(markers) != 1 || markers[0].ClusterID != "prod" {
+		t.Fatal("client wrote outside selected member or retried", markers, err)
+	}
+}

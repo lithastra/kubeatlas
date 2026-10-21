@@ -86,8 +86,9 @@ Kubernetes state, drained history delivery, or complete retained history.
 
 Snapshots must be explicitly enabled. The endpoint remains an internal operator
 surface; read visibility alone is not write authorization. The existing trigger
-CLI and Helm CronJob have no member selector or bearer-credential configuration,
-so their unscoped requests fail closed in federation. A write error or timeout
+CLI now accepts one `--cluster` and an optional `KUBEATLAS_TOKEN`. The Helm
+CronJob can pass `snapshots.trigger.cluster` and an existing `tokenSecretRef`,
+with no fan-out or Job retry. Unscoped v1.7 federation requests fail closed. A write error or timeout
 may have an unknown outcome; there is no automatic retry or idempotency guarantee.
 See [internal member markers](../installation/multicluster.md#internal-member-markers-v17-development)
 for budgets, response codes and pending deployment qualification.

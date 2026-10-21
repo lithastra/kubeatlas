@@ -446,11 +446,15 @@ PostgreSQL statement timeout; expiry returns 504, and other provider errors
 return closed 500 errors. An error or timeout can leave an unknown write outcome.
 There is no automatic retry; another operator POST may create another marker.
 
-The existing `snapshot trigger` CLI and Helm CronJob still send unscoped requests
-without bearer credentials. They remain usable in enabled standalone mode and
-fail closed in federation; member-aware CLI/scheduling is pending. See
-[internal member markers](./installation/multicluster.md#internal-member-markers-v17-development)
-for the exact scope and remaining qualification.
+The v1.7 `snapshot trigger` CLI sends one selected `--cluster` and optional
+`KUBEATLAS_TOKEN`, rejects redirects/retries and validates a bounded metadata
+receipt before printing. Its thirty-second client ceiling does not extend the
+server's five-second store budget. The Helm CronJob can pass one
+`snapshots.trigger.cluster` and an existing `tokenSecretRef`, with Job retries
+disabled. Unscoped federation requests still fail closed. The chart's default
+v1.6.0 image is unchanged: member support requires a matching development image.
+See [internal member markers](./installation/multicluster.md#internal-member-markers-v17-development)
+for transport trust, unknown outcomes and pending deployment qualification.
 
 ## Search
 
