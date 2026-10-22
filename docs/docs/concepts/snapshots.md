@@ -151,6 +151,24 @@ for the field-level *how*.
 See the [API reference](../api-reference.md#snapshots-tier-2) for
 the full request and response shapes.
 
+## Standalone dynamic history (v1.7 development)
+
+With Tier 2 snapshots explicitly enabled, standalone core, CRD-instance and
+Gatekeeper collectors now share current graph receipts and the existing history
+writer. Successful versioned changes and committed watch deletes enqueue
+identity metadata with an empty cluster ID. Overlapping sources and unchanged
+collector replays reuse the current receipt, while extraction still runs.
+An old-UID tombstone cannot remove a replacement, and conditional deletion has
+no unconditional fallback. Disabled history and Tier 1 retain their existing
+behavior.
+
+Empty scope means unlabelled observations, not verified legacy provenance.
+Named-member rows are not adopted or retagged. No backfill, fresh-list
+missed-delete repair, cross-watch ordering, continuous audit or crash-recovery
+guarantee is implied. A late watch update after deletion can still reinsert a
+row and produce another observation. All collectors use the existing queue,
+workers and retry limits; adding this source coverage does not erase known loss.
+
 ## Member-scoped reads (v1.7 development)
 
 In the unreleased v1.7 implementation, federation requests must explicitly select

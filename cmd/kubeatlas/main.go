@@ -27,7 +27,6 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
-	"github.com/lithastra/kubeatlas/pkg/gatekeeper"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
 	"github.com/lithastra/kubeatlas/pkg/multicluster"
@@ -658,10 +657,9 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 
 	// Phase 2 wire-up: the rego engine handles CRD-driven edge
 	// derivation; the built-in extractor.Default() still owns core
-	// K8s GVRs. The two pipelines write to the same store but never
-	// race on the same resource — InformerManager covers the GVRs
-	// in CoreGVRs, crd.Discovery covers everything else through the
-	// dynamic CRD informer.
+	// K8s GVRs. Dynamic sources can overlap (notably Gatekeeper CRDs).
+	// History-enabled collectors share callback locks and current graph
+	// receipts; those receipts do not impose an order across watches.
 	regoEngine, err := buildRegoEngine(ctx, disc, rulePackExtras)
 	if err != nil {
 		log.Fatalf("build rego engine: %v", err)
@@ -828,23 +826,10 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		telemetryClusterCount = func() int { return len(mcMgr.ListClusters()) }
 		slog.Info("multicluster enabled", "members", len(kubeconfigs))
 	} else {
-		informerStarter = discovery.NewInformerManager(
-			client.Dynamic(), graphStore,
-			append(baseInformerOpts, discovery.WithOnSynced(srv.Readiness().MarkReady), discovery.WithAPIInventory(disc))...,
-		)
-		crdStarter = crd.New(client.Dynamic(), graphStore,
-			crd.WithRegoEvaluator(regoEngine),
-			crd.WithCoverage(operationsMonitor.Coverage()),
-		)
-		// Gatekeeper: watch ConstraintTemplates and register a dynamic
-		// informer per generated Constraint kind. The manager's metrics
-		// are the dynMetrics surfaced on /metrics above.
-		dynMgr := discovery.NewDynamicInformerManager(
-			client.Dynamic(), discovery.WithDynamicMetrics(dynMetrics),
-		)
-		gkStarter = gatekeeper.New(client.Dynamic(), graphStore, extractor.Default(), dynMgr,
-			gatekeeper.WithCoverage(operationsMonitor.Coverage()),
-			gatekeeper.WithDiscovery(discovery.NewDiscoveryFromClient(client)))
+		informerStarter, crdStarter, gkStarter = standaloneInformerComponents(
+			append(baseInformerOpts, discovery.WithOnSynced(srv.Readiness().MarkReady)),
+			client.Dynamic(), disc, graphStore, operationsMonitor.Coverage(),
+			regoEngine, extractor.Default(), dynMetrics, snapWriter)
 	}
 	if mcMgr != nil {
 		// Re-bind srv with the cluster lister now that mcMgr exists.

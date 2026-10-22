@@ -38,15 +38,28 @@ func (r *historyRules) EvaluateForResource(context.Context, graph.Resource) ([]g
 }
 
 func TestDynamicHistoryReceiptsReplayExtractionAndTombstones(t *testing.T) {
+	for _, cluster := range []string{"east", ""} {
+		name := cluster
+		if name == "" {
+			name = "standalone"
+		}
+		t.Run(name, func(t *testing.T) { runDynamicHistoryReceipts(t, cluster) })
+	}
+}
+
+func runDynamicHistoryReceipts(t *testing.T, cluster string) {
 	ctx := context.Background()
 	store := &dynamicHistoryStore{Store: memory.New(), fail: true}
 	sink := &dynamicHistorySink{}
-	history := discovery.NewResourceHistory(store, "east", sink)
-	repair := discovery.NewMemberRepair(nil, store, "east")
+	history := discovery.NewResourceHistory(store, cluster, sink)
+	if cluster == "" {
+		history = discovery.NewStandaloneResourceHistory(store, sink)
+	}
+	repair := discovery.NewMemberRepair(nil, store, cluster)
 	_, obj := coverageObjects(t)
 	obj.SetUID("history-uid")
 	rules := &historyRules{}
-	d := New(nil, store, WithClusterID("east"), WithMemberRepair(repair), WithResourceHistory(history), WithRegoEvaluator(rules))
+	d := New(nil, store, WithClusterID(cluster), WithMemberRepair(repair), WithResourceHistory(history), WithRegoEvaluator(rules))
 	deliver := func(obj any, eventType graph.EventType) {
 		d.handleUpsertEvent(ctx, coverageFooGVR, "Foo", obj, nil, eventType)
 	}
@@ -77,7 +90,7 @@ func TestDynamicHistoryReceiptsReplayExtractionAndTombstones(t *testing.T) {
 		t.Fatal("stale tombstone recorded a delete")
 	}
 	r := discovery.UnstructuredToResource(replacement, "Foo")
-	r.ClusterID = "east"
+	r.ClusterID = cluster
 	if saved, err := store.GetResource(ctx, r.ID()); err != nil || saved.UID != r.UID {
 		t.Fatal("stale tombstone removed new incarnation")
 	}
@@ -87,7 +100,7 @@ func TestDynamicHistoryReceiptsReplayExtractionAndTombstones(t *testing.T) {
 		t.Fatal("delete history missing/duplicated")
 	}
 	for _, e := range sink.events {
-		if e.Data != nil || e.ClusterID != "east" {
+		if e.Data != nil || e.ClusterID != cluster {
 			t.Fatal("dynamic history retained payload or wrong scope")
 		}
 	}

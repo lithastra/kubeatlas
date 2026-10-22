@@ -99,8 +99,12 @@ repairs now share that token. Persisted UID/version receipts suppress unchanged
 replay and same-current-version source overlap; atomic deletes preserve UID
 replacements. The receipts do not order opaque versions across watches or form
 a complete historical deduplication ledger. Retained metadata does not clear
-known loss or establish continuous history. Standalone dynamic-source history,
-continuous retained history and verified recovery points remain pending. Existing
+known loss or establish continuous history. Standalone Tier 2 core, CRD-instance
+and Gatekeeper collectors now share explicitly unlabelled graph receipts and
+callback locks through the existing writer, including metadata-only watch
+deletes and replay suppression. This adds no watches or fresh-list repair;
+standalone missed-delete reconciliation, continuous retained history and verified
+recovery points remain pending. Existing
 v1 snapshot list/diff routes now authorize and read one attached member through
 bounded scoped capabilities; unscoped alpha history aliases reject federation
 access. Snapshot Web views now bind to the selected member, separate caches and

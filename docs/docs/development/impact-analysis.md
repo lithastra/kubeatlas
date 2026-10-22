@@ -1378,6 +1378,55 @@ receipts, actual production member-factory overlap, CRD/Gatekeeper repair histor
 member isolation, retirement without fabricated deletes and same-name reattachment.
 They establish local source/synthetic behavior, not deployed Tier 2 qualification.
 
+### M2 standalone dynamic-source history follow-up
+
+History-enabled standalone startup now constructs core, CRD-instance and
+Gatekeeper collectors through one production component factory. They share an
+explicit `NewStandaloneResourceHistory` binding, the existing standalone writer
+and one callback-lock coordinator. Empty cluster identity selects only
+unlabelled graph rows; passing an empty member name to `NewResourceHistory`
+remains invalid. Named rows, even with the same UID, are rejected by that binding
+and are neither modified nor assigned standalone history. Legacy unlabelled
+records retain their unknown provenance; no named-member attribution is inferred.
+
+The writer is supplied only when `runWatch` has enabled Tier 2 snapshots. With
+history disabled or on Tier 1, dynamic collectors keep their previous graph-only
+path and no new history sink or coordinator is allocated. Memory-backed tests
+are fixtures, not a Tier 1 snapshot feature. No member-recording session is
+registered for empty scope: the existing standalone writer lifecycle, queue,
+worker/retry budget, pending/loss accounting and shutdown drain remain in use.
+All three component lifetimes are joined before the writer is stopped.
+
+Callbacks hold the shared resource lock through current graph-receipt lookup,
+resource write, metadata enqueue and extraction. Unchanged UID/resourceVersion
+replays do not write another event; extraction still runs. Served-version
+representation changes, UID replacement, read/write failures and cancellation
+follow the same receipt contract as named members. Watch deletes use the stored
+incarnation and optional atomic `ResourceVersionDeleter`; duplicate/old-UID
+callbacks do not delete a replacement. Missing conditional-delete capability
+fails closed without unconditional fallback. Events contain identity metadata,
+not specs/status or Secret contents. These observations do not establish an
+upstream creation timestamp or complete retained history.
+
+The existing `MemberRepair` coordinator supplies locks in this scope, but its
+`Run` rejects empty cluster identity before listing, scheduling or repair work.
+No new watch, fresh list, Kubernetes write, query-time database work, tombstone
+ledger or background worker pool is introduced. Standalone missed-delete
+reconciliation and cleanup across retired APIs remain separate work. Independent
+watches can still deliver out of order; graph receipts do not provide global
+ordering or historical deduplication, and a late upsert can temporarily restore
+a deleted node. Writer or observation gaps are not cleared by a successful replay.
+
+Portable contract tests now exercise named and standalone scopes for receipt
+failures, replays, concurrent overlap, served-version changes, UID replacements,
+tombstones and metadata-only events. The actual production-factory fixture runs
+history enabled and disabled, confirms unchanged initial List/Watch counts,
+records the expected adds/updates/delete, recreates the collectors against
+retained graph receipts and reads the result through the scoped event reader.
+The same-UID named row is preserved and disabled history produces no events.
+These are fake-client/in-memory race checks, not PostgreSQL deployment, durable
+crash recovery, continuous-history or real-cluster acceptance evidence.
+
 ### M2 existing snapshot-route member visibility follow-up
 
 Existing snapshot list/diff handlers now authorize before history reads and use

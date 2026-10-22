@@ -11,20 +11,30 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
-// ResourceHistory coordinates metadata history for overlapping member collectors.
+// ResourceHistory coordinates metadata history for overlapping collectors in
+// one named member or an explicitly bound unlabelled standalone scope.
 // Callers MUST hold their shared MemberRepair resource lock through this operation
 // and subsequent edge extraction. The graph is the receipt: no second object cache,
 // queue, worker pool, or API request is introduced. This is observation history,
 // not an ordered Kubernetes audit log; resourceVersions are opaque.
 type ResourceHistory struct {
-	store   graph.GraphStore
-	cluster string
-	sink    SnapshotSink
+	store      graph.GraphStore
+	cluster    string
+	sink       SnapshotSink
+	standalone bool
 }
 
 // NewResourceHistory binds one member's collectors to the same recording token.
 func NewResourceHistory(store graph.GraphStore, cluster string, sink SnapshotSink) *ResourceHistory {
 	return &ResourceHistory{store: store, cluster: cluster, sink: sink}
+}
+
+// NewStandaloneResourceHistory explicitly binds only unlabelled rows to the
+// existing standalone writer. It never attributes legacy rows to a member or
+// qualifies the provenance/completeness of their retained history. An empty
+// member name passed to NewResourceHistory remains invalid.
+func NewStandaloneResourceHistory(store graph.GraphStore, sink SnapshotSink) *ResourceHistory {
+	return &ResourceHistory{store: store, sink: sink, standalone: true}
 }
 
 // Upsert records only a successfully committed change in observed UID/version.
@@ -93,7 +103,7 @@ func (h *ResourceHistory) Delete(ctx context.Context, r graph.Resource) (bool, e
 // deletion under the same member resource lock. Retiring an informer is not a
 // deletion and must never call this method. A nil receiver disables recording.
 func (h *ResourceHistory) RecordDelete(r graph.Resource) {
-	if h != nil && h.sink != nil && h.cluster != "" && r.ClusterID == h.cluster && graph.ValidResourceVersion(r) {
+	if h.accepts(r) && graph.ValidResourceVersion(r) {
 		h.record(r, graph.EventTypeDelete)
 	}
 }
@@ -102,10 +112,15 @@ func (h *ResourceHistory) validate(ctx context.Context, r graph.Resource) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if h.cluster == "" || r.ClusterID != h.cluster || h.sink == nil || h.store == nil {
-		return errors.New("invalid member history scope or sink")
+	if !h.accepts(r) {
+		return errors.New("invalid history scope or sink")
 	}
 	return nil
+}
+
+func (h *ResourceHistory) accepts(r graph.Resource) bool {
+	return h != nil && h.store != nil && h.sink != nil &&
+		(h.cluster != "" || h.standalone) && r.ClusterID == h.cluster
 }
 
 func (h *ResourceHistory) record(r graph.Resource, eventType graph.EventType) {

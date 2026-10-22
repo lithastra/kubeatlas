@@ -40,11 +40,25 @@ func (s *historyFaultStore) DeleteResourceVersion(ctx context.Context, r graph.R
 }
 
 func TestResourceHistorySuccessfulReceiptsFailuresAndIncarnations(t *testing.T) {
+	for _, cluster := range []string{"east", ""} {
+		name := cluster
+		if name == "" {
+			name = "standalone"
+		}
+		t.Run(name, func(t *testing.T) { runResourceHistoryReceipts(t, cluster) })
+	}
+}
+
+func runResourceHistoryReceipts(t *testing.T, cluster string) {
 	ctx := context.Background()
 	store := &historyFaultStore{Store: memory.New()}
 	sink := &resyncSink{}
-	history := NewResourceHistory(store, "east", sink)
+	history := NewResourceHistory(store, cluster, sink)
+	if cluster == "" {
+		history = NewStandaloneResourceHistory(store, sink)
+	}
 	r := repairRow("history")
+	r.ClusterID = cluster
 	r.Raw = map[string]any{"spec": map[string]any{"private": "payload-canary"}}
 	for _, failure := range []string{"read", "write"} {
 		store.readFail, store.writeFail = failure == "read", failure == "write"
@@ -110,7 +124,7 @@ func TestResourceHistorySuccessfulReceiptsFailuresAndIncarnations(t *testing.T) 
 		t.Fatalf("history count: %d", len(events))
 	}
 	for i, e := range events {
-		if e.EventType != want[i] || e.ClusterID != "east" || e.Data != nil {
+		if e.EventType != want[i] || e.ClusterID != cluster || e.Data != nil {
 			t.Fatalf("wrong metadata event: %+v", e)
 		}
 	}
@@ -138,12 +152,26 @@ func TestResourceHistorySuccessfulReceiptsFailuresAndIncarnations(t *testing.T) 
 }
 
 func TestResourceHistoryOverlappingCollectorsUseSharedMemberLock(t *testing.T) {
+	for _, cluster := range []string{"east", ""} {
+		name := cluster
+		if name == "" {
+			name = "standalone"
+		}
+		t.Run(name, func(t *testing.T) { runResourceHistoryOverlap(t, cluster) })
+	}
+}
+
+func runResourceHistoryOverlap(t *testing.T, cluster string) {
 	ctx := context.Background()
 	store := memory.New()
 	sink := &resyncSink{}
-	history := NewResourceHistory(store, "east", sink)
-	repair := NewMemberRepair(nil, store, "east")
+	history := NewResourceHistory(store, cluster, sink)
+	if cluster == "" {
+		history = NewStandaloneResourceHistory(store, sink)
+	}
+	repair := NewMemberRepair(nil, store, cluster)
 	r := repairRow("overlap")
+	r.ClusterID = cluster
 	run := func(remove bool) {
 		var wg sync.WaitGroup
 		for range 12 {
@@ -277,5 +305,66 @@ func TestResourceHistoryLateWatchUpdateAfterDeleteIsAnotherObservation(t *testin
 				}
 			}
 		})
+	}
+}
+
+func TestStandaloneHistoryRequiresExplicitScopeAndRejectsNamedRows(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	sink := &resyncSink{}
+	row := repairRow("explicit")
+	row.ClusterID = ""
+	if _, err := NewResourceHistory(store, "", sink).Upsert(ctx, row, graph.EventTypeAdd); err == nil {
+		t.Fatal("empty member name silently became standalone")
+	}
+	h := NewStandaloneResourceHistory(store, sink)
+	named := row
+	named.ClusterID = "east"
+	if err := store.UpsertResource(ctx, named); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Upsert(ctx, named, graph.EventTypeAdd); err == nil {
+		t.Fatal("standalone history accepted a member row")
+	}
+	h.RecordDelete(named)
+	if len(sink.recorded()) != 0 {
+		t.Fatal("rejected scope produced an event")
+	}
+	if _, err := h.Upsert(ctx, row, graph.EventTypeAdd); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := h.Delete(ctx, row); err != nil || !removed {
+		t.Fatal("standalone watch deletion was not recorded", removed, err)
+	}
+	if got, err := store.GetResource(ctx, named.ID()); err != nil || !graph.SameResourceVersion(got, named) {
+		t.Fatal("standalone deletion changed the same-UID member row", err)
+	}
+	events := sink.recorded()
+	if len(events) != 2 || events[0].EventType != graph.EventTypeAdd || events[1].EventType != graph.EventTypeDelete {
+		t.Fatal("wrong standalone receipt lifecycle", events)
+	}
+	for _, e := range events {
+		if e.ClusterID != "" || e.Data != nil {
+			t.Fatal("standalone history fabricated member provenance or retained a payload")
+		}
+	}
+}
+
+func TestStandaloneHistoryDoesNotFallbackToUnconditionalDelete(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	legacy := struct{ graph.GraphStore }{store}
+	sink := &resyncSink{}
+	h := NewStandaloneResourceHistory(legacy, sink)
+	row := repairRow("no-fallback")
+	row.ClusterID = ""
+	if _, err := h.Upsert(ctx, row, graph.EventTypeAdd); err != nil {
+		t.Fatal(err)
+	}
+	if deleted, err := h.Delete(ctx, row); err == nil || deleted {
+		t.Fatal("missing optional delete capability was bypassed")
+	}
+	if _, err := store.GetResource(ctx, row.ID()); err != nil || len(sink.recorded()) != 1 {
+		t.Fatal("unsupported delete removed a row or manufactured history", err)
 	}
 }
