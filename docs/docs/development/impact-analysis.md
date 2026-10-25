@@ -1738,6 +1738,37 @@ No Kubernetes request, additional storage query, worker, public API field or
 GraphStore v2 method is added. Real-cluster and deployed PostgreSQL qualification
 remain separate M4 work; these tests do not establish complete collector coverage.
 
+### M2 Kyverno report-read failure qualification follow-up
+
+Kyverno extraction distinguishes a successful empty report query from a failed
+store read. Missing `PolicyReport` / `ClusterPolicyReport` rows still permit
+plain ENFORCES edges with no result attribute. A failed query contributes no
+rows, including any partial response returned with its error. The other report
+kind can still supply usable observations; the extractor returns the first
+report-read error alongside its valid edges. Core collection records the existing
+sticky extraction gap rather than silently treating that read as successful.
+
+If a later target query fails, earlier successful target matches remain available
+alongside the error. The failed query's partial rows are excluded. Other
+registered extractors continue under the registry's existing partial-result
+contract. Each existing lookup runs at most once per callback; no storage query,
+worker, automatic retry, public response field or Kubernetes permission is added.
+Explicit member/standalone read and edge scope guards remain in force.
+
+Cancellation checks before and after report/target reads stop subsequent lookups,
+including when a dependency returns rows after cancellation. The collector keeps
+already committed resource/history writes, skips derived writes and preserves
+prior gaps without fabricating a new extraction failure for shutdown. A normal
+later delivery can repair the report overlay without duplicate resource history;
+successful replay does not erase the earlier extraction gap. Stored graph data
+is not cleaned or treated as deletion evidence.
+
+Portable extractor and core-callback regressions cover failed/absent reports,
+partial responses, usable edges after later target failure, registry continuation,
+foreign-report isolation, both history modes, cancellation and sticky-gap replay.
+These local checks do not qualify actual Kyverno installation, complete policy
+coverage, deployed PostgreSQL behavior or M4 acceptance.
+
 ### M2 existing snapshot-route member visibility follow-up
 
 Existing snapshot list/diff handlers now authorize before history reads and use

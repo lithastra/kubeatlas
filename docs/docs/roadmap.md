@@ -147,6 +147,11 @@ and partial Secret-reference writes. Builtin Service selection and Kyverno repor
 lookup have local cross-member regression coverage; local report replay still
 recovers results. Existing retained data is not cleaned or reowned, and these
 scope guards do not close the complete-coverage or M4 gates.
+Kyverno report-store failures now return usable edges with extraction-gap evidence;
+successful empty report queries keep plain edges without a new failure gap.
+Later target-read failures retain earlier matches; cancellation stops subsequent
+lookups. Local regressions cover scope/history modes and normal replay recovery
+without erasing the original gap or adding duplicate resource history.
 General version equivalence, continuous retained history and verified recovery
 points remain pending. Existing
 v1 snapshot list/diff routes now authorize and read one attached member through

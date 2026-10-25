@@ -5,6 +5,8 @@ package extractor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
@@ -22,7 +24,8 @@ const kyvernoGroupPrefix = "kyverno.io/"
 // ENFORCES relationship. KubeAtlas reads the PolicyReport results the
 // Kyverno controller writes; it never evaluates a policy. When the
 // PolicyReport feature is off the edges still appear, just without a
-// result attribute (degraded gracefully).
+// result attribute (degraded gracefully). Store read failures return an
+// error alongside usable edges so collectors retain extraction-gap evidence.
 type KyvernoExtractor struct{}
 
 // Type reports the edge type this extractor produces.
@@ -43,7 +46,10 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 		return nil, nil
 	}
 
-	reports := buildKyvernoReportIndex(ctx, q)
+	reports, reportErr := buildKyvernoReportIndex(ctx, q)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	from := r.ID()
 	seen := make(map[string]struct{})
 	var edges []graph.Edge
@@ -67,14 +73,20 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 			}
 			for _, kind := range desc.kinds {
 				for _, ns := range namespaces {
+					if err := ctx.Err(); err != nil {
+						return nil, err
+					}
 					matched, err := q.ListResources(ctx, graph.Filter{
 						Kind:      kind,
 						Namespace: ns,
 						Labels:    desc.labels,
 						ClusterID: r.ClusterID,
 					})
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
 					if err != nil {
-						return nil, err
+						return edges, errors.Join(reportErr, err)
 					}
 					for _, m := range matched {
 						to := m.ID()
@@ -92,7 +104,7 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 			}
 		}
 	}
-	return edges, nil
+	return edges, reportErr
 }
 
 // kyvernoDescriptor is one resource selector from a rule's match block.
@@ -156,12 +168,24 @@ func stringSlice(vals []any) []string {
 
 // buildKyvernoReportIndex reads every PolicyReport / ClusterPolicyReport
 // in the store into a (policy, resource) -> result lookup. Missing
-// reports yield an empty index — the edges then carry no result.
-func buildKyvernoReportIndex(ctx context.Context, q graph.ResourceLister) map[string]string {
+// reports yield an empty index without an error. A failed lookup contributes
+// no rows, preserves the first error, and still permits the other report kind
+// to contribute evidence. Cancellation stops further queries immediately.
+func buildKyvernoReportIndex(ctx context.Context, q graph.ResourceLister) (map[string]string, error) {
 	idx := make(map[string]string)
+	var firstErr error
 	for _, kind := range []string{"PolicyReport", "ClusterPolicyReport"} {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		reports, err := q.ListResources(ctx, graph.Filter{Kind: kind})
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("list Kyverno %s: %w", kind, err)
+			}
 			continue
 		}
 		for _, rep := range reports {
@@ -179,7 +203,7 @@ func buildKyvernoReportIndex(ctx context.Context, q graph.ResourceLister) map[st
 			}
 		}
 	}
-	return idx
+	return idx, firstErr
 }
 
 func reportKey(policy, kind, namespace, name string) string {
