@@ -160,6 +160,14 @@ than an unlocked fallback; cancelled late results are excluded from the cache.
 Local phase-controlled race tests cover handoff, exact accounting, member-key
 independence and real-engine cached replay. Cache capacity and evaluation budgets
 remain unchanged; deployed shutdown/load qualification is still pending.
+CRD Rego extraction now retains whole earlier successful modules when a later
+module fails, alongside a sticky extraction gap. Evaluation still stops at the
+first failure; malformed output from that module is rejected atomically and
+failed results are not cached. The collector validates the complete returned
+batch against its member/standalone scope before any edge write, and cancelled
+evaluation starts no subsequent writes. Local real-engine and callback race
+regressions cover failures, replay recovery, receipts and history modes;
+real-cluster and M4 qualification remain pending.
 Core/Gatekeeper extractor reads are now pinned to one member or explicitly
 unlabelled standalone data through a narrow scoped lister. Core/CRD/Gatekeeper
 validate whole edge batches before persistence, preventing foreign endpoints

@@ -264,11 +264,15 @@ func (e *Engine) ModuleCount() int {
 //     miss runs Evaluate under the timeout + recover guards.
 //  4. Decode the result-set rows into graph.Edge values.
 //
-// Per-rule failures are wrapped and returned, NOT silently dropped;
-// callers (the informer wire-in landing in P2-T11) decide whether
-// to warn-and-continue or treat one bad rule as fatal. The default
-// is warn-skip so a single broken pack cannot halt the informer.
+// Per-rule failures are wrapped and returned with completed earlier modules.
+// Evaluation stops at the first failure; malformed output from that module
+// contributes no edges. Cancellation discards this call's output instead of
+// exposing a partial batch. Callers decide how to report the gap and persist
+// usable results without halting the informer.
 func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]graph.Edge, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if e.router == nil {
 		return nil, errors.New("rego.EvaluateForResource: no router; call New(WithRouter(...))")
 	}
@@ -291,6 +295,9 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 	var allEdges []graph.Edge
 
 	for _, m := range matches {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		e.mu.RLock()
 		cm, ok := e.modules[m.Name]
 		e.mu.RUnlock()
@@ -298,7 +305,7 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 			// Router knows about a module the engine never loaded.
 			// This is a programming error in the bootstrap path —
 			// surface loud rather than silently skipping.
-			return nil, fmt.Errorf(
+			return allEdges, fmt.Errorf(
 				"eval rule %s on %s: module not loaded into engine",
 				m.Name, r.ID(),
 			)
@@ -322,10 +329,16 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 				}
 				return CacheValue{Edges: edges}, nil
 			})
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err != nil {
-			return nil, fmt.Errorf("eval rule %s on %s: %w", m.Name, r.ID(), err)
+			return allEdges, fmt.Errorf("eval rule %s on %s: %w", m.Name, r.ID(), err)
 		}
 		allEdges = append(allEdges, v.Edges...)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return allEdges, nil
 }

@@ -42,6 +42,8 @@ var crdGVR = schema.GroupVersionResource{
 const defaultResyncPeriod = 5 * time.Minute
 
 // RegoEvaluator is the slice of *rego.Engine that pkg/crd needs.
+// Usable edges may accompany an active evaluation error; the collector records
+// a gap and validates the whole returned batch before persisting those edges.
 // Defining it here as an interface keeps the package independent of
 // extractor/rego (no import cycle) and lets tests inject a mock that
 // records calls without spinning up a real OPA evaluator.
@@ -498,16 +500,19 @@ func (d *Discovery) handleUpsertEvent(ctx context.Context, gvr schema.GroupVersi
 		return
 	}
 	edges, err := d.rego.EvaluateForResource(ctx, r)
-	if err == nil {
-		edges, err = discovery.ScopeCollectorEdges(edges, d.clusterID)
+	if ctx.Err() != nil {
+		return
 	}
 	if err != nil {
-		if ctx.Err() != nil {
-			return
-		}
 		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
-		d.logger.Warn("rego eval failed; resource still stored, skipping rego-derived edges",
+		d.logger.Warn("rego eval failed; retaining usable completed module edges",
 			"id", r.ID(), "err", err)
+	}
+	// An active extraction failure does not bypass the whole-batch scope guard.
+	edges, scopeErr := discovery.ScopeCollectorEdges(edges, d.clusterID)
+	if scopeErr != nil {
+		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
+		d.logger.Warn("rego edge scope rejected", "id", r.ID(), "err", scopeErr)
 		return
 	}
 	for _, e := range edges {

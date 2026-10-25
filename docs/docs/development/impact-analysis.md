@@ -1809,6 +1809,44 @@ failed handoffs, exact hit/miss counts, flight cleanup, member-key independence
 and a real local Rego-engine warm-cache replay. Real-cluster shutdown behavior,
 deployed load and M4 acceptance remain unqualified.
 
+### M2 CRD Rego partial extraction follow-up
+
+Resource-level Rego evaluation now returns edges from complete earlier modules
+alongside the first active failure, including a missing compiled module,
+evaluation error, recovered panic or malformed output. It still stops at that
+failure, in the existing router order; it does not run later modules or retry
+the failing module within that call. Decoding remains atomic within one module:
+a valid prefix followed by a malformed edge contributes nothing from that module.
+Successful whole-module values keep their existing cache entries, while failed
+values remain uncached. A subsequent active delivery can recover missing edges.
+Per-evaluation timeouts, cache keys/capacity and other budgets are unchanged.
+
+The CRD callback records an extraction gap for active failures and keeps usable
+returned edges only after validating the complete batch in its explicit member
+or unlabelled standalone scope. A foreign or empty endpoint rejects the entire
+returned batch before any edge write, including a valid prefix. Edge write
+failures retain separate persistence-gap evidence while other active writes can
+proceed. Recovery does not clear prior gaps, adopt a different stored writer or
+create duplicate metadata-only history for an unchanged source observation.
+Existing retained resources/edges are not cleaned up.
+
+Cancellation takes precedence over partial output. The engine checks it at entry,
+between modules and after evaluation; cancelled calls return no edges. The CRD
+callback rechecks it after evaluation and before each edge write. An already
+started storage dependency can still commit despite cancellation; its committed
+edge, source receipt and configured resource history remain without rollback.
+Cancellation creates no new extraction/persistence gap and preserves earlier
+loss evidence. This adds no worker, watch, Kubernetes/storage query, public API
+field or GraphStore method.
+
+Portable race regressions cover first/later module failures, atomic malformed
+outputs, error causes, cached replay, cancellation and subsequent active recovery.
+Callback matrices include the actual local Rego engine, named-member/standalone
+scope, both history modes, whole-batch scope rejection, failed/cancelled writes,
+committed receipts, metadata-only history and sticky gaps. These offline checks
+do not establish deployed PostgreSQL behavior, real-cluster coverage or M4
+acceptance.
+
 ### M2 collector read and edge scope follow-up
 
 Core and Gatekeeper extractors now receive a read-only scope adapter rather than
