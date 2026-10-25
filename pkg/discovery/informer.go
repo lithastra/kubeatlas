@@ -400,9 +400,12 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		m.persistedMu.RLock()
 		previous, known := m.persisted[key]
 		m.persistedMu.RUnlock()
-		resourceChanged = !versioned || !known || previous != version
-		if resourceChanged {
-			if err := m.store.UpsertResource(ctx, r); err != nil {
+		if !versioned || !known || previous != version {
+			// Core optional APIs can overlap CRD collectors. A cold local cache
+			// does not authorize erasing their stored writer on unchanged delivery.
+			var err error
+			resourceChanged, err = UpsertObservedResource(ctx, m.store, r)
+			if err != nil {
 				if ctx.Err() != nil {
 					return
 				}
@@ -410,8 +413,8 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 				slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
 				return
 			}
-			// Mark only successful writes. Comparing old/new informer objects
-			// alone would suppress the retry after a failed initial or update write.
+			// Cache only successful receipt decisions, including stored replays.
+			// Failed reads/writes must not suppress a later delivery of this version.
 			m.persistedMu.Lock()
 			if versioned {
 				m.persisted[key] = version
@@ -420,17 +423,19 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 			}
 			m.persistedMu.Unlock()
 
-			// Enqueue is non-blocking by contract. A local-cache replay is not
-			// a resource change and must not create another history event.
-			m.snapshotSink.Enqueue(graph.ResourceEvent{
-				ClusterID:       m.clusterID,
-				Namespace:       r.Namespace,
-				Kind:            r.Kind,
-				UID:             string(r.UID),
-				Name:            r.Name,
-				EventType:       eventType,
-				ResourceVersion: r.ResourceVersion,
-			})
+			// Enqueue is non-blocking by contract. Neither a local-cache replay
+			// nor an unchanged stored receipt is a resource-change event.
+			if resourceChanged {
+				m.snapshotSink.Enqueue(graph.ResourceEvent{
+					ClusterID:       m.clusterID,
+					Namespace:       r.Namespace,
+					Kind:            r.Kind,
+					UID:             string(r.UID),
+					Name:            r.Name,
+					EventType:       eventType,
+					ResourceVersion: r.ResourceVersion,
+				})
+			}
 		}
 	}
 	// A dependency can commit despite cancellation. Preserve its resource

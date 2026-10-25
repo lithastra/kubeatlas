@@ -1640,6 +1640,42 @@ writes, recovery on later delivery and cancellation. Deployed PostgreSQL cost
 and real-cluster acceptance remain separate M4 work; local tests do not qualify
 either.
 
+### M2 core replay source-receipt preservation follow-up
+
+Core collection can observe the same optional API endpoints as CRD collection,
+including Kyverno policies. A new core informer or a changed local cache entry
+with history disabled now consults the existing stored-writer receipt before
+deciding whether to write. An unchanged member/identity/API-version/UID/version
+observation preserves that writer, including registered, retired or replaced
+private receipts and unowned legacy rows. Core delivery alone cannot adopt or
+erase a dynamic registration for the same observed version. Actual UID/version
+changes can still commit a new unqualified core observation; opaque versions
+are compared for equality, never ordered across watches.
+
+This reuses the existing `UpsertObservedResource` decision under the scope's
+shared resource lock. A versioned cold or mismatched cache entry adds one point
+read; unversioned writes keep their existing behavior. Successful stored replay
+can populate the existing core cache without a resource write or resource-change
+event. Unchanged cache hits continue to skip resource reads and writes while
+still re-extracting edges. That fast path is not a fresh proof of the stored row
+or a mechanism for repairing external storage deletion. No source-side cache,
+Kubernetes request, worker, public field or GraphStore method is added.
+
+Receipt lookup failure has no unconditional-write fallback and does not mark the
+local version successful. Cancellation after a context-ignoring lookup stops
+write/extraction and creates no false shutdown gap. Active receipt read/write
+failures retain data and record the persistence gap. A later normal delivery can
+commit the fresh observation, without clearing historical gaps. Notifications
+and the legacy snapshot sink follow committed graph/resource changes; replayed
+edges can recover after informer recreation without duplicate resource events.
+
+Portable tests cover both scope/history modes, live/retired/replaced/unknown
+source qualification, cold/repeated/recreated core delivery, exact point-read
+counts, edge recovery, foreign-member preservation, fresh UID/version changes,
+read/write failure, cancellation and later recovery. The existing 10K unchanged
+resync regression remains required. Deployed point-read cost, real-cluster
+behavior and M4 acceptance remain unqualified.
+
 ### M2 watch-deletion receipt parity follow-up
 
 Core, CRD-instance and Gatekeeper object-delete callbacks now share conditional

@@ -12,13 +12,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// UpsertObservedResource applies dynamic-source receipts without enabling
+// UpsertObservedResource applies stored-writer receipts without enabling
 // history. Callers must hold their scope's shared MemberRepair resource lock
 // through this operation and subsequent extraction, as with ResourceHistory.
 // Unchanged overlapping delivery preserves the stored writer; a fresh lifetime
 // of that same source can refresh its receipt. Skipping a resource write must
 // never skip the caller's edge extraction. This is not cross-watch ordering or
 // all-source delivery accounting, and a missing row remains a new observation.
+// Core callers may use their existing successful-version cache to skip this
+// decision on unchanged replays; cold/mismatched cache entries consult the row.
 func UpsertObservedResource(ctx context.Context, store graph.GraphStore, r graph.Resource) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err

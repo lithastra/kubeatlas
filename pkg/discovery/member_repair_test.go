@@ -237,7 +237,8 @@ func TestMemberRepairScheduledRetryAndCoreDeletionReceipt(t *testing.T) {
 	s.failures.Store(10000)
 	s.normalFailures.Store(1)
 	row := repairRow("gone")
-	_ = s.UpsertResource(context.Background(), row)
+	// Let initial informer delivery commit the add. A pre-seeded identical row
+	// is now a stored replay and must not manufacture a resource-change receipt.
 	tracker := operations.NewCoverageTracker(time.Minute)
 	u := repairPage(row).Items[0]
 	c := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{repairPods: "PodList"}, &u)

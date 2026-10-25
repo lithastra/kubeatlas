@@ -129,6 +129,13 @@ retired data. History-disabled versioned dynamic callbacks consult one stored
 receipt under the existing resource lock; failed lookups cannot fall back to an
 unconditional write. Both source orders, scope modes and history modes have local
 race coverage; deployed storage cost and M4 qualification remain pending.
+Core collection now also preserves the stored dynamic writer on unchanged
+history-disabled delivery after a cold cache or informer recreation. Versioned
+cache misses consult one stored receipt; unchanged cache hits retain their
+existing resource-read/write fast path and still re-extract edges. Failed reads
+cannot fall back to a write or poison the successful-version cache. Local tests
+cover source qualification, scope/history modes, UID/version changes, cancellation,
+point-read counts and later recovery; deployed storage cost remains pending.
 Core/CRD/Gatekeeper watch deletes now use the same UID-bound atomic stored-receipt
 guard with history on/off. Late tombstones preserve replacements and their
 edges; unverifiable deletion stays retained without an unconditional fallback.
