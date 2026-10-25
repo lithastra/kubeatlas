@@ -152,6 +152,12 @@ successful empty report queries keep plain edges without a new failure gap.
 Later target-read failures retain earlier matches; cancellation stops subsequent
 lookups. Local regressions cover scope/history modes and normal replay recovery
 without erasing the original gap or adding duplicate resource history.
+Gatekeeper now also retains earlier target matches after a later kind/namespace
+read failure and persists usable partial extraction with a sticky gap. Every
+returned batch still passes the full scope guard before any edge write. Local
+regressions cover violation attributes, cancellation, write failures, receipt
+retention and replay across both scope/history modes; deployed acceptance remains
+pending.
 General version equivalence, continuous retained history and verified recovery
 points remain pending. Existing
 v1 snapshot list/diff routes now authorize and read one attached member through

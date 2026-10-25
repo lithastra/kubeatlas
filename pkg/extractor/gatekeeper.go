@@ -32,7 +32,8 @@ type GatekeeperExtractor struct{}
 func (GatekeeperExtractor) Type() graph.EdgeType { return graph.EdgeTypeEnforces }
 
 // Extract returns one ENFORCES edge per resource the Constraint
-// matches. Non-Constraint resources yield nothing.
+// matches. Non-Constraint resources yield nothing. A failed target query
+// returns earlier matches alongside its error; its own partial rows are ignored.
 func (GatekeeperExtractor) Extract(ctx context.Context, r graph.Resource, q graph.ResourceLister) ([]graph.Edge, error) {
 	if !strings.HasPrefix(r.GroupVersion, gatekeeperConstraintGroupPrefix) {
 		return nil, nil
@@ -59,14 +60,20 @@ func (GatekeeperExtractor) Extract(ctx context.Context, r graph.Resource, q grap
 
 	for _, kind := range kinds {
 		for _, ns := range nsScopes {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			matched, err := q.ListResources(ctx, graph.Filter{
 				Kind:      kind,
 				Namespace: ns,
 				Labels:    labels,
 				ClusterID: r.ClusterID,
 			})
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			if err != nil {
-				return nil, err
+				return edges, err
 			}
 			for _, m := range matched {
 				to := m.ID()

@@ -400,12 +400,16 @@ func (d *Discovery) handleConstraintEvent(ctx context.Context, kind string, obj 
 	if ctx.Err() != nil {
 		return
 	}
-	if err == nil {
-		edges, err = discovery.ScopeCollectorEdges(edges, d.clusterID)
-	}
 	if err != nil {
 		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
 		d.logger.Warn("gatekeeper: extract constraint edges", "id", r.ID(), "err", err)
+	}
+	// Keep usable partial extraction, but validate its entire edge batch before
+	// any write. An extraction error must not bypass the collector scope guard.
+	edges, scopeErr := discovery.ScopeCollectorEdges(edges, d.clusterID)
+	if scopeErr != nil {
+		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
+		d.logger.Warn("gatekeeper: constraint edge scope rejected", "id", r.ID(), "err", scopeErr)
 		return
 	}
 	for _, e := range edges {

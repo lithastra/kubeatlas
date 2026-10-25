@@ -1769,6 +1769,39 @@ foreign-report isolation, both history modes, cancellation and sticky-gap replay
 These local checks do not qualify actual Kyverno installation, complete policy
 coverage, deployed PostgreSQL behavior or M4 acceptance.
 
+### M2 Gatekeeper partial-extraction retention follow-up
+
+Gatekeeper target extraction now returns earlier successful matches when a later
+kind or namespace query fails. Rows accompanying the failed query are excluded;
+confirmed violation attributes on earlier edges are retained. The registry can
+still contribute other extractors' results under its existing partial-result
+contract. Queries stop at the first target-read failure without an automatic
+retry. Context checks before and after each target query stop further reads
+when a dependency returns after cancellation.
+
+The Gatekeeper collector records an extraction gap and continues with usable
+partial results. It validates the complete returned edge batch before any edge
+write, even when extraction returned an error. A foreign or empty endpoint
+rejects the entire batch; relative endpoints remain qualified to the owning
+member, or explicitly unlabelled standalone scope. A failed edge write records
+the separate persistence gap and does not suppress later valid writes. This
+uses the existing scoped lister, resource lock, history writer and graph methods;
+it adds no query, watch, worker, permission or public API field.
+
+Cancellation after extraction skips all derived writes and adds no false
+extraction failure for shutdown. If cancellation occurs during an edge write,
+that write can still commit, but later writes stop. Already recorded gaps and
+committed resource/history receipts are retained. A later normal delivery can
+repair missing edges without duplicating unchanged resource history or clearing
+the earlier extraction, processing or persistence gaps. No stored graph data is
+removed or treated as deletion evidence.
+
+Portable regressions cover later kind/namespace query failures, failed-query
+partial rows, registry continuation, whole-batch scope rejection, violation
+attributes, edge-write failures, cancellation, replay and private source receipts
+in member/standalone scopes with both history modes. Real Gatekeeper installation,
+deployed PostgreSQL behavior, complete policy coverage and M4 remain unqualified.
+
 ### M2 existing snapshot-route member visibility follow-up
 
 Existing snapshot list/diff handlers now authorize before history reads and use
