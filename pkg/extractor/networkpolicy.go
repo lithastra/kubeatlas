@@ -73,7 +73,7 @@ func (SelectsNPExtractor) Extract(ctx context.Context, r graph.Resource, q graph
 	selector := nestedStringMap(r.Raw, "spec", "podSelector", "matchLabels")
 	// podSelector resolves only against the policy's own namespace,
 	// and only its own cluster in multi-cluster mode.
-	candidates, err := q.ListResources(ctx, graph.Filter{
+	candidates, err := listNetworkPolicyResources(ctx, q, graph.Filter{
 		Namespace: r.Namespace,
 		ClusterID: r.ClusterID,
 	})
@@ -127,8 +127,12 @@ func (AllowsToExtractor) Extract(ctx context.Context, r graph.Resource, q graph.
 // extractPeerEdges walks spec.<ruleField>[].<peerField>[] (so
 // "ingress"/"from" or "egress"/"to") and emits one edge per matching
 // Pod or Namespace. Helper factored to keep the two direction-
-// specific extractors a four-line shell.
+// specific extractors a four-line shell. Failed queries keep earlier successful
+// peers, including partial results from earlier namespaces within the same peer.
 func extractPeerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, ruleField, peerField string, edgeType graph.EdgeType) ([]graph.Edge, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	rules := nestedSlice(r.Raw, "spec", ruleField)
 	if len(rules) == 0 {
 		return nil, nil
@@ -152,10 +156,13 @@ func extractPeerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLis
 				continue
 			}
 			pe, err := peerEdges(ctx, r, q, peer, from, edgeType)
-			if err != nil {
-				return nil, err
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
 			}
 			edges = append(edges, pe...)
+			if err != nil {
+				return edges, err
+			}
 		}
 	}
 	return edges, nil
@@ -165,15 +172,15 @@ func extractPeerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLis
 //
 // Cases:
 //
-//   * ipBlock-only peer            → skip (not a K8s resource).
-//   * empty peer ({})              → skip (cardinality explosion).
-//   * podSelector only             → edges to Pods in r.Namespace
-//                                    matching the selector.
-//   * namespaceSelector only       → edges to Namespaces whose
-//                                    labels match.
-//   * podSelector + nsSelector     → edges to Pods in any matching
-//                                    Namespace whose labels match
-//                                    podSelector.
+//   - ipBlock-only peer            → skip (not a K8s resource).
+//   - empty peer ({})              → skip (cardinality explosion).
+//   - podSelector only             → edges to Pods in r.Namespace
+//     matching the selector.
+//   - namespaceSelector only       → edges to Namespaces whose
+//     labels match.
+//   - podSelector + nsSelector     → edges to Pods in any matching
+//     Namespace whose labels match
+//     podSelector.
 func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, peer map[string]any, from string, edgeType graph.EdgeType) ([]graph.Edge, error) {
 	hasIPBlock := peer["ipBlock"] != nil
 	hasPodSel := peer["podSelector"] != nil
@@ -195,7 +202,7 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 
 	// namespaceSelector only — edge target is each matching Namespace.
 	if hasNsSel && !hasPodSel {
-		namespaces, err := q.ListResources(ctx, graph.Filter{Kind: "Namespace", ClusterID: r.ClusterID})
+		namespaces, err := listNetworkPolicyResources(ctx, q, graph.Filter{Kind: "Namespace", ClusterID: r.ClusterID})
 		if err != nil {
 			return nil, fmt.Errorf("peerEdges: list namespaces: %w", err)
 		}
@@ -212,7 +219,7 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 	// podSelector only — edge target is each matching Pod in
 	// r.Namespace (the policy's own namespace).
 	if hasPodSel && !hasNsSel {
-		candidates, err := q.ListResources(ctx, graph.Filter{
+		candidates, err := listNetworkPolicyResources(ctx, q, graph.Filter{
 			Namespace: r.Namespace,
 			ClusterID: r.ClusterID,
 		})
@@ -232,7 +239,7 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 	// Both selectors — pods in matching namespaces whose labels
 	// match podSelector. Resolve namespaces first (small set) then
 	// list each matching namespace's resources.
-	namespaces, err := q.ListResources(ctx, graph.Filter{Kind: "Namespace", ClusterID: r.ClusterID})
+	namespaces, err := listNetworkPolicyResources(ctx, q, graph.Filter{Kind: "Namespace", ClusterID: r.ClusterID})
 	if err != nil {
 		return nil, fmt.Errorf("peerEdges: list namespaces: %w", err)
 	}
@@ -241,9 +248,12 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 		if !matchLabelSelector(nsRes.Labels, nsSel) {
 			continue
 		}
-		pods, err := q.ListResources(ctx, graph.Filter{Namespace: nsRes.Name, ClusterID: r.ClusterID})
+		pods, err := listNetworkPolicyResources(ctx, q, graph.Filter{Namespace: nsRes.Name, ClusterID: r.ClusterID})
 		if err != nil {
-			return nil, fmt.Errorf("peerEdges: list namespace %q: %w", nsRes.Name, err)
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return edges, fmt.Errorf("peerEdges: list namespace %q: %w", nsRes.Name, err)
 		}
 		for _, t := range pods {
 			if !podLikeMatches(t, podSel) {
@@ -253,6 +263,22 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 		}
 	}
 	return edges, nil
+}
+
+// listNetworkPolicyResources excludes failed-query partial rows and checks
+// cancellation around dependencies that may return rows after shutdown.
+func listNetworkPolicyResources(ctx context.Context, q graph.ResourceLister, filter graph.Filter) ([]graph.Resource, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	rows, err := q.ListResources(ctx, filter)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // podLikeMatches reports whether t is a Pod or a workload carrying

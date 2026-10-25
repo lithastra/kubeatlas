@@ -1802,6 +1802,38 @@ attributes, edge-write failures, cancellation, replay and private source receipt
 in member/standalone scopes with both history modes. Real Gatekeeper installation,
 deployed PostgreSQL behavior, complete policy coverage and M4 remain unqualified.
 
+### M2 NetworkPolicy partial-extraction retention follow-up
+
+NetworkPolicy ingress and egress extraction now retain successful peer edges
+when a later peer, rule or namespace lookup fails. This includes earlier
+namespaces inside one combined pod/namespace selector and earlier peers outside
+that selector. Rows returned with a failed query do not contribute edges. The
+existing registry retains independent SELECTS_NP and other extractor results;
+the core collector records the existing sticky extraction gap before persisting
+valid scoped partial results. A successful empty namespace query is not a read
+failure and still permits independent selection edges.
+
+All NetworkPolicy target reads check cancellation before and after the existing
+query, including SELECTS_NP, pod-only peers, namespace-only peers and combined
+selectors. A context-ignoring dependency cannot cause another query to begin
+after cancellation or contribute late rows. The callback retains a resource or
+history write already committed before cancellation, skips derived writes and
+preserves prior gaps without adding a false extraction failure for shutdown.
+
+The existing member/explicitly unlabelled standalone lister and whole-batch edge
+scope guard remain in force. A normal later delivery can recover missing edges
+without another unchanged-resource history event or clearing the earlier gap.
+No query, watch, worker, permission, public field or GraphStore method is added;
+stored data is not cleaned or treated as deletion evidence.
+
+Portable regressions cover both directions, later peer/rule/namespace failures,
+failed-query partial rows, query counts, cancellation at each read stage,
+independent registry output, member isolation, both history modes, empty queries,
+committed notifications and replay recovery. These edges remain declarations,
+not effective CNI reachability. Existing matchLabels-only selector support and
+the policyTypes, wildcard/empty-peer and ipBlock limits remain unchanged.
+Real-cluster behavior, deployed PostgreSQL qualification and M4 remain pending.
+
 ### M2 existing snapshot-route member visibility follow-up
 
 Existing snapshot list/diff handlers now authorize before history reads and use

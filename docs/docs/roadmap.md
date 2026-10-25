@@ -158,6 +158,12 @@ returned batch still passes the full scope guard before any edge write. Local
 regressions cover violation attributes, cancellation, write failures, receipt
 retention and replay across both scope/history modes; deployed acceptance remains
 pending.
+NetworkPolicy ingress/egress extraction now retains earlier peers and namespaces
+after a later lookup fails, alongside the existing extraction gap. Cancellation
+stops subsequent target reads, and failed-query partial rows are excluded. Local
+regressions cover selection/peer results, member isolation, both history modes,
+empty queries and replay recovery. These remain declarative relationships;
+effective CNI reachability and M4 acceptance are not established.
 General version equivalence, continuous retained history and verified recovery
 points remain pending. Existing
 v1 snapshot list/diff routes now authorize and read one attached member through
