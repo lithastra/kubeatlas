@@ -1880,6 +1880,45 @@ reload. They verify independent new-query progress, old-query completion,
 restoration without cache poisoning, failed compilation and exact hit/miss counts.
 Real-cluster behavior, deployed load and M4 acceptance remain unqualified.
 
+### M2 Rego cache eligibility for incomplete observations follow-up
+
+Resource-level Rego evaluation now requires the existing
+`graph.ValidResourceVersion` predicate before using the result cache. The resource
+must have kind, name, API version, UID and opaque resource version, and must not
+be a reference-only Secret. Missing identity cannot prove equivalence between
+deliveries or objects. An ineligible observation still evaluates its routed
+modules, but neither reads nor populates the LRU or the shared in-flight map.
+It does not wait for an unprovable shared key or change cache hit/miss counters.
+Eligible observations keep the existing bounded cache and query-identity keys;
+the engine does not invent UID/version fields or use payload hashes as receipts.
+
+Both paths execute the same captured compiled query through the existing timeout
+and panic guards, decode each module atomically and recheck cancellation. Active
+failure still returns whole earlier successful modules alongside the error;
+cancellation discards the call's output. Timeout/panic counters remain available
+for uncached evaluation. Cache capacity, per-module evaluation budgets and
+member/standalone edge validation remain unchanged. Incomplete repeated delivery
+can therefore cost another bounded evaluation, rather than reuse an unqualified
+result. This adds no worker, watch, store query, public API field or GraphStore
+method.
+
+CRD callbacks retain fresh derived relationships alongside the existing sticky
+processing gap for incomplete persisted identity. They do not fabricate private
+origin receipts or metadata-only history for those observations. A later complete
+delivery restores qualified receipts, history eligibility and normal caching;
+unchanged complete replay adds no duplicate resource history. It cannot erase
+the earlier gap or infer deletion of retained edges. The offline CLI keeps its
+existing fixture UID mapping for rule input; samples without resourceVersion
+also follow this uncached evaluation path.
+
+Portable actual-engine tests cover missing UID/version/API version, changed
+payloads and separate objects, qualified cache preservation/recovery, an already
+blocked unprovable key, cancellation, active errors, timeout, panic, malformed
+output and partial-module results. Real-engine CRD callback matrices cover both
+scope/history modes, fresh edge retention, sticky processing gaps, private source
+receipts, metadata-only history and foreign-member isolation. These checks do not
+qualify real-cluster behavior, deployed cost or M4 acceptance.
+
 ### M2 collector read and edge scope follow-up
 
 Core and Gatekeeper extractors now receive a read-only scope adapter rather than

@@ -268,13 +268,9 @@ func yamlToResource(body []byte) (graph.Resource, error) {
 	if name == "" {
 		return graph.Resource{}, errors.New("missing or non-string .metadata.name")
 	}
-	// Sample YAML rarely carries metadata.uid. Synthesize a stable one
-	// from kind/namespace/name so two fixtures still get distinct
-	// engine cache keys (CacheKey is UID + resourceVersion + ruleHash):
-	// without this, two samples that route through the SAME .rego file
-	// — e.g. a pack that registers one module file under two GVK
-	// matches — would collide on the empty UID and the second sample
-	// would wrongly read the first's cached edges.
+	// Sample YAML rarely carries metadata.uid. Keep the existing stable fixture
+	// identity from kind/namespace/name for rule input. This is not a live-cluster
+	// observation receipt: samples without resourceVersion bypass result caching.
 	if uid == "" {
 		uid = kind + "/" + ns + "/" + name
 	}

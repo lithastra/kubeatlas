@@ -174,6 +174,13 @@ the same compiled module used to form the key, including after a wait during
 concurrent reload. Local phase-controlled race tests cover distinct entrypoints,
 source/entrypoint reload, member scope, cached replay and failed compilation;
 cache capacity and evaluation budgets remain unchanged.
+Rego evaluation now bypasses result caching and shared in-flight ownership for
+observations without the existing minimum version identity. Missing UID, resource
+version or API version cannot reuse stale output or suppress fresh relationships.
+Extraction retains the same timeout/recover and partial-result behavior; qualified
+delivery restores normal caching without clearing the prior processing gap.
+Local real-engine/CRD regressions cover scope/history modes, metadata-only history,
+source receipts, cache accounting and recovery. Deployed cost and M4 remain pending.
 Core/Gatekeeper extractor reads are now pinned to one member or explicitly
 unlabelled standalone data through a narrow scoped lister. Core/CRD/Gatekeeper
 validate whole edge batches before persistence, preventing foreign endpoints

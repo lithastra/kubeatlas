@@ -268,6 +268,7 @@ func (e *Engine) ModuleCount() int {
 //  3. cache.GetOrEvaluate keyed on member, UID, ResourceVersion, RuleHash
 //     and Entrypoint; a miss executes that captured compiled query under
 //     the timeout + recover guards, including across a concurrent reload.
+//     Observations without valid version identity evaluate without caching.
 //  4. Decode the result-set rows into graph.Edge values.
 //
 // Per-rule failures are wrapped and returned with completed earlier modules.
@@ -298,6 +299,9 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 		"uid", r.UID, "kind", r.Kind, "group", gvk.Group, "rules", len(matches))
 
 	input := buildEvalInput(r)
+	// An incomplete observation cannot prove cache equivalence, even to a
+	// previous delivery of the same object. Keep extraction, but bypass reuse.
+	cacheable := graph.ValidResourceVersion(r)
 	var allEdges []graph.Edge
 
 	for _, m := range matches {
@@ -324,18 +328,24 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 			RuleHash:        cm.meta.RuleHash,
 			Entrypoint:      cm.meta.Entrypoint,
 		}
-		v, err := e.cache.GetOrEvaluate(ctx, key,
-			func(ctx context.Context) (CacheValue, error) {
-				rs, err := e.evaluateCompiled(ctx, cm, input)
-				if err != nil {
-					return CacheValue{}, err
-				}
-				edges, err := decodeEdges(rs)
-				if err != nil {
-					return CacheValue{}, err
-				}
-				return CacheValue{Edges: edges}, nil
-			})
+		evaluate := func(ctx context.Context) (CacheValue, error) {
+			rs, err := e.evaluateCompiled(ctx, cm, input)
+			if err != nil {
+				return CacheValue{}, err
+			}
+			edges, err := decodeEdges(rs)
+			if err != nil {
+				return CacheValue{}, err
+			}
+			return CacheValue{Edges: edges}, nil
+		}
+		var v CacheValue
+		var err error
+		if cacheable {
+			v, err = e.cache.GetOrEvaluate(ctx, key, evaluate)
+		} else {
+			v, err = evaluate(ctx)
+		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
