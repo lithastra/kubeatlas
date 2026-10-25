@@ -154,6 +154,12 @@ after cancellation while retaining confirmed in-flight writes/history. Upsert
 notifications follow confirmed graph writes, including edge-only replay recovery;
 failed replays do not send false updates. Local fake-client shutdown and failure
 regressions cover both scope/history modes and preserve active partial extraction.
+Shared Rego evaluation now lets waiting callers cancel independently. Failed
+evaluators hand ownership to one active waiter under the existing mutex rather
+than an unlocked fallback; cancelled late results are excluded from the cache.
+Local phase-controlled race tests cover handoff, exact accounting, member-key
+independence and real-engine cached replay. Cache capacity and evaluation budgets
+remain unchanged; deployed shutdown/load qualification is still pending.
 Core/Gatekeeper extractor reads are now pinned to one member or explicitly
 unlabelled standalone data through a narrow scoped lister. Core/CRD/Gatekeeper
 validate whole edge batches before persistence, preventing foreign endpoints

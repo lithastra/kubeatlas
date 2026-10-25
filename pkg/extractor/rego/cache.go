@@ -58,7 +58,7 @@ type Cache struct {
 	// inflight de-dups concurrent evaluations of the same key so a
 	// burst of identical informer events fans into one OPA call.
 	mu       sync.Mutex
-	inflight map[CacheKey]*sync.WaitGroup
+	inflight map[CacheKey]chan struct{}
 }
 
 // NewCache returns a cache with the given size. size <= 0 falls back
@@ -78,7 +78,7 @@ func NewCache(size int, metrics *Metrics) (*Cache, error) {
 	return &Cache{
 		lru:      l,
 		metrics:  metrics,
-		inflight: make(map[CacheKey]*sync.WaitGroup),
+		inflight: make(map[CacheKey]chan struct{}),
 	}, nil
 }
 
@@ -87,9 +87,11 @@ func NewCache(size int, metrics *Metrics) (*Cache, error) {
 // not cached, so transient failures retry on the next event.
 //
 // Concurrent calls for the same key are de-duped: the first caller
-// runs evaluateFn, the rest wait on a WaitGroup and consume the
-// cached result. This matters under informer fan-out where a single
-// resource update can produce N near-simultaneous extract calls.
+// runs evaluateFn, the rest wait for completion or their own cancellation.
+// After a failed leader, active waiters contend for one replacement evaluation;
+// each caller invokes evaluateFn at most once and failures are never cached.
+// Cancellation is checked before returning hits and after evaluation, excluding
+// results from a dependency that completes after its caller was cancelled.
 func (c *Cache) GetOrEvaluate(
 	ctx context.Context,
 	key CacheKey,
@@ -99,44 +101,69 @@ func (c *Cache) GetOrEvaluate(
 		return CacheValue{}, errors.New("rego.Cache.GetOrEvaluate: nil cache")
 	}
 
-	if v, ok := c.lru.Get(key); ok {
-		c.metrics.IncCacheHit()
-		return v, nil
-	}
-
-	// Miss path — guard against concurrent identical evaluations.
-	c.mu.Lock()
-	if wg, ok := c.inflight[key]; ok {
-		c.mu.Unlock()
-		wg.Wait()
-		// Re-check the cache: the leader either populated it or
-		// failed (in which case we also try, returning the
-		// follower's own error rather than racing on the leader's).
+	for {
+		if err := ctx.Err(); err != nil {
+			return CacheValue{}, err
+		}
+		// Preserve the warm-hit path without taking the flight-map mutex.
 		if v, ok := c.lru.Get(key); ok {
+			if err := ctx.Err(); err != nil {
+				return CacheValue{}, err
+			}
 			c.metrics.IncCacheHit()
 			return v, nil
 		}
-		// Leader failed; fall through to do our own evaluation.
-	}
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	c.inflight[key] = wg
-	c.mu.Unlock()
 
-	defer func() {
+		// A wake-up always returns to the locked ownership decision. Failed
+		// leaders must not let followers overwrite the map without its lock.
 		c.mu.Lock()
-		delete(c.inflight, key)
+		if err := ctx.Err(); err != nil {
+			c.mu.Unlock()
+			return CacheValue{}, err
+		}
+		if done, ok := c.inflight[key]; ok {
+			c.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return CacheValue{}, ctx.Err()
+			case <-done:
+				continue
+			}
+		}
+		// A leader may have published and retired between the fast-path miss
+		// and this lock acquisition. Reuse its value instead of evaluating twice.
+		if v, ok := c.lru.Get(key); ok {
+			c.mu.Unlock()
+			if err := ctx.Err(); err != nil {
+				return CacheValue{}, err
+			}
+			c.metrics.IncCacheHit()
+			return v, nil
+		}
+		done := make(chan struct{})
+		c.inflight[key] = done
 		c.mu.Unlock()
-		wg.Done()
-	}()
 
-	c.metrics.IncCacheMiss()
-	v, err := evaluateFn(ctx)
-	if err != nil {
-		return CacheValue{}, err
+		defer func() {
+			c.mu.Lock()
+			delete(c.inflight, key)
+			close(done)
+			c.mu.Unlock()
+		}()
+		if err := ctx.Err(); err != nil {
+			return CacheValue{}, err
+		}
+		c.metrics.IncCacheMiss()
+		v, err := evaluateFn(ctx)
+		if ctx.Err() != nil {
+			return CacheValue{}, ctx.Err()
+		}
+		if err != nil {
+			return CacheValue{}, err
+		}
+		c.lru.Add(key, v)
+		return v, nil
 	}
-	c.lru.Add(key, v)
-	return v, nil
 }
 
 // Len reports the current number of cached entries. Test helper

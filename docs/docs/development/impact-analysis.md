@@ -1776,6 +1776,39 @@ pre-cancelled entry, cancellation errors, sticky gaps, committed notifications
 and active partial extraction. These offline tests do not qualify real-cluster
 reliability, deployed PostgreSQL cancellation or M4 acceptance.
 
+### M2 shared Rego evaluation cancellation and failure handoff follow-up
+
+The existing rule-evaluation cache now waits for a shared evaluation through a
+completion channel or the waiting caller's own context. A cancelled waiter can
+return while the first evaluator remains blocked; it does not cancel that
+evaluator, remove its flight entry or disturb other members. Cancellation is
+checked before returning cached results and after evaluation, so a dependency
+returning after its caller was cancelled cannot publish that late value. The
+actual evaluator still runs under the existing context/OPA timeout boundaries;
+this change does not add a worker or forcibly interrupt context-ignoring code.
+
+When an evaluator fails, active waiting calls return to the mutex-protected
+ownership decision. Only one becomes the replacement evaluator for that key;
+the rest wait for its completion or their own cancellation. A second cache check
+under that mutex handles publication between the fast-path miss and ownership
+selection. Failed values and partial values accompanying errors are not cached.
+Each caller invokes its evaluation function at most once and retains its own
+failure; no single call automatically retries its failed evaluation. Flight
+entries are retired and waiters notified when the owning call exits.
+
+The key remains member/UID/opaque version/rule hash. Different member keys can
+evaluate independently, and warm hits do not acquire the flight-map mutex.
+Existing LRU capacity, metrics and per-evaluation timeout limits remain in
+place. Cancellation without evaluation or a usable cache result adds no cache
+hit/miss. No Kubernetes/storage query, watch, public API field or GraphStore
+method is introduced.
+
+Portable phase-controlled regressions cover cold/warm/waiting cancellation and
+deadlines, failed and cancelled evaluators with one/eight waiters, sequential
+failed handoffs, exact hit/miss counts, flight cleanup, member-key independence
+and a real local Rego-engine warm-cache replay. Real-cluster shutdown behavior,
+deployed load and M4 acceptance remain unqualified.
+
 ### M2 collector read and edge scope follow-up
 
 Core and Gatekeeper extractors now receive a read-only scope adapter rather than
