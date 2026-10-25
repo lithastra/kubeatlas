@@ -1408,11 +1408,13 @@ fails closed without unconditional fallback. Events contain identity metadata,
 not specs/status or Secret contents. These observations do not establish an
 upstream creation timestamp or complete retained history.
 
-The existing `MemberRepair` coordinator supplies locks in this scope, but its
-`Run` rejects empty cluster identity before listing, scheduling or repair work.
-No new watch, fresh list, Kubernetes write, query-time database work, tombstone
-ledger or background worker pool is introduced. Standalone missed-delete
-reconciliation and cleanup across retired APIs remain separate work. Independent
+At this history-only stage, the existing `MemberRepair` coordinator supplies
+locks in this scope, but its `Run` rejects empty member identity before listing,
+scheduling or repair work. The standalone repair follow-up below adds explicit
+standalone binding rather than treating an empty member name as authorization.
+This history-only slice introduces no new watch, fresh list, Kubernetes write,
+query-time database work, tombstone ledger or background worker pool. Cleanup
+across retired APIs remains separate work. Independent
 watches can still deliver out of order; graph receipts do not provide global
 ordering or historical deduplication, and a late upsert can temporarily restore
 a deleted node. Writer or observation gaps are not cleared by a successful replay.
@@ -1426,6 +1428,315 @@ retained graph receipts and reads the result through the scoped event reader.
 The same-UID named row is preserved and disabled history produces no events.
 These are fake-client/in-memory race checks, not PostgreSQL deployment, durable
 crash recovery, continuous-history or real-cluster acceptance evidence.
+
+### M2 standalone missed-delete repair follow-up
+
+The production standalone factory now shares one `NewStandaloneRepair`
+coordinator across core, CRD-instance and Gatekeeper collectors, including
+overlapping registrations. Its explicit standalone binding accepts only
+unlabelled graph rows; `NewMemberRepair` with an empty member name still cannot
+run repair. Named-member rows are excluded both by the scoped store read and
+the returned-row check. No legacy provenance is inferred.
+
+Repair is independent of Tier 2 history: Tier 1 and history-disabled collectors
+also repair their current graph without enabling snapshots. With history enabled,
+the same standalone writer receives a metadata-only detection-time delete only
+after committed conditional removal. Overlapping collectors and restarts cannot
+emit another repair delete for an already absent row. This is not a Kubernetes
+deletion timestamp, a continuous history guarantee, or a recovery point.
+
+Each active registration waits for initial handler delivery before its first
+round, then runs every five minutes. All standalone collectors share one repair
+slot. Each round keeps the existing ten-second timeout, 500-item pages,
+10,000-item candidate/list bounds and 32-page ceiling. Repair uses fresh,
+unfiltered list snapshots and validates every page before any deletion. Denied,
+failed, inconsistent, malformed, limited, cancelled or incomplete lists never
+authorize removal. Secret endpoints are excluded. No watches, Kubernetes writes,
+analysis-time database work, writer queues or worker pools are added.
+
+Candidate rows are captured before listing and must match the active kind and
+group/version and carry a valid UID/version receipt. Conditional deletion
+compares that receipt atomically under the shared callback lock, preserves any
+same-name live object or changed stored receipt, and cascades incident edges.
+Missing atomic-store capability fails closed. Collectors join their repair
+workers on shutdown; cancelled rounds cannot delete retained candidates. A
+successful round never clears sticky observation or writer gaps. Unversioned
+legacy rows, retired endpoints and other API versions remain untouched.
+Independent-watch ordering and historical deduplication remain unqualified.
+
+Portable race tests cover pagination/failures, member isolation, receipt changes,
+metadata-only committed deletes, callback/extraction serialization, initial-sync
+and shutdown joining. Production-factory fake-client tests exercise core, CRD
+and Gatekeeper repair with history on/off, overlapping constraint sources and
+restart, while preserving retired/unversioned/member rows and read-only API
+requests. These checks do not establish deployed PostgreSQL behavior, actual
+Kubernetes list/watch reliability, continuous history or M4 acceptance.
+
+### M2 still-served version repair follow-up
+
+CRD collectors now supply the selected registration's current served-version set
+to the existing shared repair coordinator. Retained rows at a version whose
+watch was retired can be checked only while that version is still explicitly
+served by the current CRD. Each retained representation is compared against a
+fresh, complete list from its own exact group/version/resource, kind and current
+scope. Retained rows from a different scope are preserved with a processing gap;
+wrong-scope list items invalidate the round. An
+empty selected-version list is never evidence that another version is empty.
+Endpoint snapshot versions are validated independently, not treated as one
+cross-version Kubernetes transaction. This does not establish conversion
+equivalence, CRD-incarnation provenance for legacy rows, or a historical ledger.
+
+The selected endpoint remains the only CRD instance watch. The repair round
+captures one owned, sorted served-version snapshot; changing only that set does
+not restart the selected watch or reset its coverage token. Its metadata lifetime
+cancels an in-flight round when the set changes. Registration replacement and
+retirement cancel the old repair lifetime; shutdown joins the existing workers.
+The next scheduled round reads the updated set; no extra repair timer or immediate
+retry is added.
+
+All endpoints share the existing one-slot, ten-second round deadline, 10,000
+candidate and listed-item limits and 32-page ceiling. At most 32 served versions
+are accepted per round. Invalid, duplicate, missing-selected or oversized sets
+fail closed with a processing gap. Only versions with valid retained candidates
+are listed. Every required endpoint and continuation page must validate before
+any deletion is attempted; a 404, denied/failed/partial response or total work
+limit retains all candidates for that round. Existing atomic receipt checks,
+callback locks, incident-edge cascading and committed metadata-only history
+receipts are unchanged. Failures qualify the active registration; auxiliary
+lists do not make a stopped/unregistered version's watch evidence healthy.
+
+This applies to member and explicitly bound standalone CRD collectors, with
+history enabled or disabled. Core and Gatekeeper-specific workers keep their
+existing single-endpoint repair; a generated Constraint CRD seen by the CRD
+collector follows the CRD path. No Secret access, Kubernetes write, store schema,
+public API, GraphStore v2 method, history queue or worker pool is added.
+
+Fully unserved/deleted CRDs, stopped templates, retired kinds/scopes and versions
+not declared served remain outside automatic cleanup. Disappearance or API
+failure never fabricates object deletion or clears existing gaps. Portable
+tests cover independent old/new snapshots, scope isolation, combined budgets,
+all-lists-before-delete behavior, changed receipts, committed history, selected
+watch preservation and mid-list version revocation. These fake-client/in-memory
+race checks do not establish real-cluster or deployed PostgreSQL acceptance.
+
+### M2 fully retired source retention and invalidation follow-up
+
+The accepted retirement policy is **retain and qualify, never infer deletion**.
+Stopping a collector, removing a CRD/template, receiving an API 404 or ageing a
+cache does not remove graph resources/incident edges, append deletion events or
+clear known observation/history loss. There is no TTL garbage collection for
+these records. Resumed, explicitly served endpoints may still prove absence
+through the bounded fresh-list repair above; otherwise data stays retained.
+
+New CRD-instance and Gatekeeper writes can carry a private last-writer receipt:
+exact member (or explicitly unlabelled standalone scope), source, metadata owner
+name/UID, endpoint/kind/scope, random registration token, and object UID/version.
+It is stamped only by the matching live type token, not from Kubernetes payload
+fields, labels, annotations or same-name inference. The receipt is stored with
+the resource in the same memory operation or PostgreSQL/AGE transaction. Tier 2
+uses an optional private JSONB-envelope field, without a new table or migration.
+The receipt is not Kubernetes ownership, a complete source ledger, or proof of
+current object existence. Legacy records are never backfilled by endpoint name.
+
+| Qualification | Meaning and policy |
+| --- | --- |
+| `registered` | The stored writer receipt matches the current registration. Watch health, per-object freshness and historical completeness still require their separate evidence. |
+| `retired` | That exact writer registration is known stopped. Keep the graph data and qualify its observation; do not manufacture an object deletion. |
+| `replaced` | The current endpoint belongs to another registration/owner/shape. The new lifetime cannot adopt the old receipt without fresh object delivery. |
+| `unknown` | Receipt absent, invalid, foreign, ambiguous, capacity-limited or lifecycle knowledge unavailable. Retain data without attributing an owner. |
+
+Lifecycle metadata shares the existing per-cluster/source/type bounds; no
+per-object side ledger, worker, timer or queue is added. It is process-local.
+After restart, stored Tier 2 receipts survive but lifecycle knowledge is unknown
+until registration/delivery supplies new evidence. Even a same-name/same-UID
+owner receives a new registration token. A fresh callback can refresh the private
+receipt for an unchanged object without creating another resource-history event.
+Overlapping sources do not retag an unchanged receipt to erase its last writer's
+limitations; this is not all-source delivery accounting. Source replacement and
+bundle shutdown keep the existing shared callback locks and worker joining.
+
+Gatekeeper registrations now bind template UID when available. A template
+kind/UID change retires its stored old endpoint; old-UID or unidentified
+tombstones cannot retire a proven replacement. A matching template UID resolves
+the stored endpoint even if the deleted spec is obsolete. Missing legacy owner
+identity may keep collection working but cannot attest provenance or replace an
+explicitly owned endpoint.
+
+Gatekeeper callbacks recheck registration cancellation after acquiring the shared
+resource lock, after resource persistence and extraction, and before each edge
+write. Template replacement, retirement and shutdown therefore stop subsequent
+callback stages when an in-flight dependency returns after cancellation. An
+already-started store operation can still commit if it ignores cancellation;
+there is no rollback or compensating deletion of retained data. The replacement
+callback uses the same resource lock and commits its own receipt after the old
+callback drains. Cancellation errors do not create new persistence/extraction
+gaps or clear prior gaps; actual non-cancellation failures retain their existing
+gap reporting. Object history still describes committed writes, not metadata
+retirement or a guaranteed upstream event order.
+
+Fake-client manager regressions block resource persistence, extraction or the
+first edge write across replacement, retirement and shutdown. They cover named
+member and standalone scope with history enabled/disabled, distinguish committed
+in-flight edges from forbidden subsequent writes, retain resources and source
+qualification, and join callbacks at shutdown. Separate cancellation-error
+regressions cover resource/edge persistence, extraction and deletion while
+preserving existing loss evidence and committed-history counts. These are local
+race checks, not real-cluster or deployed storage acceptance.
+
+The private receipt never enters resource JSON, v1alpha1, portable graph exports,
+history payloads or Secret references. Invalid private storage metadata degrades
+to unknown without hiding the underlying resource. Impact projections retain a
+bounded internal receipt; PostgreSQL selects only its allowlisted scalar fields
+and charges it to the existing projection byte budget. Conditional graph deletion
+also compares the stored writer receipt, so an older repair candidate cannot
+delete a freshly observed registration with otherwise unchanged UID/version.
+GraphStore v2 and public response schemas remain unchanged.
+
+For the root and returned resources, observed impact analysis checks cached
+source lifetimes before/after its existing immutable graph read. It retains the
+same nodes/paths and adds `retained_source_unknown`, `retained_source_retired`,
+`retained_source_replaced` or `retained_source_window_unstable` qualifications
+where applicable. The API/client/text/JSON/HTML path preserves these limitations
+without exposing owner identities or making another query. This is not a global
+retained-object inventory or a distributed transaction. Core coverage keeps its
+existing static requirements; Secrets remain reference-only.
+
+Portable tests exercise source retirement/replacement/restart, metadata-only
+receipt refresh, member isolation, unowned legacy data, scope/UID/version
+mismatch, projection budgets, invalid private-envelope decoding, template
+handoff and late tombstones, and actual API/client/report preservation. Shared
+memory/PostgreSQL contracts and PostgreSQL scalar-projection checks are included;
+container-backed SQL execution remains a separate deployment qualification.
+These local checks do not establish real-cluster reliability, continuous history,
+verified recovery or M4 acceptance.
+
+### M2 overlapping-source receipt parity follow-up
+
+CRD and Gatekeeper callbacks now use the same stored-writer replay decision with
+history enabled or disabled. An unchanged object delivered by the other source
+does not overwrite its stored receipt, adopt retired data or clear the original
+writer's qualification. Missing/invalid incoming origin cannot erase a valid
+receipt for that same member, identity, API version, UID and opaque version.
+Fresh delivery by a new registration of the same source can refresh its receipt;
+an actual UID/version or API-representation change can commit a new writer.
+Equality checks do not order resourceVersions or establish version equivalence.
+
+History-disabled versioned dynamic callbacks add one stored-resource point read
+under the existing shared resource lock before deciding whether to write.
+Receipt lookup failure stops that delivery's write/extraction and records the
+existing persistence gap, without an unconditional-write fallback or automatic
+retry. Cancellation after a context-ignoring lookup also stops the write. Both
+modes continue edge extraction for a successful unchanged replay, allowing lost
+relationships to be recovered without retagging the resource. Unversioned data
+still cannot attest origin. No additional Kubernetes request, watch, background
+worker, per-object side cache, GraphStore method or public field is introduced.
+
+Fake-client integrations run both collector orders in named-member and standalone
+scopes, with history on/off. They verify retirement, another source's restart,
+same-source receipt refresh, replayed edge recovery, actual version changes,
+foreign-member retention and metadata-only history. Portable receipt/failure
+tests cover legacy and invalid origin, UID/API-version changes, failed reads and
+writes, recovery on later delivery and cancellation. Deployed PostgreSQL cost
+and real-cluster acceptance remain separate M4 work; local tests do not qualify
+either.
+
+### M2 watch-deletion receipt parity follow-up
+
+Core, CRD-instance and Gatekeeper object-delete callbacks now share conditional
+deletion with history enabled or disabled. An old-UID tombstone cannot remove a
+same-name replacement or its incident edges. An actual deletion notification
+for the same member, namespace, kind, name, UID and API group may carry an older
+opaque version or another representation: the atomic operation compares
+the complete current stored receipt, including API version and private writer
+origin. Concurrent UID/version/origin refresh makes that operation a no-op.
+This does not infer version equivalence, metadata retirement or endpoint absence
+as object deletion.
+
+Missing callback UID/version/API-version fields retain data and record the
+existing processing gap. Unverifiable stored identity and API-group mismatches
+also retain data. Receipt read/conditional-write failures or
+missing optional `ResourceVersionDeleter` capability retain data and record the
+existing persistence gap; there is no unconditional delete fallback or automatic
+retry. Source retirement still keeps data. Core callbacks forget only the
+matching UID's successful-write marker, including when another collector already
+removed the row; an old UID cannot invalidate a replacement's marker. Delete
+broadcasts and configured metadata-only snapshot events follow committed
+deletion only. Events use the committed stored version, not a delayed
+tombstone's version; duplicate/uncommitted notifications emit no deletion event.
+Cancellation before mutation prevents work, while cancellation after a confirmed
+commit does not erase that committed event or notification.
+
+Portable regressions cover all three callback paths, both history modes and
+named-member/standalone scope, including stale/duplicate tombstones, older
+representations, concurrent receipt refresh, missing capability, read/write
+failure, cancellation, scoped retention and edge cascading. Fake fixtures carry
+UID/version evidence, and store test adapters forward conditional deletion.
+Short-mode discovery tests explicitly skip envtest control-plane startup. These
+local tests do not establish deployed PostgreSQL behavior or M4 acceptance. No
+Kubernetes mutation, extra watch, background worker, GraphStore v2 method or
+public API field is added.
+
+### M2 core callback cancellation and committed notification follow-up
+
+Core upsert callbacks now recheck cancellation at entry, after acquiring the
+scope/resource lock, after resource persistence and extraction, and before each
+Secret-reference placeholder or edge write. Member removal and shutdown stop
+subsequent callback stages when a dependency returns after cancellation. This
+also applies to unchanged replay, which still re-extracts relationships while
+active. No additional Kubernetes request, watch, cache or worker is introduced.
+
+A dependency already in flight can ignore cancellation and commit. Keep that
+resource/placeholder/edge and its confirmed resource receipt/history; do not
+roll it back or infer deletion. An upsert callback notifies clients once if it
+confirmed a resource, reference-placeholder or edge write, including when it
+then exits on cancellation. An unchanged replay with only failed edge writes
+does not send a false update notification; later confirmed edge recovery can
+notify without manufacturing resource history. Notifications remain best effort.
+
+Cancellation errors do not create persistence/extraction gaps or clear earlier
+loss evidence. Active non-cancellation failures retain their existing gap
+reporting, and successful partial extraction results still reach persistence.
+Secret placeholders remain reference-only; this change does not watch/read
+Secret objects or add Secret history payloads. Fake-client manager regressions
+block all four stages, prove shutdown joins callbacks, and cover member and
+standalone scopes, both history modes and replay. Portable failure tests cover
+pre-cancelled entry, cancellation errors, sticky gaps, committed notifications
+and active partial extraction. These offline tests do not qualify real-cluster
+reliability, deployed PostgreSQL cancellation or M4 acceptance.
+
+### M2 collector read and edge scope follow-up
+
+Core and Gatekeeper extractors now receive a read-only scope adapter rather than
+the complete store. Every list uses the existing `ListResourcesInCluster`
+capability with the owning member, regardless of an omitted or conflicting
+extractor filter. Empty scope explicitly selects unlabelled standalone rows,
+not all members. Kind, namespace and label filters remain intact. A cancelled
+or failed read, or a store response containing another member, exposes no
+partial results and has no unscoped-query fallback or automatic retry. The
+adapter does not expose GraphStore mutation/query capabilities beyond its one
+filtered-list method; it is not a sandbox for arbitrary extension code.
+
+All three collector paths validate the entire edge batch in that explicit scope
+before any edge or core Secret-reference placeholder is persisted. Relative
+endpoints are qualified for a named member; foreign prefixes and empty endpoints
+reject the batch, including a standalone callback that returns a named-member
+endpoint. External identity colons after the first slash remain valid. Rejection
+keeps the committed source resource/history and records an extraction gap; it
+does not persist a valid prefix of an invalid batch. Valid active partial
+extraction keeps its existing behavior. The older `ScopeEdgesToCluster` helper
+retains its empty-scope pass-through behavior for callers outside these explicit
+collector paths. Existing stored data is not cleaned or retroactively reowned.
+
+Portable tests exercise broad/conflicting extractor filters, opaque read-only
+capabilities, exact filter preservation, cancelled/failed/foreign-row reads and
+whole-batch rejection before Secret placeholders. Builtin Service selection
+excludes other members in standalone mode, and builtin Kyverno report lookup
+cannot apply another member's results to local edges. A fresh local report can
+still repair edge results on unchanged replay without adding resource history.
+CRD/Gatekeeper fake-client tests cover both named-member and standalone scopes.
+No Kubernetes request, additional storage query, worker, public API field or
+GraphStore v2 method is added. Real-cluster and deployed PostgreSQL qualification
+remain separate M4 work; these tests do not establish complete collector coverage.
 
 ### M2 existing snapshot-route member visibility follow-up
 
@@ -1944,7 +2255,7 @@ under its configured external authentication, including allowed/denied member
 scope, expected-UID replacement, known references, initial sync and list/watch
 failure qualification on Tier 1 and Tier 2. Frozen-candidate deployment validation
 remains pending. API inventory presentation does not close complete collector
-coverage, version equivalence, cross-version/retired-endpoint cleanup, or
+coverage, version equivalence, or
 per-member history qualification. Active member endpoints have bounded
 missed-delete repair as described above. Federated members run their own bounded inventory, CRD and
 Gatekeeper workers as described above; failed, denied, stale, unsupported or

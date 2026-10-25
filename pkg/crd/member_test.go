@@ -82,16 +82,23 @@ func TestCRDMemberIdentityEdgesCoverageAndDeleteIsolation(t *testing.T) {
 	}
 }
 func TestCRDMemberForeignRuleEdgeLeavesExplicitGap(t *testing.T) {
-	tracker := operations.NewCoverageTracker(time.Minute)
-	client, _ := coverageClient(t)
-	store := memory.New()
-	startCoverageDiscovery(t, New(client, store, WithCoverage(tracker), WithClusterID("east"), WithRegoEvaluator(memberRules{foreign: true})))
-	waitFor(t, 3*time.Second, "foreign edge gap", func() bool {
-		return slices.Contains(coverageRow(memberCRDSource(t, tracker, "east"), coverageFooGVR).Reasons, operations.CoverageExtractionFailed)
-	})
-	edges, err := store.ListEdges(context.Background(), "east:default/Foo/demo", graph.DirectionOutgoing)
-	if err != nil || len(edges) != 0 {
-		t.Fatal("foreign rule edge persisted")
+	for _, cluster := range []string{"east", ""} {
+		t.Run("scope="+cluster, func(t *testing.T) {
+			tracker := operations.NewCoverageTracker(time.Minute)
+			client, _ := coverageClient(t)
+			store := memory.New()
+			rules := coverageRegoFunc(func(_ context.Context, r graph.Resource) ([]graph.Edge, error) {
+				return []graph.Edge{{From: r.ID(), To: "default/Bar/valid", Type: graph.EdgeTypeOwns}, {From: r.ID(), To: "west:default/Bar/foreign", Type: graph.EdgeTypeOwns}}, nil
+			})
+			startCoverageDiscovery(t, New(client, store, WithCoverage(tracker), WithClusterID(cluster), WithRegoEvaluator(rules)))
+			waitFor(t, 3*time.Second, "foreign edge gap", func() bool {
+				return slices.Contains(coverageRow(memberCRDSource(t, tracker, cluster), coverageFooGVR).Reasons, operations.CoverageExtractionFailed)
+			})
+			snapshot, err := store.Snapshot(context.Background())
+			if err != nil || len(snapshot.Resources) != 1 || len(snapshot.Edges) != 0 {
+				t.Fatal("foreign rule batch persisted partial edges or lost source data", snapshot, err)
+			}
+		})
 	}
 }
 func TestCRDMemberShutdownJoinsBlockedCallback(t *testing.T) {

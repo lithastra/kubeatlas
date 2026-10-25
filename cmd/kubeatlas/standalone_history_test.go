@@ -124,8 +124,8 @@ func runStandaloneHistory(t *testing.T, enabled bool) {
 		}
 		return count >= 7
 	})
-	// History wiring adds neither watches nor fresh-list repair. Before fixture
-	// updates all client actions must be the existing list/watch ingress only.
+	// Repair may add one initial fresh list per active registration; history
+	// adds no watches or independent repair loop. All requests remain read-only.
 	lists := map[schema.GroupVersionResource]int{}
 	watches := map[schema.GroupVersionResource]int{}
 	for _, action := range client.Actions() {
@@ -139,8 +139,12 @@ func runStandaloneHistory(t *testing.T, enabled bool) {
 		}
 	}
 	for gvr, want := range map[schema.GroupVersionResource]int{memberPods: 1, memberFoos: 1, memberConstraints: 3, memberCRDs: 1, memberTemplates: 1} {
-		if lists[gvr] != want || watches[gvr] != want {
-			t.Fatalf("%s list/watch calls=%d/%d want=%d", gvr, lists[gvr], watches[gvr], want)
+		maxLists := want * 2
+		if gvr == memberCRDs || gvr == memberTemplates {
+			maxLists = want // Metadata discovery itself is not a repair endpoint.
+		}
+		if lists[gvr] < want || lists[gvr] > maxLists || watches[gvr] != want {
+			t.Fatalf("%s list/watch calls=%d/%d want lists=%d..%d watches=%d", gvr, lists[gvr], watches[gvr], want, maxLists, want)
 		}
 	}
 	if enabled {

@@ -117,28 +117,33 @@ func (p memberProbeExtractor) ExtractAll(ctx context.Context, r graph.Resource, 
 	return nil, nil
 }
 func TestGatekeeperMemberCannotBroadenExtractorScopeOrWriteForeignEdges(t *testing.T) {
-	for _, foreign := range []bool{false, true} {
-		t.Run(map[bool]string{false: "scoped reads", true: "foreign edge rejection"}[foreign], func(t *testing.T) {
-			tracker := operations.NewCoverageTracker(time.Minute)
-			store := memory.New()
-			client, _ := coverageClient()
-			for _, name := range []string{"east", "west"} {
-				if err := store.UpsertResource(context.Background(), graph.Resource{ClusterID: name, Kind: "Pod", Namespace: "default", Name: "same"}); err != nil {
-					t.Fatal(err)
-				}
-			}
-			d := New(client, store, memberProbeExtractor{foreign}, discovery.NewDynamicInformerManager(client), WithClusterID("east"), WithCoverage(tracker))
-			startCoverageDiscovery(t, d)
-			waitFor(t, 3*time.Second, "member extractor result", func() bool {
-				row := coverageRow(memberGKSource(t, tracker, "east"), coverageConstraintGVR)
-				if foreign {
-					return slices.Contains(row.Reasons, operations.CoverageExtractionFailed)
-				}
-				return row.State == operations.CoverageObserved
-			})
-			edges, err := store.ListEdges(context.Background(), "east:/K8sRequiredLabels/test-labels", graph.DirectionOutgoing)
-			if err != nil || len(edges) != 0 {
-				t.Fatal("extractor wrote foreign edges")
+	for _, cluster := range []string{"east", ""} {
+		t.Run("scope="+cluster, func(t *testing.T) {
+			for _, foreign := range []bool{false, true} {
+				t.Run(map[bool]string{false: "scoped reads", true: "foreign edge rejection"}[foreign], func(t *testing.T) {
+					tracker := operations.NewCoverageTracker(time.Minute)
+					store := memory.New()
+					client, _ := coverageClient()
+					for _, name := range []string{"east", "west", ""} {
+						if err := store.UpsertResource(context.Background(), graph.Resource{ClusterID: name, Kind: "Pod", Namespace: "default", Name: "same"}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					d := New(client, store, memberProbeExtractor{foreign}, discovery.NewDynamicInformerManager(client), WithClusterID(cluster), WithCoverage(tracker))
+					startCoverageDiscovery(t, d)
+					waitFor(t, 3*time.Second, "member extractor result", func() bool {
+						row := coverageRow(memberGKSource(t, tracker, cluster), coverageConstraintGVR)
+						if foreign {
+							return slices.Contains(row.Reasons, operations.CoverageExtractionFailed)
+						}
+						return row.State == operations.CoverageObserved
+					})
+					id := graph.Resource{ClusterID: cluster, Kind: "K8sRequiredLabels", Name: "test-labels"}.ID()
+					edges, err := store.ListEdges(context.Background(), id, graph.DirectionOutgoing)
+					if err != nil || len(edges) != 0 {
+						t.Fatal("extractor wrote foreign edges")
+					}
+				})
 			}
 		})
 	}

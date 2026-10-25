@@ -20,6 +20,10 @@ func TestStore_ResourceVersionDelete(t *testing.T) {
 	storetest.RunResourceVersionDelete(t, func(_ *testing.T) graph.GraphStore { return memory.New() })
 }
 
+func TestStore_ResourceOrigin(t *testing.T) {
+	storetest.RunResourceOrigin(t, func(_ *testing.T) graph.GraphStore { return memory.New() })
+}
+
 func TestStore_MetadataSnapshot(t *testing.T) {
 	storetest.RunMetadataSnapshot(t, func(_ *testing.T) graph.GraphStore { return memory.New() })
 }

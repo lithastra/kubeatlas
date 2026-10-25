@@ -18,20 +18,16 @@ import (
 // runWatch supplies a writer only for explicitly enabled Tier 2 history, joins
 // every collector before Stop, and retains its existing global loss accounting.
 func standaloneInformerComponents(coreOpts []discovery.InformerOption, dyn dynamic.Interface, dc kdiscovery.DiscoveryInterface, store graph.GraphStore, tracker *operations.CoverageTracker, rules crd.RegoEvaluator, ext gatekeeper.ExtractorRegistry, metrics *discovery.DynamicMetrics, writer *snapshot.Writer) (componentStarter, componentStarter, componentStarter) {
-	opts := append(append([]discovery.InformerOption{}, coreOpts...), discovery.WithClusterID(""), discovery.WithAPIInventory(dc))
+	repair := discovery.NewStandaloneRepair(dyn, store)
+	opts := append(append([]discovery.InformerOption{}, coreOpts...), discovery.WithClusterID(""), discovery.WithAPIInventory(dc), discovery.WithMemberRepair(repair))
 	var history *discovery.ResourceHistory
-	var locks *discovery.MemberRepair
 	if writer != nil {
-		// Empty-scope MemberRepair provides callback locks only: Run rejects
-		// empty scope before any list, ticker or repair work. Standalone missed
-		// delete reconciliation is not enabled by this history-only wiring.
-		locks = discovery.NewMemberRepair(dyn, store, "")
 		history = discovery.NewStandaloneResourceHistory(store, writer)
-		opts = append(opts, discovery.WithSnapshotSink(writer), discovery.WithMemberRepair(locks), discovery.WithResourceHistory(history))
+		opts = append(opts, discovery.WithSnapshotSink(writer), discovery.WithResourceHistory(history))
 	}
 	core := discovery.NewInformerManager(dyn, store, opts...)
-	custom := crd.New(dyn, store, crd.WithRegoEvaluator(rules), crd.WithCoverage(tracker), crd.WithMemberRepair(locks), crd.WithResourceHistory(history))
+	custom := crd.New(dyn, store, crd.WithRegoEvaluator(rules), crd.WithCoverage(tracker), crd.WithMemberRepair(repair), crd.WithResourceHistory(history))
 	manager := discovery.NewDynamicInformerManager(dyn, discovery.WithDynamicMetrics(metrics))
-	constraints := gatekeeper.New(dyn, store, ext, manager, gatekeeper.WithCoverage(tracker), gatekeeper.WithDiscovery(dc), gatekeeper.WithMemberRepair(locks), gatekeeper.WithResourceHistory(history))
+	constraints := gatekeeper.New(dyn, store, ext, manager, gatekeeper.WithCoverage(tracker), gatekeeper.WithDiscovery(dc), gatekeeper.WithMemberRepair(repair), gatekeeper.WithResourceHistory(history))
 	return core, custom, constraints
 }

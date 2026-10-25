@@ -212,7 +212,8 @@ func WithAPIInventory(dc k8sdiscovery.DiscoveryInterface) InformerOption {
 	return func(m *InformerManager) { m.inventoryDiscovery = dc }
 }
 
-// WithMemberRepair enables bounded reconciliation for active member endpoints.
+// WithMemberRepair enables bounded reconciliation for active endpoints in the
+// coordinator's explicitly bound member or standalone scope.
 func WithMemberRepair(repair *MemberRepair) InformerOption {
 	return func(m *InformerManager) { m.memberRepair = repair }
 }
@@ -356,6 +357,9 @@ func (m *InformerManager) Start(ctx context.Context) error {
 // UpdateFunc (modifications + resync re-deliveries). Already-persisted
 // versions do not produce resource writes or duplicate history events.
 func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVersionResource, obj any, eventType graph.EventType) {
+	if ctx.Err() != nil {
+		return
+	}
 	u, ok := toUnstructured(obj)
 	if !ok {
 		slog.Warn("informer received non-unstructured object", "type", fmt.Sprintf("%T", obj))
@@ -371,16 +375,22 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		}
 		defer unlock()
 	}
+	if ctx.Err() != nil {
+		return
+	}
 	resourceChanged := false
 	if m.resourceHistory != nil {
 		var err error
 		resourceChanged, err = m.resourceHistory.Upsert(ctx, r, eventType)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 			slog.Warn("upsert member resource history failed", "id", r.ID(), "err", err)
 			return
 		}
-		if !graph.ValidResourceVersion(r) {
+		if ctx.Err() == nil && !graph.ValidResourceVersion(r) {
 			m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		}
 	} else {
@@ -393,6 +403,9 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 		resourceChanged = !versioned || !known || previous != version
 		if resourceChanged {
 			if err := m.store.UpsertResource(ctx, r); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 				slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
 				return
@@ -420,6 +433,17 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 			})
 		}
 	}
+	// A dependency can commit despite cancellation. Preserve its resource
+	// receipt/history and notify once, but do not begin another callback stage.
+	notify := resourceChanged
+	defer func() {
+		if notify {
+			m.broadcaster("upsert", r.Namespace, r.Kind, r.Name)
+		}
+	}()
+	if ctx.Err() != nil {
+		return
+	}
 
 	// Edge re-derivation: ask the extractor for edges rooted at this
 	// resource even if its version is unchanged: selector targets may
@@ -430,39 +454,61 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	// work removed from the view aggregators). Edges are upserted; we
 	// do not delete stale edges here, that requires per-resource
 	// diffing the extractor will handle in P0-T15.
-	edges, err := m.extractor.ExtractAll(ctx, r, m.store)
+	edges, err := m.extractor.ExtractAll(ctx, r, NewScopedResourceLister(m.store, m.clusterID))
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
 		// Best-effort: log and still upsert whatever edges the
 		// extractors did produce before the failure.
 		slog.Warn("edge extraction failed", "id", r.ID(), "err", err)
 		m.coverageSession.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
 	}
+	scoped, scopeErr := ScopeCollectorEdges(edges, m.clusterID)
+	if scopeErr != nil {
+		m.coverageSession.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
+		slog.Warn("extractor edge scope rejected", "id", r.ID(), "err", scopeErr)
+		return
+	}
+	edges = scoped
 	for _, e := range edges {
+		if ctx.Err() != nil {
+			return
+		}
 		if ref, ok := graph.SecretReferenceFromEdge(e); ok {
 			if err := m.store.UpsertResource(ctx, ref); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 				slog.Warn("upsert referenced Secret placeholder failed", "id", ref.ID(), "err", err)
 				continue
 			}
+			notify = true
 		}
 	}
 	for _, e := range edges {
+		if ctx.Err() != nil {
+			return
+		}
 		if err := m.store.UpsertEdge(ctx, e); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 			slog.Warn("upsert edge failed", "from", e.From, "to", e.To, "err", err)
+		} else {
+			notify = true
 		}
-	}
-
-	// Notify subscribed clients. Best-effort: the broadcaster is
-	// expected to never block (the hub drops on slow subscribers).
-	if resourceChanged || len(edges) > 0 {
-		m.broadcaster("upsert", r.Namespace, r.Kind, r.Name)
 	}
 }
 
 // handleDelete removes the resource from the store. The store cascades
 // to incident edges so we do not need to walk them here.
 func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVersionResource, obj any) {
+	if ctx.Err() != nil {
+		return
+	}
 	switch tombstone := obj.(type) {
 	case cache.DeletedFinalStateUnknown:
 		obj = tombstone.Obj
@@ -476,9 +522,6 @@ func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVers
 		m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
-	m.persistedMu.Lock()
-	delete(m.persisted, resourceWriteKey{gvr: gvr, namespace: u.GetNamespace(), name: u.GetName()})
-	m.persistedMu.Unlock()
 	kind := m.kindFor(gvr, u)
 	// Reproduce graph.Resource.ID() — multi-cluster IDs carry a
 	// <clusterID>: prefix so two clusters' same-named objects do not
@@ -494,38 +537,52 @@ func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVers
 		}
 		defer unlock()
 	}
+	r := UnstructuredToResource(u, kind)
+	r.ClusterID = m.clusterID
+	stored := r
+	var deleted bool
+	var err error
 	if m.resourceHistory != nil {
-		r := UnstructuredToResource(u, kind)
-		r.ClusterID = m.clusterID
-		deleted, err := m.resourceHistory.Delete(ctx, r)
-		if !graph.ValidResourceVersion(r) {
-			m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
-		}
-		if err != nil {
-			m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
-			slog.Warn("delete member resource history failed", "id", id, "err", err)
-		} else if deleted {
-			m.broadcaster("delete", r.Namespace, r.Kind, r.Name)
-		}
+		deleted, err = m.resourceHistory.Delete(ctx, r)
+	} else {
+		stored, deleted, err = deleteObservedResource(ctx, m.store, r)
+	}
+	if ctx.Err() != nil && !deleted {
 		return
 	}
-	if err := m.store.DeleteResource(ctx, id); err != nil {
+	if !graph.ValidResourceVersion(r) {
+		m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+	}
+	if err != nil {
 		m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		slog.Warn("delete resource failed", "id", id, "err", err)
 		return
 	}
+	m.persistedMu.Lock()
+	key := resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name}
+	if graph.ValidResourceVersion(r) && m.persisted[key].uid == string(r.UID) {
+		// Another collector may already have removed this row. Forget only
+		// this deleted incarnation, never a replacement's successful write.
+		delete(m.persisted, key)
+	}
+	m.persistedMu.Unlock()
+	if !deleted {
+		return
+	}
 
 	// Record the delete in the F-111 snapshot stream. Data is nil —
-	// the resource is gone, only its identity is recorded.
-	m.snapshotSink.Enqueue(graph.ResourceEvent{
-		ClusterID:       m.clusterID,
-		Namespace:       u.GetNamespace(),
-		Kind:            kind,
-		UID:             string(u.GetUID()),
-		Name:            u.GetName(),
-		EventType:       graph.EventTypeDelete,
-		ResourceVersion: u.GetResourceVersion(),
-	})
+	// use the committed stored receipt, never a delayed tombstone's version.
+	if m.resourceHistory == nil {
+		m.snapshotSink.Enqueue(graph.ResourceEvent{
+			ClusterID:       stored.ClusterID,
+			Namespace:       stored.Namespace,
+			Kind:            stored.Kind,
+			UID:             string(stored.UID),
+			Name:            stored.Name,
+			EventType:       graph.EventTypeDelete,
+			ResourceVersion: stored.ResourceVersion,
+		})
+	}
 
 	m.broadcaster("delete", u.GetNamespace(), kind, u.GetName())
 }

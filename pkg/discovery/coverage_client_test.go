@@ -319,6 +319,10 @@ func (s *coverageDeleteFailure) DeleteResource(context.Context, string) error {
 	return errors.New("synthetic delete failure")
 }
 
+func (s *coverageDeleteFailure) DeleteResourceVersion(context.Context, graph.Resource) (bool, error) {
+	return false, errors.New("synthetic conditional delete failure")
+}
+
 func TestInformerCoverageProcessingAndPersistenceGaps(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -358,6 +362,9 @@ func TestInformerCoverageProcessingAndPersistenceGaps(t *testing.T) {
 			case "convert":
 				mgr.handleUpsert(context.Background(), configMapGVR, "malformed", graph.EventTypeAdd)
 			case "delete":
+				if err := store.UpsertResource(context.Background(), UnstructuredToResource(object, "ConfigMap")); err != nil {
+					t.Fatal(err)
+				}
 				mgr.handleDelete(context.Background(), configMapGVR, object)
 			default:
 				mgr.handleUpsert(context.Background(), configMapGVR, object, graph.EventTypeAdd)

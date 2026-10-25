@@ -302,8 +302,20 @@ func TestMemberRepairCanonicalCoreKinds(t *testing.T) {
 }
 
 func TestMemberRepairJoinsObjectPipelineBeforeCascadingEdges(t *testing.T) {
+	testRepairJoinsObjectPipeline(t, false)
+}
+
+func TestStandaloneRepairJoinsObjectPipelineBeforeCascadingEdges(t *testing.T) {
+	testRepairJoinsObjectPipeline(t, true)
+}
+
+func testRepairJoinsObjectPipeline(t *testing.T, standalone bool) {
+	t.Helper()
 	s := memory.New()
 	row, target := repairRow("gone"), repairRow("target")
+	if standalone {
+		row.ClusterID, target.ClusterID = "", ""
+	}
 	_ = s.UpsertResource(context.Background(), target)
 	listed := make(chan struct{})
 	c := repairClient(func(clienttesting.Action) (bool, runtime.Object, error) {
@@ -311,8 +323,11 @@ func TestMemberRepairJoinsObjectPipelineBeforeCascadingEdges(t *testing.T) {
 		return true, repairPage(target), nil
 	})
 	r := NewMemberRepair(c, s, "east")
+	if standalone {
+		r = NewStandaloneRepair(c, s)
+	}
 	entered, release, callbackDone, repairDone := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})
-	m := NewInformerManager(c, s, WithClusterID("east"), WithMemberRepair(r), WithExtractor(resyncExtractorFunc(func(context.Context, graph.Resource, graph.ResourceLister) ([]graph.Edge, error) {
+	m := NewInformerManager(c, s, WithClusterID(row.ClusterID), WithMemberRepair(r), WithExtractor(resyncExtractorFunc(func(context.Context, graph.Resource, graph.ResourceLister) ([]graph.Edge, error) {
 		close(entered)
 		<-release
 		return []graph.Edge{{From: row.ID(), To: target.ID(), Type: graph.EdgeTypeOwns}}, nil
@@ -498,8 +513,21 @@ func TestMemberRepairRequiresAtomicBackendAndNeverRequestsSecrets(t *testing.T) 
 }
 
 func TestMemberRepairRunWaitsForSyncAndStopsWithRegistration(t *testing.T) {
+	testRepairRunLifecycle(t, false)
+}
+
+func TestStandaloneRepairRunWaitsForSyncAndStopsWithRegistration(t *testing.T) {
+	testRepairRunLifecycle(t, true)
+}
+
+func testRepairRunLifecycle(t *testing.T, standalone bool) {
+	t.Helper()
 	s := memory.New()
-	_ = s.UpsertResource(context.Background(), repairRow("gone"))
+	row := repairRow("gone")
+	if standalone {
+		row.ClusterID = ""
+	}
+	_ = s.UpsertResource(context.Background(), row)
 	var synced atomic.Bool
 	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	c := repairClient(func(clienttesting.Action) (bool, runtime.Object, error) {
@@ -508,6 +536,9 @@ func TestMemberRepairRunWaitsForSyncAndStopsWithRegistration(t *testing.T) {
 		return true, repairPage(), nil
 	})
 	r := NewMemberRepair(c, s, "east")
+	if standalone {
+		r = NewStandaloneRepair(c, s)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { defer close(done); r.Run(ctx, repairPods, "Pod", nil, synced.Load, nil) }()
@@ -534,7 +565,7 @@ func TestMemberRepairRunWaitsForSyncAndStopsWithRegistration(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("repair failed to stop")
 	}
-	if _, err := s.GetResource(context.Background(), repairRow("gone").ID()); err != nil {
+	if _, err := s.GetResource(context.Background(), row.ID()); err != nil {
 		t.Fatal("cancelled round removed retained row")
 	}
 }

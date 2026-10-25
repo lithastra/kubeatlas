@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/operations"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -53,6 +55,7 @@ type dynamicHandle struct {
 	cancel   context.CancelFunc
 	synced   cache.InformerSynced
 	coverage *operations.CoverageSession
+	owner    graph.ResourceOrigin
 }
 
 // DynamicOption configures a DynamicInformerManager at construction.
@@ -136,6 +139,13 @@ func (m *DynamicInformerManager) Add(gvr schema.GroupVersionResource, handler ca
 // is handed to build and the source keeps its limited-inventory signal.
 // build runs under the registration lock and must not reenter the manager.
 func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, source *operations.CoverageSession, build func(context.Context, *operations.CoverageSession) cache.ResourceEventHandler) error {
+	return m.AddObservedOwned(gvr, source, graph.ResourceOrigin{}, build)
+}
+
+// AddObservedOwned additionally binds a valid metadata owner. Owner replacement
+// retires its old endpoint, never its graph rows. Missing legacy owner identity
+// stays unverified and cannot replace an explicitly owned registration.
+func (m *DynamicInformerManager) AddObservedOwned(gvr schema.GroupVersionResource, source *operations.CoverageSession, owner graph.ResourceOrigin, build func(context.Context, *operations.CoverageSession) cache.ResourceEventHandler) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -145,8 +155,31 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 	if isCoreSecretGVR(gvr) || gvr.Version == "" || gvr.Resource == "" || build == nil {
 		return errors.New("invalid dynamic informer registration")
 	}
-	if _, exists := m.informers[gvr]; exists {
-		return nil
+	owner.Registration = strings.Repeat("0", 32) // Validation only, never a stored receipt.
+	owner.ObjectUID, owner.ObjectVersion = "", ""
+	if !owner.Valid() || owner.GVR() != gvr {
+		for _, h := range m.informers {
+			if h.owner.Valid() && owner.OwnerName != "" && h.owner.OwnerName == owner.OwnerName && h.owner.Source == owner.Source && h.owner.ClusterID == owner.ClusterID {
+				return errors.New("unidentified metadata cannot replace an owned endpoint")
+			}
+		}
+		owner = graph.ResourceOrigin{}
+	}
+	if owner.Valid() {
+		for endpoint, h := range m.informers {
+			if h.owner.Source == owner.Source && h.owner.ClusterID == owner.ClusterID && h.owner.OwnerName == owner.OwnerName && h.owner != owner {
+				m.removeLocked(endpoint)
+			}
+		}
+	}
+	if h, exists := m.informers[gvr]; exists {
+		if owner == (graph.ResourceOrigin{}) || h.owner == owner {
+			return nil
+		}
+		if h.owner.Valid() {
+			return errors.New("dynamic endpoint has a different metadata owner")
+		}
+		m.removeLocked(gvr) // Establish a new lifetime for previously unverified ownership.
 	}
 
 	var coverage *operations.CoverageSession
@@ -155,6 +188,9 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 		coverage, err = source.BeginType(gvr, time.Now())
 		if err != nil {
 			m.metrics.incErrors()
+		}
+		if owner.Valid() {
+			coverage.BindOrigin(owner)
 		}
 	}
 	informerCtx, cancel := context.WithCancel(m.baseCtx)
@@ -188,7 +224,7 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 		}()
 	}
 
-	m.informers[gvr] = &dynamicHandle{cancel: cancel, synced: registration.HasSynced, coverage: coverage}
+	m.informers[gvr] = &dynamicHandle{cancel: cancel, synced: registration.HasSynced, coverage: coverage, owner: owner}
 	m.metrics.addActive(1)
 	m.logger.Info("dynamic informer registered",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource))
@@ -200,7 +236,35 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 func (m *DynamicInformerManager) Remove(gvr schema.GroupVersionResource) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.removeLocked(gvr)
+}
 
+// RemoveOwner resolves the stored endpoint by metadata UID, not a possibly old
+// template spec. A delayed tombstone cannot retire a replacement incarnation.
+func (m *DynamicInformerManager) RemoveOwner(owner graph.ResourceOrigin) {
+	if owner.OwnerUID == "" || owner.OwnerName == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for gvr, h := range m.informers {
+		if h.owner.Valid() && h.owner.Source == owner.Source && h.owner.ClusterID == owner.ClusterID && h.owner.OwnerName == owner.OwnerName && h.owner.OwnerUID == owner.OwnerUID {
+			m.removeLocked(gvr)
+		}
+	}
+}
+
+// RemoveUnowned preserves legacy callers without letting an unidentified
+// tombstone revoke an explicitly UID-bound owner.
+func (m *DynamicInformerManager) RemoveUnowned(gvr schema.GroupVersionResource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if h := m.informers[gvr]; h != nil && !h.owner.Valid() {
+		m.removeLocked(gvr)
+	}
+}
+
+func (m *DynamicInformerManager) removeLocked(gvr schema.GroupVersionResource) {
 	h, ok := m.informers[gvr]
 	if !ok {
 		return

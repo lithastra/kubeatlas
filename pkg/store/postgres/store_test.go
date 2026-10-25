@@ -61,6 +61,14 @@ func TestStore_Contract(t *testing.T) {
 			return store
 		})
 	})
+	t.Run("private resource origin", func(t *testing.T) {
+		storetest.RunResourceOrigin(t, func(t *testing.T) graph.GraphStore {
+			if err := store.truncateAll(ctx); err != nil {
+				t.Fatal(err)
+			}
+			return store
+		})
+	})
 
 	// Init is idempotent: a second call must not fail or duplicate
 	// schema (ON CONFLICT-style guards already exist in DDL).

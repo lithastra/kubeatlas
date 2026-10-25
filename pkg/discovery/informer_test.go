@@ -26,6 +26,9 @@ import (
 // developers install them with `setup-envtest use 1.30.x`.
 func startEnvOrSkip(t *testing.T) (*envtest.Environment, *kubernetes.Clientset, dynamic.Interface) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("envtest control plane is excluded from short-mode local validation")
+	}
 	env := &envtest.Environment{}
 	cfg, err := env.Start()
 	if err != nil {

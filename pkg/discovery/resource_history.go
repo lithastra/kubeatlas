@@ -51,9 +51,12 @@ func (h *ResourceHistory) Upsert(ctx context.Context, r graph.Resource, eventTyp
 	if err != nil && !missing {
 		return false, fmt.Errorf("read history receipt: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	versioned := graph.ValidResourceVersion(r)
 	same := !missing && versioned && previous.UID == r.UID && previous.ResourceVersion == r.ResourceVersion
-	if same && previous.GroupVersion == r.GroupVersion {
+	if !missing && preserveResourceReplay(previous, r) {
 		return false, nil
 	}
 	if err := h.store.UpsertResource(ctx, r); err != nil {
@@ -78,21 +81,7 @@ func (h *ResourceHistory) Delete(ctx context.Context, r graph.Resource) (bool, e
 	if err := h.validate(ctx, r); err != nil {
 		return false, err
 	}
-	previous, err := h.store.GetResource(ctx, r.ID())
-	if errors.As(err, new(graph.ErrNotFound)) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("read history receipt: %w", err)
-	}
-	if !graph.ValidResourceVersion(r) || !graph.ValidResourceVersion(previous) || previous.UID != r.UID {
-		return false, nil
-	}
-	deleter, ok := h.store.(graph.ResourceVersionDeleter)
-	if !ok {
-		return false, errors.New("history requires atomic resource deletion")
-	}
-	deleted, err := deleter.DeleteResourceVersion(ctx, previous)
+	previous, deleted, err := deleteObservedResource(ctx, h.store, r)
 	if err == nil && deleted {
 		h.RecordDelete(previous)
 	}

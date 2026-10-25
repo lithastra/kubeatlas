@@ -102,9 +102,53 @@ a complete historical deduplication ledger. Retained metadata does not clear
 known loss or establish continuous history. Standalone Tier 2 core, CRD-instance
 and Gatekeeper collectors now share explicitly unlabelled graph receipts and
 callback locks through the existing writer, including metadata-only watch
-deletes and replay suppression. This adds no watches or fresh-list repair;
-standalone missed-delete reconciliation, continuous retained history and verified
-recovery points remain pending. Existing
+deletes and replay suppression. Standalone core, CRD-instance and Gatekeeper
+collectors now also share explicitly scoped, bounded fresh-list missed-delete
+repair with history enabled or disabled. It adds no watches, preserves named
+member rows and UID/version replacements, and records metadata-only deletes
+only after committed removal when history is enabled. CRD repair now also checks
+retained versions still explicitly served by the same current CRD, using each
+version's own complete list and shared round budgets. Served-set changes cancel
+in-flight repair without resetting the selected watch. Failed/partial lists,
+unversioned rows and unserved endpoints do not authorize deletion; repair does
+not clear known gaps. Fully retired dynamic-source data now follows an explicit
+retain-and-qualify policy: private stored writer receipts bind member, metadata
+owner UID, endpoint, registration lifetime and object UID/version. Retirement
+invalidates observation qualification without deleting graph data or inventing
+history. Missing legacy receipts and post-restart lifecycle knowledge stay
+unknown; a same-name replacement cannot adopt stored data without fresh delivery.
+Analysis/API/CLI reports qualify unknown, retired or replaced stored sources.
+Gatekeeper callbacks also recheck cancellation between persistence, extraction
+and individual edge writes during template replacement, retirement and shutdown.
+Local race regressions cover member/standalone scopes and both history modes;
+already-started writes may still commit and are retained without compensating
+cleanup. Cancellation preserves prior loss evidence and committed history.
+CRD/Gatekeeper replay now preserves the stored writer with history enabled or
+disabled: unchanged overlapping delivery still re-extracts edges without adopting
+retired data. History-disabled versioned dynamic callbacks consult one stored
+receipt under the existing resource lock; failed lookups cannot fall back to an
+unconditional write. Both source orders, scope modes and history modes have local
+race coverage; deployed storage cost and M4 qualification remain pending.
+Core/CRD/Gatekeeper watch deletes now use the same UID-bound atomic stored-receipt
+guard with history on/off. Late tombstones preserve replacements and their
+edges; unverifiable deletion stays retained without an unconditional fallback.
+Core markers preserve newer UIDs; configured delete history and broadcasts follow
+committed deletion only. Local regressions cover receipt races, scope, failures and cancellation;
+short-mode discovery tests skip envtest control-plane startup.
+Core upserts now stop subsequent extraction, Secret-reference and edge stages
+after cancellation while retaining confirmed in-flight writes/history. Upsert
+notifications follow confirmed graph writes, including edge-only replay recovery;
+failed replays do not send false updates. Local fake-client shutdown and failure
+regressions cover both scope/history modes and preserve active partial extraction.
+Core/Gatekeeper extractor reads are now pinned to one member or explicitly
+unlabelled standalone data through a narrow scoped lister. Core/CRD/Gatekeeper
+validate whole edge batches before persistence, preventing foreign endpoints
+and partial Secret-reference writes. Builtin Service selection and Kyverno report
+lookup have local cross-member regression coverage; local report replay still
+recovers results. Existing retained data is not cleaned or reowned, and these
+scope guards do not close the complete-coverage or M4 gates.
+General version equivalence, continuous retained history and verified recovery
+points remain pending. Existing
 v1 snapshot list/diff routes now authorize and read one attached member through
 bounded scoped capabilities; unscoped alpha history aliases reject federation
 access. Snapshot Web views now bind to the selected member, separate caches and
@@ -130,8 +174,10 @@ reports optional API presence, and identifies endpoints lacking captured
 registration evidence. Discovery errors, stale data, and limits cannot prove
 absence. CRD registration now follows selected endpoint/kind/scope/UID changes,
 with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
-handoff. Unserved CRDs stop collection; retired evidence and graph data remain
-available without claiming version equivalence or missed-delete repair.
+handoff. Unserved CRDs stop collection; their evidence and graph data remain
+available without treating endpoint disappearance as deletion proof. Other still
+served versions can qualify retained-row repair using their own fresh lists;
+this does not establish version equivalence.
 Federated member informers now run the same bounded API inventory worker
 using each member's own kubeconfig and retain member-scoped cached evidence.
 Member removal and shutdown join the worker before allowing same-name
@@ -141,8 +187,8 @@ caches and extractor reads, and joined dynamic callback shutdown. Active member
 endpoints now run bounded fresh-list reconciliation for missed deletes, with
 atomic UID/version-checked removal and incident-edge cascading. Failed or partial
 lists never authorize deletion, and successful repair does not reset historical
-coverage gaps. Complete collector coverage, version equivalence, cleanup across
-retired endpoints/API versions and per-member history qualification remain
+coverage gaps. Complete collector coverage, version equivalence and deployed
+per-member history qualification remain
 pending; registered types and inventory enumeration do not close those gaps.
 The first Web slice now connects resource-detail and concrete topology nodes to
 the server impact API, with explicit dependents/dependencies, bounded depth,

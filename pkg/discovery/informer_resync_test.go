@@ -59,6 +59,14 @@ type resyncSink struct {
 	events []graph.ResourceEvent
 }
 
+func (s *resyncStore) DeleteResourceVersion(ctx context.Context, r graph.Resource) (bool, error) {
+	deleter, ok := s.GraphStore.(graph.ResourceVersionDeleter)
+	if !ok {
+		return false, errors.New("missing conditional deletion capability")
+	}
+	return deleter.DeleteResourceVersion(ctx, r)
+}
+
 func (s *resyncSink) Enqueue(e graph.ResourceEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

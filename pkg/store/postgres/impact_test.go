@@ -40,6 +40,31 @@ func TestStore_ImpactSnapshot(t *testing.T) {
 	t.Run("shared contract", func(t *testing.T) {
 		storetest.RunImpactSnapshot(t, func(t *testing.T) graph.GraphStore { reset(t); return s })
 	})
+	t.Run("private origin scalar allowlist", func(t *testing.T) {
+		reset(t)
+		r := storetest.ResourceOriginFixture("prod")
+		if err := s.UpsertResource(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE resources SET data=jsonb_set(data,'{observationOrigin,extra}',$2::jsonb) WHERE id=$1`, r.ID(), `{"payload":"private-origin-payload-canary"}`); err != nil {
+			t.Fatal(err)
+		}
+		var body []byte
+		if err := s.pool.QueryRow(ctx, impactResourcesSQL, "prod", 2, graph.DefaultImpactBytes).Scan(&body); err != nil || strings.Contains(string(body), "payload-canary") {
+			t.Fatal("origin selected arbitrary payload", string(body), err)
+		}
+		projected, err := s.SnapshotImpact(ctx, graph.ImpactSnapshotOptions{ClusterID: "prod"})
+		if err != nil || len(projected.Resources) != 1 || projected.Resources[0].Origin != r.Origin {
+			t.Fatal("private origin lost", projected, err)
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE resources SET data=jsonb_set(data,'{observationOrigin,ownerUID}',$2::jsonb) WHERE id=$1`, r.ID(), `{"payload":"nested-origin-canary"}`); err != nil {
+			t.Fatal(err)
+		}
+		projected, err = s.SnapshotImpact(ctx, graph.ImpactSnapshotOptions{ClusterID: "prod"})
+		if err != nil || len(projected.Resources) != 1 || projected.Resources[0].Origin != (graph.ResourceOrigin{}) {
+			t.Fatal("malformed origin hid legacy row", projected, err)
+		}
+	})
 	t.Run("reference allowlist before wire transfer", func(t *testing.T) {
 		for _, schema := range []struct{ kind, version string }{
 			{"Pod", "v1"}, {"Deployment", "apps/v1"}, {"CronJob", "batch/v1"},

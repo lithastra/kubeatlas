@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -91,10 +92,13 @@ type callbackFamily struct {
 }
 
 type informerEntry struct {
-	identity registrationIdentity
-	stop     context.CancelFunc
-	synced   cache.InformerSynced
-	coverage *operations.CoverageSession
+	identity     registrationIdentity
+	stop         context.CancelFunc
+	synced       cache.InformerSynced
+	coverage     *operations.CoverageSession
+	versions     []string // served repair endpoints; protected by Discovery.mu
+	versionCtx   context.Context
+	stopVersions context.CancelFunc
 }
 
 // Option configures Discovery at construction. Same functional-
@@ -260,7 +264,14 @@ func (d *Discovery) onCRDAdd(ctx context.Context, obj any) {
 	}
 	gvr, kind, served := pickServedGVR(crd)
 	identity := registrationIdentity{name: crd.Name, uid: crd.UID, gvr: gvr, kind: kind, scope: crd.Spec.Scope}
-	if err := d.reconcileCRD(ctx, identity, served); err != nil {
+	versions := make([]string, 0, len(crd.Spec.Versions))
+	for _, version := range crd.Spec.Versions {
+		if version.Served {
+			versions = append(versions, version.Name)
+		}
+	}
+	slices.Sort(versions)
+	if err := d.reconcileCRD(ctx, identity, served, versions); err != nil {
 		d.metaCoverage.RecordGap(crdGVR, operations.CoverageProcessingFailed, time.Now())
 		d.logger.Warn("crd register failed",
 			"crd_name", crd.Name, "err", err)
@@ -287,7 +298,7 @@ func (d *Discovery) onCRDDelete(_ context.Context, obj any) {
 // reconcileCRD is atomic with respect to metadata updates/deletes, but never
 // waits for a blocked graph callback. A CRD with no served version stops its
 // stored selection even though the incoming object has no selected GVR.
-func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdentity, served bool) error {
+func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdentity, served bool, versions []string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -295,6 +306,13 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 	}
 	old := d.informers[identity.name]
 	if served && old != nil && old.identity == identity {
+		// Served-version changes update the next repair round without resetting
+		// a healthy selected watch or its continuity token.
+		if !slices.Equal(old.versions, versions) {
+			old.stopVersions()
+			old.versionCtx, old.stopVersions = context.WithCancel(ctx)
+			old.versions = slices.Clone(versions)
+		}
 		return nil
 	}
 	// A malformed replacement must not leave an obsolete registration healthy.
@@ -313,6 +331,7 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 	}
 	informerCtx, cancel := context.WithCancel(ctx)
 	coverage := d.beginCoverageType(gvr)
+	coverage.BindOrigin(graph.ResourceOrigin{OwnerName: identity.name, OwnerUID: string(identity.uid), Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource, Kind: kind, Namespaced: identity.scope == apiextensionsv1.NamespaceScoped})
 	// Shared factories cache stopped informers, which cannot be restarted.
 	// Every registration owns a fresh informer and its own coverage token.
 	factory := dynamicinformer.NewDynamicSharedInformerFactory(discovery.ObserveCoverageClient(d.dyn, coverage), defaultResyncPeriod)
@@ -344,11 +363,29 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 
 	d.families[identity.name] = family
 	family.refs++
+	versionCtx, stopVersions := context.WithCancel(informerCtx)
+	entry := &informerEntry{
+		identity:     identity,
+		stop:         cancel,
+		synced:       registration.HasSynced,
+		coverage:     coverage,
+		versions:     slices.Clone(versions),
+		versionCtx:   versionCtx,
+		stopVersions: stopVersions,
+	}
 	if d.memberRepair != nil {
 		d.runs.Add(1)
 		go func() {
 			defer d.runs.Done()
-			d.memberRepair.Run(informerCtx, gvr, kind, coverage, registration.HasSynced, d.resourceHistory.RecordDelete)
+			d.memberRepair.RunServedVersions(informerCtx, gvr, kind, coverage, registration.HasSynced, d.resourceHistory.RecordDelete, func() discovery.ServedRepairVersions {
+				d.mu.Lock()
+				defer d.mu.Unlock()
+				if d.informers[identity.name] != entry {
+					return discovery.ServedRepairVersions{} // Cannot reuse a successor's set.
+				}
+				namespaced := identity.scope == apiextensionsv1.NamespaceScoped
+				return discovery.ServedRepairVersions{Versions: slices.Clone(entry.versions), Context: entry.versionCtx, Namespaced: &namespaced}
+			})
 		}()
 	}
 	d.runs.Add(1)
@@ -373,12 +410,7 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 		}()
 	}
 
-	d.informers[identity.name] = &informerEntry{
-		identity: identity,
-		stop:     cancel,
-		synced:   registration.HasSynced,
-		coverage: coverage,
-	}
+	d.informers[identity.name] = entry
 
 	d.logger.Info("Discovered CRD, registered informer",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource),
@@ -403,6 +435,7 @@ func (d *Discovery) stopLocked(name string) {
 		return
 	}
 	delete(d.informers, name)
+	e.stopVersions()
 	e.stop()
 	e.coverage.Stop(time.Now())
 	d.logger.Info("Deregistered CRD informer",
@@ -431,6 +464,7 @@ func (d *Discovery) handleUpsertEvent(ctx context.Context, gvr schema.GroupVersi
 	}
 	r := discovery.UnstructuredToResource(u, kind)
 	r.ClusterID = d.clusterID
+	r = coverage.StampOrigin(r)
 	if d.memberRepair != nil {
 		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
 		if err != nil {
@@ -445,7 +479,7 @@ func (d *Discovery) handleUpsertEvent(ctx context.Context, gvr schema.GroupVersi
 			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		}
 	} else {
-		writeErr = d.store.UpsertResource(ctx, r)
+		_, writeErr = discovery.UpsertObservedResource(ctx, d.store, r)
 	}
 	if err := writeErr; err != nil {
 		if ctx.Err() != nil {
@@ -462,7 +496,7 @@ func (d *Discovery) handleUpsertEvent(ctx context.Context, gvr schema.GroupVersi
 	}
 	edges, err := d.rego.EvaluateForResource(ctx, r)
 	if err == nil {
-		edges, err = discovery.ScopeEdgesToCluster(edges, d.clusterID)
+		edges, err = discovery.ScopeCollectorEdges(edges, d.clusterID)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -514,11 +548,14 @@ func (d *Discovery) handleDelete(ctx context.Context, gvr schema.GroupVersionRes
 	var deleteErr error
 	if d.resourceHistory != nil {
 		_, deleteErr = d.resourceHistory.Delete(ctx, r)
-		if !graph.ValidResourceVersion(r) {
-			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
-		}
 	} else {
-		deleteErr = d.store.DeleteResource(ctx, r.ID())
+		_, deleteErr = discovery.DeleteObservedResource(ctx, d.store, r)
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 	}
 	if err := deleteErr; err != nil {
 		if ctx.Err() != nil {

@@ -113,7 +113,8 @@ func (s *Store) Init(ctx context.Context) error {
 // any Tier 2 install and the API silently returns empty rules.
 type storageBlob struct {
 	graph.Resource
-	RawSpec map[string]any `json:"raw,omitempty"`
+	RawSpec map[string]any        `json:"raw,omitempty"`
+	Origin  *graph.ResourceOrigin `json:"observationOrigin,omitempty"`
 }
 
 // UpsertResource inserts or replaces the resource at r.ID(). The
@@ -127,7 +128,7 @@ type storageBlob struct {
 // through to PG-only — P2-T10 will register CRD labels at runtime.
 func (s *Store) UpsertResource(ctx context.Context, r graph.Resource) error {
 	r = graph.SanitizeResource(r)
-	body, err := json.Marshal(storageBlob{Resource: r, RawSpec: r.Raw})
+	body, err := marshalStorageBlob(r)
 	if err != nil {
 		return fmt.Errorf("postgres.UpsertResource: marshal %s: %w", r.ID(), err)
 	}
@@ -141,6 +142,16 @@ func (s *Store) UpsertResource(ctx context.Context, r graph.Resource) error {
 		}
 		return upsertVertex(ctx, tx, r)
 	})
+}
+
+func marshalStorageBlob(r graph.Resource) ([]byte, error) {
+	r = graph.SanitizeResource(r)
+	var origin *graph.ResourceOrigin
+	if r.Origin.Matches(r) {
+		value := r.Origin
+		origin = &value
+	}
+	return json.Marshal(storageBlob{Resource: r, RawSpec: r.Raw, Origin: origin})
 }
 
 // DeleteResource removes the resource at id and cascades to every edge
@@ -183,11 +194,11 @@ func (s *Store) DeleteResourceVersion(ctx context.Context, expected graph.Resour
 		if err != nil {
 			return fmt.Errorf("postgres.DeleteResourceVersion: read: %w", err)
 		}
-		var current storageBlob
-		if err := json.Unmarshal(body, &current); err != nil {
+		current, err := unmarshalStorageBlob(body, expected.ID())
+		if err != nil {
 			return fmt.Errorf("postgres.DeleteResourceVersion: decode: %w", err)
 		}
-		if !graph.SameResourceVersion(current.Resource, expected) {
+		if !graph.SameResourceVersion(current, expected) {
 			return nil
 		}
 		if err := deleteResourceTx(ctx, tx, expected.ID()); err != nil {
@@ -265,13 +276,23 @@ func (s *Store) GetResource(ctx context.Context, id string) (graph.Resource, err
 // rows written before the wrapper landed: a missing "raw" key
 // simply leaves Resource.Raw nil.
 func unmarshalStorageBlob(body []byte, id string) (graph.Resource, error) {
-	var sb storageBlob
+	var sb struct {
+		graph.Resource
+		RawSpec map[string]any  `json:"raw"`
+		Origin  json.RawMessage `json:"observationOrigin"`
+	}
 	if err := json.Unmarshal(body, &sb); err != nil {
 		return graph.Resource{}, fmt.Errorf("postgres.GetResource: unmarshal %s: %w", id, err)
 	}
 	r := sb.Resource
 	r.Raw = sb.RawSpec
-	return r, nil
+	if len(sb.Origin) != 0 {
+		var origin graph.ResourceOrigin
+		if json.Unmarshal(sb.Origin, &origin) == nil {
+			r.Origin = origin
+		}
+	}
+	return graph.SanitizeResource(r), nil
 }
 
 // ListResources returns every resource matching the filter. Empty

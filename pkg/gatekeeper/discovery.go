@@ -88,7 +88,7 @@ func WithClusterID(cluster string) Option {
 	return func(d *Discovery) { d.clusterID = cluster }
 }
 
-// WithMemberRepair supplies the owning member's bounded repair worker.
+// WithMemberRepair supplies the owning scope's bounded repair coordinator.
 func WithMemberRepair(repair *discovery.MemberRepair) Option {
 	return func(d *Discovery) { d.memberRepair = repair }
 }
@@ -286,7 +286,11 @@ func (d *Discovery) onTemplate(ctx context.Context, obj any) {
 		}
 	}
 
-	if err := d.dynMgr.AddObserved(gvr, d.coverageSession, func(child context.Context, coverage *operations.CoverageSession) cache.ResourceEventHandler {
+	owner := graph.ResourceOrigin{ClusterID: d.clusterID, Source: "gatekeeper", Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource, Kind: kind}
+	if u, ok := toUnstructured(obj); ok {
+		owner.OwnerName, owner.OwnerUID = u.GetName(), string(u.GetUID())
+	}
+	if err := d.dynMgr.AddObservedOwned(gvr, d.coverageSession, owner, func(child context.Context, coverage *operations.CoverageSession) cache.ResourceEventHandler {
 		if d.coverageSession != nil && coverage == nil {
 			d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
 		}
@@ -311,15 +315,24 @@ func (d *Discovery) onTemplate(ctx context.Context, obj any) {
 
 // onTemplateDelete stops the Constraint informer the template owned.
 func (d *Discovery) onTemplateDelete(obj any) {
-	if t, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+	switch t := obj.(type) {
+	case cache.DeletedFinalStateUnknown:
 		obj = t.Obj
+	case *cache.DeletedFinalStateUnknown:
+		if t != nil {
+			obj = t.Obj
+		}
+	}
+	if u, ok := toUnstructured(obj); ok && u.GetName() != "" && u.GetUID() != "" {
+		d.dynMgr.RemoveOwner(graph.ResourceOrigin{ClusterID: d.clusterID, Source: "gatekeeper", OwnerName: u.GetName(), OwnerUID: string(u.GetUID())})
+		return
 	}
 	gvr, kind, ok := constraintGVRFromTemplate(obj)
 	if !ok {
 		d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
-	d.dynMgr.Remove(gvr)
+	d.dynMgr.RemoveUnowned(gvr)
 	d.logger.Info("gatekeeper: stopped tracking constraint kind", "kind", kind, "gvr", gvr.String())
 }
 
@@ -350,12 +363,16 @@ func (d *Discovery) handleConstraintEvent(ctx context.Context, kind string, obj 
 	}
 	r := discovery.UnstructuredToResource(u, kind)
 	r.ClusterID = d.clusterID
+	r = coverage.StampOrigin(r)
 	if d.memberRepair != nil {
 		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
 		if err != nil {
 			return
 		}
 		defer unlock()
+	}
+	if ctx.Err() != nil {
+		return
 	}
 	var writeErr error
 	if d.resourceHistory != nil {
@@ -364,16 +381,27 @@ func (d *Discovery) handleConstraintEvent(ctx context.Context, kind string, obj 
 			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		}
 	} else {
-		writeErr = d.store.UpsertResource(ctx, r)
+		_, writeErr = discovery.UpsertObservedResource(ctx, d.store, r)
 	}
 	if err := writeErr; err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: upsert constraint", "id", r.ID(), "err", err)
 		return
 	}
-	edges, err := d.extractor.ExtractAll(ctx, r, memberLister{store: d.store, cluster: d.clusterID})
+	// A dependency already in flight may commit despite cancellation. Do not
+	// start extraction or another edge write for that retired registration.
+	if ctx.Err() != nil {
+		return
+	}
+	edges, err := d.extractor.ExtractAll(ctx, r, discovery.NewScopedResourceLister(d.store, d.clusterID))
+	if ctx.Err() != nil {
+		return
+	}
 	if err == nil {
-		edges, err = discovery.ScopeEdgesToCluster(edges, d.clusterID)
+		edges, err = discovery.ScopeCollectorEdges(edges, d.clusterID)
 	}
 	if err != nil {
 		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
@@ -381,7 +409,13 @@ func (d *Discovery) handleConstraintEvent(ctx context.Context, kind string, obj 
 		return
 	}
 	for _, e := range edges {
+		if ctx.Err() != nil {
+			return
+		}
 		if err := d.store.UpsertEdge(ctx, e); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 			d.logger.Warn("gatekeeper: upsert enforce edge",
 				"from", e.From, "to", e.To, "err", err)
@@ -416,16 +450,25 @@ func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj
 		}
 		defer unlock()
 	}
+	if ctx.Err() != nil {
+		return
+	}
 	var deleteErr error
 	if d.resourceHistory != nil {
 		_, deleteErr = d.resourceHistory.Delete(ctx, r)
-		if !graph.ValidResourceVersion(r) {
-			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
-		}
 	} else {
-		deleteErr = d.store.DeleteResource(ctx, r.ID())
+		_, deleteErr = discovery.DeleteObservedResource(ctx, d.store, r)
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 	}
 	if err := deleteErr; err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: delete constraint", "id", r.ID(), "err", err)
 	}
@@ -460,18 +503,4 @@ func toUnstructured(obj any) (*unstructured.Unstructured, bool) {
 	default:
 		return nil, false
 	}
-}
-
-// A custom extractor cannot broaden its read scope by omitting/changing a filter.
-type memberLister struct {
-	store   graph.GraphStore
-	cluster string
-}
-
-func (l memberLister) ListResources(ctx context.Context, filter graph.Filter) ([]graph.Resource, error) {
-	if l.cluster == "" {
-		return l.store.ListResources(ctx, filter)
-	}
-	filter.ClusterID = l.cluster
-	return l.store.ListResourcesInCluster(ctx, l.cluster, filter)
 }
