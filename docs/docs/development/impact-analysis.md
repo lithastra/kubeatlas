@@ -1796,7 +1796,8 @@ Each caller invokes its evaluation function at most once and retains its own
 failure; no single call automatically retries its failed evaluation. Flight
 entries are retired and waiters notified when the owning call exits.
 
-The key remains member/UID/opaque version/rule hash. Different member keys can
+The key uses member/UID/opaque version/rule hash plus the prepared entrypoint
+(see the query-identity follow-up below). Different member keys can
 evaluate independently, and warm hits do not acquire the flight-map mutex.
 Existing LRU capacity, metrics and per-evaluation timeout limits remain in
 place. Cancellation without evaluation or a usable cache result adds no cache
@@ -1819,7 +1820,8 @@ the failing module within that call. Decoding remains atomic within one module:
 a valid prefix followed by a malformed edge contributes nothing from that module.
 Successful whole-module values keep their existing cache entries, while failed
 values remain uncached. A subsequent active delivery can recover missing edges.
-Per-evaluation timeouts, cache keys/capacity and other budgets are unchanged.
+Per-evaluation timeouts, cache capacity and other budgets are unchanged; the
+query-identity follow-up below extends the cache key with the prepared entrypoint.
 
 The CRD callback records an extraction gap for active failures and keeps usable
 returned edges only after validating the complete batch in its explicit member
@@ -1846,6 +1848,37 @@ scope, both history modes, whole-batch scope rejection, failed/cancelled writes,
 committed receipts, metadata-only history and sticky gaps. These offline checks
 do not establish deployed PostgreSQL behavior, real-cluster coverage or M4
 acceptance.
+
+### M2 Rego prepared-query cache identity follow-up
+
+The existing bounded Rego cache now includes the prepared entrypoint alongside
+member, UID, opaque resource version and source hash. A rule pack may register
+identical source bytes with different entrypoints; those queries must have
+separate entries and in-flight ownership. A source or entrypoint change selects
+a new key without purging other cached results. Resource versions are compared
+for equality and are not interpreted as numbers or ordered across observations.
+
+Each module iteration captures one immutable compiled module under the engine
+lock. Both the cache key and the cache-miss evaluation use that exact compiled
+module. In particular, a call waiting for another evaluator does not look up the
+module name again after a reload: it may complete with the older captured query,
+while a subsequent call captures the replacement. The newer query can evaluate
+independently of the older blocked key, and neither result is stored under the
+other query's identity. This is a per-module snapshot, not an atomic rule-pack
+reload or a guarantee that all modules in one resource call use one pack revision.
+
+Existing timeout/recover guards, cancellation checks, error metrics, successful
+whole-module caching and active partial-result semantics remain in place. Failed
+compilation leaves the prior compiled module and usable cache entries intact.
+LRU capacity and evaluation budgets are unchanged; no worker, watch, storage read,
+public API field, GraphStore method or rule-pack format change is introduced.
+
+Portable actual-engine regressions cover identical-source entrypoints in both
+registration orders, named-member/standalone scope, cold/warm replay and a
+phase-controlled failed-leader handoff across source-only or entrypoint-only
+reload. They verify independent new-query progress, old-query completion,
+restoration without cache poisoning, failed compilation and exact hit/miss counts.
+Real-cluster behavior, deployed load and M4 acceptance remain unqualified.
 
 ### M2 collector read and edge scope follow-up
 

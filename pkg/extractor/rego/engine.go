@@ -198,7 +198,12 @@ func (e *Engine) Evaluate(ctx context.Context, name string, input any) (rego.Res
 	if !ok {
 		return nil, fmt.Errorf("rego.Evaluate: module %q not loaded", name)
 	}
+	return e.evaluateCompiled(ctx, m, input)
+}
 
+// evaluateCompiled executes the exact query captured by the caller. A reload
+// replaces the map entry without changing this immutable compiled module.
+func (e *Engine) evaluateCompiled(ctx context.Context, m *compiledModule, input any) (rego.ResultSet, error) {
 	rs, err := evaluateWithGuards(ctx, m.query, input, e.defaultTimeout)
 	switch {
 	case err == nil:
@@ -208,7 +213,7 @@ func (e *Engine) Evaluate(ctx context.Context, name string, input any) (rego.Res
 			e.metrics.IncEvalTimeout()
 		}
 		e.logger.Warn("rego evaluation timeout",
-			"module", name,
+			"module", m.meta.Name,
 			"rule_hash", m.meta.RuleHash[:12],
 			"budget", e.defaultTimeout)
 		return nil, err
@@ -217,13 +222,13 @@ func (e *Engine) Evaluate(ctx context.Context, name string, input any) (rego.Res
 			e.metrics.IncEvalPanic()
 		}
 		e.logger.Error("rego evaluation panic",
-			"module", name,
+			"module", m.meta.Name,
 			"rule_hash", m.meta.RuleHash[:12],
 			"err", err)
 		return nil, err
 	default:
 		e.logger.Warn("rego evaluation error",
-			"module", name,
+			"module", m.meta.Name,
 			"rule_hash", m.meta.RuleHash[:12],
 			"err", err)
 		return nil, err
@@ -260,8 +265,9 @@ func (e *Engine) ModuleCount() int {
 //     match covers this resource. O(1).
 //  2. For each matched module, look up the engine-side compiled
 //     module to recover the rule hash + meta.
-//  3. cache.GetOrEvaluate keyed on (UID, ResourceVersion, RuleHash);
-//     miss runs Evaluate under the timeout + recover guards.
+//  3. cache.GetOrEvaluate keyed on member, UID, ResourceVersion, RuleHash
+//     and Entrypoint; a miss executes that captured compiled query under
+//     the timeout + recover guards, including across a concurrent reload.
 //  4. Decode the result-set rows into graph.Edge values.
 //
 // Per-rule failures are wrapped and returned with completed earlier modules.
@@ -316,10 +322,11 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 			UID:             string(r.UID),
 			ResourceVersion: r.ResourceVersion,
 			RuleHash:        cm.meta.RuleHash,
+			Entrypoint:      cm.meta.Entrypoint,
 		}
 		v, err := e.cache.GetOrEvaluate(ctx, key,
 			func(ctx context.Context) (CacheValue, error) {
-				rs, err := e.Evaluate(ctx, m.Name, input)
+				rs, err := e.evaluateCompiled(ctx, cm, input)
 				if err != nil {
 					return CacheValue{}, err
 				}

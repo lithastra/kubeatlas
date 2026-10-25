@@ -14,7 +14,7 @@ import (
 )
 
 // defaultCacheSize is the LRU cap. Sized to comfortably hold the
-// (cluster, UID, resourceVersion, ruleHash) entries for a 5K-resource cluster
+// (cluster, UID, resourceVersion, ruleHash, entrypoint) entries for a 5K-resource cluster
 // times a handful of rules. Operators can override via Engine option
 // (P2-T9 step 3 keeps this small and configurable rather than
 // unbounded — guide §1.7 perf budget assumes warm cache, never
@@ -27,18 +27,17 @@ const defaultCacheSize = 10000
 // across versions invalidate cleanly: bumping spec → new
 // resourceVersion → guaranteed cache miss for every rule.
 //
-// RuleHash is the sha256 of the .rego source. Bundling it in the key
-// means a rule-pack reload that changes one .rego silently
-// invalidates only its own cache entries; other rules keep their
-// hits. (Anti-pattern: keying on resource content hash instead of
-// resourceVersion — a re-upsert with identical content but bumped
-// resourceVersion would mistakenly hit. K8s guarantees
-// resourceVersion is monotonic on real change, so we trust it.)
+// RuleHash is the sha256 of the .rego source. Entrypoint identifies the
+// prepared query within that source; different entrypoints must not share
+// results even when their source bytes match. Changes to either select new
+// entries without purging other rules. ResourceVersion remains an opaque
+// equality token, never a number or an ordering relation.
 type CacheKey struct {
 	ClusterID       string
 	UID             string
 	ResourceVersion string
 	RuleHash        string
+	Entrypoint      string
 }
 
 // CacheValue is what the cache stores per (resource, rule). Errors

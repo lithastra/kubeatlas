@@ -168,6 +168,12 @@ batch against its member/standalone scope before any edge write, and cancelled
 evaluation starts no subsequent writes. Local real-engine and callback race
 regressions cover failures, replay recovery, receipts and history modes;
 real-cluster and M4 qualification remain pending.
+Rego cache entries now also include the prepared entrypoint, so different queries
+over identical source cannot reuse one another's results. Cache misses execute
+the same compiled module used to form the key, including after a wait during
+concurrent reload. Local phase-controlled race tests cover distinct entrypoints,
+source/entrypoint reload, member scope, cached replay and failed compilation;
+cache capacity and evaluation budgets remain unchanged.
 Core/Gatekeeper extractor reads are now pinned to one member or explicitly
 unlabelled standalone data through a narrow scoped lister. Core/CRD/Gatekeeper
 validate whole edge batches before persistence, preventing foreign endpoints
