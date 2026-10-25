@@ -55,7 +55,9 @@ func (h *ResourceHistory) Upsert(ctx context.Context, r graph.Resource, eventTyp
 		return false, err
 	}
 	versioned := graph.ValidResourceVersion(r)
-	same := !missing && versioned && previous.UID == r.UID && previous.ResourceVersion == r.ResourceVersion
+	// An incomplete stored row is not a qualified history receipt, even if its
+	// UID/version match the first subsequent observation with all identity fields.
+	same := !missing && versioned && graph.ValidResourceVersion(previous) && previous.UID == r.UID && previous.ResourceVersion == r.ResourceVersion
 	if !missing && preserveResourceReplay(previous, r) {
 		return false, nil
 	}

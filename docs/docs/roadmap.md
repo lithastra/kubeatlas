@@ -136,6 +136,13 @@ existing resource-read/write fast path and still re-extract edges. Failed reads
 cannot fall back to a write or poison the successful-version cache. Local tests
 cover source qualification, scope/history modes, UID/version changes, cancellation,
 point-read counts and later recovery; deployed storage cost remains pending.
+Core/CRD/Gatekeeper upserts now qualify missing UID/version/API-version fields
+independently of history. Active persisted incomplete observations record a
+processing gap; failed/cancelled writes retain their separate failure semantics.
+Incomplete rows cannot poison the core successful-version cache or suppress the
+first subsequent qualified history observation. Local matrices cover scope/history
+modes, cancellation, committed data, identity repair and sticky gaps; deployed
+qualification remains pending.
 Core/CRD/Gatekeeper watch deletes now use the same UID-bound atomic stored-receipt
 guard with history on/off. Late tombstones preserve replacements and their
 edges; unverifiable deletion stays retained without an unconditional fallback.

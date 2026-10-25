@@ -1676,6 +1676,42 @@ read/write failure, cancellation and later recovery. The existing 10K unchanged
 resync regression remains required. Deployed point-read cost, real-cluster
 behavior and M4 acceptance remain unqualified.
 
+### M2 history-independent upsert identity qualification follow-up
+
+Core, CRD and Gatekeeper upserts now apply the existing minimum observed-version
+identity check after successful persistence while the callback is still active,
+regardless of the history setting. A stored observation missing UID,
+resourceVersion or apiVersion records a processing gap instead of leaving that
+type qualified as initialized with no known gap. Such graph rows and their
+existing derived-edge behavior remain retained; the row cannot attest a private
+writer origin. This is minimum-field qualification, not a new parser for all
+Kubernetes identity syntax or proof of complete observation.
+
+An uncommitted write failure records the persistence gap. A dependency returning
+after cancellation does not start extraction or add a new identity-processing
+gap for shutdown, even if its in-flight resource write committed. Existing gaps
+and committed valid-version history remain intact. Successful later delivery
+does not clear earlier processing, persistence or extraction gaps.
+
+Core's successful-version cache and legacy snapshot sink now require that same
+minimum identity. A row missing apiVersion cannot poison the UID/version cache
+and suppress a later complete delivery with the same UID/version. The incomplete
+observation emits no qualified resource-history event. The shared history writer
+also requires the previous row to have minimum identity before using it to
+suppress duplicate history. A fresh complete observation following an incomplete
+row can therefore record its first qualified version once; subsequent unchanged
+replay remains deduplicated. Valid cross-version representation changes keep
+their existing history semantics.
+
+Portable callback matrices exercise all three pipelines, member/standalone
+scopes, both history modes, complete and missing-field observations, active and
+failed writes, cancellation before failure and cancellation with commit. They
+verify source receipts, coverage classification, core cache eligibility, qualified
+history, later identity/edge recovery and foreign-row retention. The change reuses
+existing persistence and receipt reads; it adds no Kubernetes request, watch,
+worker, storage capability, GraphStore method or public API field. Real-cluster
+and deployed PostgreSQL behavior and M4 remain unqualified.
+
 ### M2 watch-deletion receipt parity follow-up
 
 Core, CRD-instance and Gatekeeper object-delete callbacks now share conditional

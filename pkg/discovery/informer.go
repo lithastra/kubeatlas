@@ -390,13 +390,10 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 			slog.Warn("upsert member resource history failed", "id", r.ID(), "err", err)
 			return
 		}
-		if ctx.Err() == nil && !graph.ValidResourceVersion(r) {
-			m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
-		}
 	} else {
 		key := resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name}
 		version := resourceWriteVersion{uid: string(r.UID), resourceVersion: r.ResourceVersion}
-		versioned := version.uid != "" && version.resourceVersion != ""
+		versioned := graph.ValidResourceVersion(r)
 		m.persistedMu.RLock()
 		previous, known := m.persisted[key]
 		m.persistedMu.RUnlock()
@@ -425,7 +422,7 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 
 			// Enqueue is non-blocking by contract. Neither a local-cache replay
 			// nor an unchanged stored receipt is a resource-change event.
-			if resourceChanged {
+			if resourceChanged && versioned {
 				m.snapshotSink.Enqueue(graph.ResourceEvent{
 					ClusterID:       m.clusterID,
 					Namespace:       r.Namespace,
@@ -448,6 +445,11 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	}()
 	if ctx.Err() != nil {
 		return
+	}
+	// Persisted observations without the minimum identity fields cannot qualify
+	// successful collection, regardless of whether history recording is enabled.
+	if !graph.ValidResourceVersion(r) {
+		m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 	}
 
 	// Edge re-derivation: ask the extractor for edges rooted at this

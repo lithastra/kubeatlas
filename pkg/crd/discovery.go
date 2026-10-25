@@ -475,9 +475,6 @@ func (d *Discovery) handleUpsertEvent(ctx context.Context, gvr schema.GroupVersi
 	var writeErr error
 	if d.resourceHistory != nil {
 		_, writeErr = d.resourceHistory.Upsert(ctx, r, eventType)
-		if !graph.ValidResourceVersion(r) {
-			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
-		}
 	} else {
 		_, writeErr = discovery.UpsertObservedResource(ctx, d.store, r)
 	}
@@ -491,7 +488,13 @@ func (d *Discovery) handleUpsertEvent(ctx context.Context, gvr schema.GroupVersi
 		return
 	}
 
-	if ctx.Err() != nil || d.rego == nil {
+	if ctx.Err() != nil {
+		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+	}
+	if d.rego == nil {
 		return
 	}
 	edges, err := d.rego.EvaluateForResource(ctx, r)

@@ -377,9 +377,6 @@ func (d *Discovery) handleConstraintEvent(ctx context.Context, kind string, obj 
 	var writeErr error
 	if d.resourceHistory != nil {
 		_, writeErr = d.resourceHistory.Upsert(ctx, r, eventType)
-		if !graph.ValidResourceVersion(r) {
-			coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
-		}
 	} else {
 		_, writeErr = discovery.UpsertObservedResource(ctx, d.store, r)
 	}
@@ -395,6 +392,9 @@ func (d *Discovery) handleConstraintEvent(ctx context.Context, kind string, obj 
 	// start extraction or another edge write for that retired registration.
 	if ctx.Err() != nil {
 		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 	}
 	edges, err := d.extractor.ExtractAll(ctx, r, discovery.NewScopedResourceLister(d.store, d.clusterID))
 	if ctx.Err() != nil {
