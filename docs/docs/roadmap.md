@@ -181,6 +181,13 @@ Extraction retains the same timeout/recover and partial-result behavior; qualifi
 delivery restores normal caching without clearing the prior processing gap.
 Local real-engine/CRD regressions cover scope/history modes, metadata-only history,
 source receipts, cache accounting and recovery. Deployed cost and M4 remain pending.
+Rego result caching now also separates full API versions. Equal UID/version
+receipts cannot reuse rule output or wait on an evaluation from another served
+representation; each representation keeps its own bounded replay entry. Local
+engine and CRD endpoint-switch regressions cover raw/minimal input, matching and
+wildcard rules, member/history modes and retained relationships. Existing fresh
+representation writes and UID/version history suppression remain unchanged;
+general version equivalence and deployed qualification are still pending.
 Core/Gatekeeper extractor reads are now pinned to one member or explicitly
 unlabelled standalone data through a narrow scoped lister. Core/CRD/Gatekeeper
 validate whole edge batches before persistence, preventing foreign endpoints

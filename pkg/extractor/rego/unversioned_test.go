@@ -91,7 +91,7 @@ func TestUnversionedEvaluationSkipsUnprovableSharedFlight(t *testing.T) {
 			r := withoutVersionIdentity(fooResource(1, "opaque-version"), missing)
 			r.Labels = map[string]string{"target": "fresh"}
 			meta := e.Loaded()[0]
-			key := CacheKey{UID: string(r.UID), ResourceVersion: r.ResourceVersion, RuleHash: meta.RuleHash, Entrypoint: meta.Entrypoint}
+			key := CacheKey{GroupVersion: r.GroupVersion, UID: string(r.UID), ResourceVersion: r.ResourceVersion, RuleHash: meta.RuleHash, Entrypoint: meta.Entrypoint}
 			done := make(chan struct{})
 			e.cache.inflight[key] = done
 			defer func() { delete(e.cache.inflight, key); close(done) }()

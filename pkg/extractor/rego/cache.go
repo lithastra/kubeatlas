@@ -13,9 +13,8 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
 
-// defaultCacheSize is the LRU cap. Sized to comfortably hold the
-// (cluster, UID, resourceVersion, ruleHash, entrypoint) entries for a 5K-resource cluster
-// times a handful of rules. Operators can override via Engine option
+// defaultCacheSize is the LRU entry cap, shared by all members, API
+// representations and loaded queries. Operators can override via Engine option
 // (P2-T9 step 3 keeps this small and configurable rather than
 // unbounded — guide §1.7 perf budget assumes warm cache, never
 // cold). Anti-pattern: sync.Map / unbounded map → memory leak on
@@ -32,8 +31,11 @@ const defaultCacheSize = 10000
 // results even when their source bytes match. Changes to either select new
 // entries without purging other rules. ResourceVersion remains an opaque
 // equality token, never a number or an ordering relation.
+// GroupVersion separates API representations of the same object: equal UID and
+// resourceVersion alone do not prove identical rule input across served versions.
 type CacheKey struct {
 	ClusterID       string
+	GroupVersion    string
 	UID             string
 	ResourceVersion string
 	RuleHash        string

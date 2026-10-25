@@ -1122,8 +1122,9 @@ The CRD collector retains served-version selection, CRD UID/shape reconciliation
 per-type observation tokens and existing resource/edge retention semantics.
 Rego results are copied into the member's identity space; explicitly foreign
 edge endpoints are rejected with an extraction gap. The shared evaluation
-cache includes cluster ID as well as UID, resourceVersion and rule hash, so
-matching UID/version strings in different members cannot reuse one result.
+cache includes cluster ID, full API version, UID, resourceVersion, rule hash and
+entrypoint, so matching UID/version strings in different members or API
+representations cannot reuse one result.
 
 Gatekeeper uses that member's supported-template discovery check and existing
 dynamic Constraint registration. Extractor reads are restricted to the owning
@@ -1796,8 +1797,8 @@ Each caller invokes its evaluation function at most once and retains its own
 failure; no single call automatically retries its failed evaluation. Flight
 entries are retired and waiters notified when the owning call exits.
 
-The key uses member/UID/opaque version/rule hash plus the prepared entrypoint
-(see the query-identity follow-up below). Different member keys can
+The key uses member/API-version/UID/opaque version/rule hash plus the prepared
+entrypoint (see the identity follow-ups below). Different member keys can
 evaluate independently, and warm hits do not acquire the flight-map mutex.
 Existing LRU capacity, metrics and per-evaluation timeout limits remain in
 place. Cancellation without evaluation or a usable cache result adds no cache
@@ -1852,7 +1853,7 @@ acceptance.
 ### M2 Rego prepared-query cache identity follow-up
 
 The existing bounded Rego cache now includes the prepared entrypoint alongside
-member, UID, opaque resource version and source hash. A rule pack may register
+member, full API version, UID, opaque resource version and source hash. A rule pack may register
 identical source bytes with different entrypoints; those queries must have
 separate entries and in-flight ownership. A source or entrypoint change selects
 a new key without purging other cached results. Resource versions are compared
@@ -1918,6 +1919,43 @@ output and partial-module results. Real-engine CRD callback matrices cover both
 scope/history modes, fresh edge retention, sticky processing gaps, private source
 receipts, metadata-only history and foreign-member isolation. These checks do not
 qualify real-cluster behavior, deployed cost or M4 acceptance.
+
+### M2 Rego cache separation across API representations follow-up
+
+The result-cache key now includes the resource's full `GroupVersion` API-version
+string, including its API group. A resource may arrive through two served API
+versions with equal UID/resourceVersion while rule input differs, including the
+`apiVersion` field and converted payload shape. UID/version equality alone does
+not establish equivalence between those representations. Each full API version
+therefore has independent cached results and in-flight ownership for the same
+member/object/source/entrypoint. A blocked evaluation for one version does not
+hold up a call for another version, and unchanged replay within a version still
+uses the cache.
+
+Rule routing remains group/kind based; wildcard matching and rule-pack formats
+are unchanged. Both raw informer input and the minimal resource-input fallback
+use the same representation boundary. Incomplete identity still bypasses caching.
+The LRU keeps its existing entry limit, so different API versions occupy separate
+entries within that limit rather than increasing capacity. Timeout, cancellation,
+panic/error guards and partial-result semantics remain unchanged. No watch,
+worker, Kubernetes/storage query, public API field or GraphStore method is added.
+
+CRD endpoint-switch callbacks continue to apply the existing stored-writer
+rules: fresh delivery through another API version can update the current graph
+representation and private source receipt, while equal qualified UID/version
+does not manufacture another metadata-only history event. Retirement alone
+still authorizes neither adoption nor deletion. Existing relationships remain
+retained; a new representation can add its own successfully derived relationships.
+Cache separation does not prove version equivalence, choose an authoritative
+representation or change those persistence/history policies.
+
+Portable actual-engine regressions cover both delivery orders, raw and minimal
+input, exact and wildcard routing, member/standalone scopes, independent progress
+past another representation's blocked key, full API-group separation and exact
+cold/warm cache accounting. CRD callback matrices cover endpoint retirement and
+fresh version delivery in both history modes, new scoped relationships, matching
+source receipts and unchanged metadata-only history counts. Real-cluster watch
+behavior, conversion correctness, deployed cost and M4 acceptance remain pending.
 
 ### M2 collector read and edge scope follow-up
 

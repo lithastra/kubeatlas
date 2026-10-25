@@ -265,8 +265,8 @@ func (e *Engine) ModuleCount() int {
 //     match covers this resource. O(1).
 //  2. For each matched module, look up the engine-side compiled
 //     module to recover the rule hash + meta.
-//  3. cache.GetOrEvaluate keyed on member, UID, ResourceVersion, RuleHash
-//     and Entrypoint; a miss executes that captured compiled query under
+//  3. cache.GetOrEvaluate keyed on member, API version, UID, ResourceVersion,
+//     RuleHash and Entrypoint; a miss executes that captured compiled query under
 //     the timeout + recover guards, including across a concurrent reload.
 //     Observations without valid version identity evaluate without caching.
 //  4. Decode the result-set rows into graph.Edge values.
@@ -323,6 +323,7 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 
 		key := CacheKey{
 			ClusterID:       r.ClusterID,
+			GroupVersion:    r.GroupVersion,
 			UID:             string(r.UID),
 			ResourceVersion: r.ResourceVersion,
 			RuleHash:        cm.meta.RuleHash,
