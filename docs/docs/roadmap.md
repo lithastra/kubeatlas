@@ -255,6 +255,12 @@ skipped; required ones fail selection, and discovery errors return no partial
 startup set. Local independent-shape and client-go HTTP regressions cover all 25
 canonical endpoints, cache reuse and custom endpoint compatibility. This remains
 advertised metadata validation, not effective permission or watch-success proof.
+Gatekeeper's separate ConstraintTemplate check now also rejects duplicate target
+descriptors and inconsistent explicit row group/version before allowing template
+list/watch. Local scope, recovery, fake-informer and client-go HTTP regressions
+preserve failed qualification, prior write gaps and retained graph data. The
+existing discovery deadline, polling cadence and no-client compatibility remain;
+this does not qualify installation, watch reliability or M4 acceptance.
 CRD registration now follows selected endpoint/kind/scope/UID changes,
 with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
 handoff. Unserved CRDs stop collection; their evidence and graph data remain

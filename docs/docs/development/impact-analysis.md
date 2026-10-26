@@ -1191,6 +1191,43 @@ without object reads. Existing injected discovery fixtures now carry realistic
 Kind/scope metadata instead of placeholder Kind values. These tests do not qualify
 real-cluster startup behavior, watch reliability or M4 acceptance.
 
+### M2 Gatekeeper template discovery identity follow-up
+
+The separate Gatekeeper ConstraintTemplate discovery gate now validates the
+entire returned target set before accepting an advertised API. It requires one
+`constrainttemplates` descriptor with the supported `ConstraintTemplate` Kind,
+cluster scope and list/watch verbs. Explicit row group/version fields must match
+`templates.gatekeeper.sh/v1`; omitted fields remain compatible. Duplicate targets
+are rejected even when identical, contradictory only in verbs/scope, or placed
+after an initially supported descriptor. Unrelated rows and subresources do not
+broaden the target or invalidate a supported descriptor.
+
+Ambiguous/inconsistent metadata returns the existing `failed` discovery state,
+not `advertised` or `not_advertised`. With a discovery client configured, the
+existing wait loop therefore does not start the ConstraintTemplate informer or
+its generated constraint collectors until a later supported response. The loop
+keeps its existing polling interval; each check still uses one contextual
+discovery request and the existing five-second deadline. Target scanning now
+also rechecks that context. Synchronous legacy clients retain their existing
+compatibility path without an abandoned goroutine. The no-client path remains
+unconditional observation with unknown API evidence, rather than advertisement
+proof.
+
+Each result retains its member/standalone source identity and sanitized evidence.
+A later valid check advances that discovery revision without clearing earlier
+list/watch, processing or persistence gaps. Failed checks do not clean retained
+graph data. No impact-query probe, extra watch, worker, Kubernetes object read,
+public field or GraphStore method is introduced. Advertisement remains distinct
+from installation, effective authorization and successful observation.
+
+Portable regressions cover both scopes, implicit/explicit identities, both
+conflict orders, late duplicates, unrelated metadata, recovery revisions and
+sticky persistence gaps. Fake-client lifecycle tests prove that ambiguous
+metadata starts no list/watch, that a later valid response enables the existing
+collectors, and shutdown still joins them. Local client-go HTTP tests assert one
+exact discovery read without object requests. Real-cluster Gatekeeper behavior
+and M4 acceptance remain pending.
+
 ### M2 member-scoped API inventory follow-up
 
 The production federation path now creates a discovery client from each

@@ -51,14 +51,29 @@ func (d *Discovery) discoverTemplateAPI(ctx context.Context) (operations.SourceD
 	if resources == nil || resources.GroupVersion != constraintTemplateGVR.GroupVersion().String() {
 		return operations.SourceAPIFailed, errors.New("invalid ConstraintTemplate discovery response")
 	}
-	for _, resource := range resources.APIResources {
+	var target *metav1.APIResource
+	for i := range resources.APIResources {
+		if err := ctx.Err(); err != nil {
+			return operations.SourceAPIFailed, err
+		}
+		resource := &resources.APIResources[i]
 		if resource.Name != constraintTemplateGVR.Resource {
 			continue
 		}
-		if resource.Kind != "ConstraintTemplate" || resource.Namespaced || !slices.Contains(resource.Verbs, "list") || !slices.Contains(resource.Verbs, "watch") {
-			return operations.SourceAPIFailed, errors.New("unsupported ConstraintTemplate API shape")
+		if target != nil {
+			return operations.SourceAPIFailed, errors.New("ambiguous ConstraintTemplate API discovery response")
 		}
-		return operations.SourceAPIAdvertised, nil
+		target = resource
 	}
-	return operations.SourceAPINotAdvertised, nil
+	if err := ctx.Err(); err != nil {
+		return operations.SourceAPIFailed, err
+	}
+	if target == nil {
+		return operations.SourceAPINotAdvertised, nil
+	}
+	if target.Kind != "ConstraintTemplate" || target.Namespaced || !slices.Contains(target.Verbs, "list") || !slices.Contains(target.Verbs, "watch") ||
+		(target.Group != "" && target.Group != constraintTemplateGVR.Group) || (target.Version != "" && target.Version != constraintTemplateGVR.Version) {
+		return operations.SourceAPIFailed, errors.New("unsupported ConstraintTemplate API shape")
+	}
+	return operations.SourceAPIAdvertised, nil
 }
