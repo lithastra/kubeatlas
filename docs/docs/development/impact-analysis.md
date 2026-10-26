@@ -1092,8 +1092,8 @@ Cancellation is checked immediately after group and version discovery returns,
 before handling a success or error. A cancelled or expired context returns a
 failed empty round, even when the dependency returns rows or a permission error.
 The worker's existing lifetime check still prevents publication after member
-removal/shutdown. Aggregated stale/failure metadata retains its existing
-conservative early-partial behavior; it is not used to invent a completed prefix.
+removal/shutdown. Aggregated stale/failure metadata follows the separate retention
+rules below and can never qualify a complete round.
 
 Recording a new round replaces prior evidence. Only completed descriptors from
 the current round can survive its later failure; old successful rounds are not
@@ -1112,6 +1112,48 @@ old-round replacement, member/standalone recording, real analysis capture and
 complete-round recovery. A loopback client-go HTTP test confirms retained metadata
 after a later 403 without extra requests or object reads. These local checks do
 not qualify real-cluster discovery reliability or M4 acceptance.
+
+### M2 aggregated API inventory partial retention follow-up
+
+When contextual aggregated discovery returns a failure set alongside resource
+metadata, inventory now retains valid descriptors already returned for advertised
+versions outside that set. It uses the same descriptor validation, scope handling,
+subresource exclusion and 256-descriptor cap as sequential discovery. Failure-set
+membership rejects a version even if its error value is nil or a resource list is
+also present. Missing/nil lists, mismatched versions, malformed rows and map entries
+outside the advertised version list do not become retained endpoint evidence.
+The round remains `partial` even if some returned versions are usable.
+
+This path makes no per-version request, fallback or retry. It only consumes the
+bounded metadata already returned by the discovery call. Cancelled calls and
+top-level discovery errors expose no resource descriptors. For mixed legacy/
+aggregated responses, client-go may return a nil resource table; that stays partial
+and empty without fetching replacements. A nil group list likewise supplies no
+advertisement proof. The complete/no-failure discovery path keeps its existing
+sequential resource requests.
+
+The pinned client-go v0.37.1 parser removes stale versions from advertised version
+lists, sometimes leaving empty groups. Such empty groups are skipped only when
+the validated failure set accounts for their group; unexplained empty groups and
+malformed/duplicate advertisements remain invalid. Core/v1, failed versions and
+healthy advertised versions share the existing 64-version round budget. Failure
+keys are validated and bounded before traversal, and cancellation is checked
+during metadata handling. Exceeding the version budget returns limited partial
+evidence without expanding work. The ten-second round deadline and five-minute
+schedule remain unchanged.
+
+Recorded partial descriptors remain visible in before/after analysis capture.
+They do not qualify optional API presence/absence, unobserved endpoint lists or
+complete collector coverage. Member scope, copied evidence, raw-error exclusion
+and old-round replacement remain in place. There is no new public field, worker,
+Kubernetes object read or GraphStore method.
+
+Portable tests cover healthy/stale overlap, stale-only groups, nil/missing and
+malformed metadata, failure-key validation, combined failure/healthy version caps,
+descriptor limits, cancellation, member/standalone recording and real analysis
+capture. Local client-go HTTP tests exercise aggregated v2, stale core versions
+and mixed legacy/aggregated responses, asserting only `/api` and `/apis` requests.
+These checks do not establish real-cluster discovery reliability or M4 acceptance.
 
 ### M2 member-scoped API inventory follow-up
 

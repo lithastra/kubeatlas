@@ -62,14 +62,15 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 	var groups *metav1.APIGroupList
 	var err error
 	var aggregatedIncomplete bool
+	var aggregatedResources map[schema.GroupVersion]*metav1.APIResourceList
+	var aggregatedFailures map[schema.GroupVersion]error
 	if aggregated, ok := dc.(interface {
 		GroupsAndMaybeResourcesWithContext(context.Context) (*metav1.APIGroupList, map[schema.GroupVersion]*metav1.APIResourceList, map[schema.GroupVersion]error, error)
 	}); ok {
-		var failed map[schema.GroupVersion]error
-		groups, _, failed, err = aggregated.GroupsAndMaybeResourcesWithContext(ctx)
+		groups, aggregatedResources, aggregatedFailures, err = aggregated.GroupsAndMaybeResourcesWithContext(ctx)
 		// ServerGroupsWithContext drops aggregated stale/failure details. Their
 		// missing resources must not become a successful absence assertion.
-		aggregatedIncomplete = len(failed) != 0
+		aggregatedIncomplete = len(aggregatedFailures) != 0
 	} else {
 		groups, err = dc.ServerGroupsWithContext(ctx)
 	}
@@ -79,20 +80,49 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 	if err != nil {
 		return inventoryErrorState(err), nil, false
 	}
-	if aggregatedIncomplete {
-		return operations.APIInventoryPartial, nil, false
-	}
-	if groups == nil || ctx.Err() != nil {
+	if groups == nil {
+		if aggregatedIncomplete {
+			return operations.APIInventoryPartial, nil, false
+		}
 		return operations.APIInventoryFailed, nil, false
 	}
 	versions := []string{"v1"} // Core discovery is queried independently of /apis.
+	versionBudget := map[string]bool{"v1": true}
+	failedGroups := map[string]bool{}
+	if aggregatedIncomplete {
+		if len(aggregatedFailures) > operations.MaxInventoryGroupVersions {
+			return operations.APIInventoryPartial, nil, true
+		}
+		for gv := range aggregatedFailures {
+			if ctx.Err() != nil {
+				return operations.APIInventoryFailed, nil, false
+			}
+			if !operations.ValidAPIResourceDescriptor(operations.APIResourceDescriptor{Group: gv.Group, Version: gv.Version, Resource: "test", Kind: "Test"}) {
+				return operations.APIInventoryFailed, nil, false
+			}
+			if !versionBudget[gv.String()] && len(versionBudget) >= operations.MaxInventoryGroupVersions {
+				return operations.APIInventoryPartial, nil, true
+			}
+			versionBudget[gv.String()] = true
+			failedGroups[gv.Group] = true
+		}
+	}
 	seenGroups := map[string]bool{}
 	for _, group := range groups.Groups {
+		if ctx.Err() != nil {
+			return operations.APIInventoryFailed, nil, false
+		}
 		// client-go includes the core group on some discovery paths.
-		if seenGroups[group.Name] || len(group.Versions) == 0 {
+		if seenGroups[group.Name] {
 			return operations.APIInventoryFailed, nil, false
 		}
 		seenGroups[group.Name] = true
+		if len(group.Versions) == 0 {
+			if aggregatedIncomplete && failedGroups[group.Name] {
+				continue // client-go removes stale versions, leaving empty groups.
+			}
+			return operations.APIInventoryFailed, nil, false
+		}
 		seenVersions := map[string]bool{}
 		for _, version := range group.Versions {
 			gv, err := schema.ParseGroupVersion(version.GroupVersion)
@@ -109,20 +139,36 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 			if slices.Contains(versions, version.GroupVersion) {
 				return operations.APIInventoryFailed, nil, false
 			}
-			if len(versions) >= operations.MaxInventoryGroupVersions {
+			if !versionBudget[version.GroupVersion] && len(versionBudget) >= operations.MaxInventoryGroupVersions {
 				return operations.APIInventoryPartial, nil, true
 			}
+			versionBudget[version.GroupVersion] = true
 			versions = append(versions, version.GroupVersion)
 		}
 	}
 	slices.Sort(versions)
 	resources := []operations.APIResourceDescriptor{}
 	state := operations.APIInventoryComplete
+	if aggregatedIncomplete {
+		state = operations.APIInventoryPartial
+	}
 	for _, version := range versions {
 		if ctx.Err() != nil {
 			return operations.APIInventoryFailed, nil, false
 		}
-		list, err := dc.ServerResourcesForGroupVersionWithContext(ctx, version)
+		var list *metav1.APIResourceList
+		var err error
+		if aggregatedIncomplete {
+			// Consume only healthy metadata already returned in this response.
+			// Stale/missing versions never trigger a fallback request.
+			gv, _ := schema.ParseGroupVersion(version)
+			if _, failed := aggregatedFailures[gv]; failed {
+				continue
+			}
+			list = aggregatedResources[gv]
+		} else {
+			list, err = dc.ServerResourcesForGroupVersionWithContext(ctx, version)
+		}
 		if ctx.Err() != nil {
 			return operations.APIInventoryFailed, nil, false
 		}

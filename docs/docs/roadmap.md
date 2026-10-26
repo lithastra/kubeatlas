@@ -243,6 +243,12 @@ and stopping at that error. Cancelled rounds expose no prefix, and recovery uses
 one new round without merging older evidence. Local discovery/recorder/analysis
 and client-go HTTP regressions preserve scope and unknown API assessments for
 partial evidence; request, descriptor and time budgets remain unchanged.
+Partial aggregated discovery now also retains valid metadata already returned
+for advertised versions outside the failure set, without per-version fallback
+requests. Stale/missing versions remain excluded and the round stays partial;
+failed and healthy versions share the same 64-version budget. Local client-go
+HTTP regressions cover current/stale core discovery and mixed response formats,
+with scope, descriptor caps and unknown API assessments preserved.
 CRD registration now follows selected endpoint/kind/scope/UID changes,
 with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
 handoff. Unserved CRDs stop collection; their evidence and graph data remain
