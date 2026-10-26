@@ -249,6 +249,12 @@ requests. Stale/missing versions remain excluded and the round stays partial;
 failed and healthy versions share the same 64-version budget. Local client-go
 HTTP regressions cover current/stale core discovery and mixed response formats,
 with scope, descriptor caps and unknown API assessments preserved.
+Startup resource selection now also validates canonical Kind/namespace scope and
+rejects malformed or duplicate target descriptors. Unsupported optional APIs are
+skipped; required ones fail selection, and discovery errors return no partial
+startup set. Local independent-shape and client-go HTTP regressions cover all 25
+canonical endpoints, cache reuse and custom endpoint compatibility. This remains
+advertised metadata validation, not effective permission or watch-success proof.
 CRD registration now follows selected endpoint/kind/scope/UID changes,
 with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
 handoff. Unserved CRDs stop collection; their evidence and graph data remain

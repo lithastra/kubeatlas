@@ -1155,6 +1155,42 @@ capture. Local client-go HTTP tests exercise aggregated v2, stale core versions
 and mixed legacy/aggregated responses, asserting only `/api` and `/apis` requests.
 These checks do not establish real-cluster discovery reliability or M4 acceptance.
 
+### M2 startup endpoint shape validation follow-up
+
+Startup selection now requires every canonical core endpoint to advertise the
+expected Kind and namespace scope as well as its exact resource name and existing
+list/watch verbs. Namespace, ClusterRole/ClusterRoleBinding, ClusterPolicy and
+ClusterPolicyReport endpoints are cluster scoped; the other canonical endpoints
+are namespaced. Unsupported optional endpoints are skipped, while unsupported
+required endpoints stop selection. This affects the existing standalone server
+and local-UI CLI startup filter; it does not add or broaden any watched endpoint.
+
+All requested targets, including custom GVRs, also require valid descriptor
+identity. Explicit row group/version fields must match the requested endpoint;
+omitted fields retain their existing discovery meaning. Missing/invalid Kind or
+duplicate target rows are errors, including identical duplicates and a duplicate
+after an initially supported row. These failures return no partial startup set,
+even if an earlier required endpoint passed. Unrelated rows and subresources do
+not expand the requested scope or invalidate a different target. Custom endpoints
+outside the canonical set keep shape compatibility without inferring a Kind or
+scope from the plural resource name.
+
+The existing group-version response cache still performs at most one discovery
+request per requested version, with the same 256-input cap, five-second per-query
+context and synchronous legacy-client compatibility. Cancellation is checked
+during target scanning. No retry, fallback, worker, Kubernetes object read, graph
+write, public field or GraphStore method is added. Passing this metadata filter
+does not establish effective authorization, successful list/watch delivery,
+complete collector coverage or optional API installation.
+
+Portable regressions independently specify all 25 canonical Kind/scope pairs,
+cover required/optional failure policy, malformed and duplicate metadata,
+same-version cache reuse, atomic selection failure and custom scope compatibility.
+Local client-go HTTP tests confirm exact metadata paths and one request per check
+without object reads. Existing injected discovery fixtures now carry realistic
+Kind/scope metadata instead of placeholder Kind values. These tests do not qualify
+real-cluster startup behavior, watch reliability or M4 acceptance.
+
 ### M2 member-scoped API inventory follow-up
 
 The production federation path now creates a discovery client from each
