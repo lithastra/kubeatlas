@@ -237,7 +237,13 @@ this is not installation or complete-inventory proof. Standalone background
 discovery now enumerates bounded API metadata across advertised versions,
 reports optional API presence, and identifies endpoints lacking captured
 registration evidence. Discovery errors, stale data, and limits cannot prove
-absence. CRD registration now follows selected endpoint/kind/scope/UID changes,
+absence. Sequential API inventory now retains validated descriptors from earlier
+completed requests when a later version request fails, marking the round partial
+and stopping at that error. Cancelled rounds expose no prefix, and recovery uses
+one new round without merging older evidence. Local discovery/recorder/analysis
+and client-go HTTP regressions preserve scope and unknown API assessments for
+partial evidence; request, descriptor and time budgets remain unchanged.
+CRD registration now follows selected endpoint/kind/scope/UID changes,
 with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
 handoff. Unserved CRDs stop collection; their evidence and graph data remain
 available without treating endpoint disappearance as deletion proof. Other still

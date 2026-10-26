@@ -1077,6 +1077,42 @@ run the aggregate under a role allowed to read only timestamps, scope, and kind,
 with no payload/identity/count access. These checks establish retained-metadata
 behavior, not real-cluster continuity, recovery, performance, or release acceptance.
 
+### M2 API inventory completed-prefix retention follow-up
+
+Sequential API inventory now retains this round's validated descriptors from
+earlier successful version requests when a later request returns a non-404 error.
+If at least one descriptor was confirmed, the round is `partial`; without any
+confirmed descriptor, the existing `permission_denied` or `failed` classification
+remains. The partial state does not encode the failing request's specific error
+category. Rows accompanying an error are excluded. Discovery stops at that error
+without retry, fallback or another version request. Existing 404 handling and
+malformed metadata/limit qualification remain unchanged.
+
+Cancellation is checked immediately after group and version discovery returns,
+before handling a success or error. A cancelled or expired context returns a
+failed empty round, even when the dependency returns rows or a permission error.
+The worker's existing lifetime check still prevents publication after member
+removal/shutdown. Aggregated stale/failure metadata retains its existing
+conservative early-partial behavior; it is not used to invent a completed prefix.
+
+Recording a new round replaces prior evidence. Only completed descriptors from
+the current round can survive its later failure; old successful rounds are not
+merged into fresh partial evidence. A subsequent complete round replaces the
+prefix normally. Partial descriptors remain available in the captured before/
+after inventory, but optional API assessments stay `unknown`, no unobserved-API
+list is inferred, and absence or complete collector coverage is not established.
+Raw errors and failed-response rows never enter the evidence or analysis response.
+Member scope, ownership and the existing freshness/stopped/limited checks remain.
+
+The five-minute interval, ten-second round deadline, 64-version and 256-descriptor
+limits are unchanged. This adds no worker, Kubernetes object read, graph query,
+public field or GraphStore method. Portable regressions cover each failure
+position, permission/transport errors, failed rows, cancellation during discovery,
+old-round replacement, member/standalone recording, real analysis capture and
+complete-round recovery. A loopback client-go HTTP test confirms retained metadata
+after a later 403 without extra requests or object reads. These local checks do
+not qualify real-cluster discovery reliability or M4 acceptance.
+
 ### M2 member-scoped API inventory follow-up
 
 The production federation path now creates a discovery client from each

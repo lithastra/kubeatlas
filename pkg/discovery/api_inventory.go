@@ -61,6 +61,7 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 	}
 	var groups *metav1.APIGroupList
 	var err error
+	var aggregatedIncomplete bool
 	if aggregated, ok := dc.(interface {
 		GroupsAndMaybeResourcesWithContext(context.Context) (*metav1.APIGroupList, map[schema.GroupVersion]*metav1.APIResourceList, map[schema.GroupVersion]error, error)
 	}); ok {
@@ -68,14 +69,18 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 		groups, _, failed, err = aggregated.GroupsAndMaybeResourcesWithContext(ctx)
 		// ServerGroupsWithContext drops aggregated stale/failure details. Their
 		// missing resources must not become a successful absence assertion.
-		if err == nil && len(failed) != 0 {
-			return operations.APIInventoryPartial, nil, false
-		}
+		aggregatedIncomplete = len(failed) != 0
 	} else {
 		groups, err = dc.ServerGroupsWithContext(ctx)
 	}
+	if ctx.Err() != nil {
+		return operations.APIInventoryFailed, nil, false
+	}
 	if err != nil {
 		return inventoryErrorState(err), nil, false
+	}
+	if aggregatedIncomplete {
+		return operations.APIInventoryPartial, nil, false
 	}
 	if groups == nil || ctx.Err() != nil {
 		return operations.APIInventoryFailed, nil, false
@@ -118,8 +123,16 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 			return operations.APIInventoryFailed, nil, false
 		}
 		list, err := dc.ServerResourcesForGroupVersionWithContext(ctx, version)
+		if ctx.Err() != nil {
+			return operations.APIInventoryFailed, nil, false
+		}
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
+				// Keep only this round's completed metadata. Rows accompanying the
+				// failed response are untrusted, and no later request is started.
+				if len(resources) != 0 {
+					return operations.APIInventoryPartial, resources, false
+				}
 				return inventoryErrorState(err), nil, false
 			}
 			state = operations.APIInventoryPartial
