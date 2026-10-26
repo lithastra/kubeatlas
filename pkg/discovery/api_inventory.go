@@ -190,7 +190,12 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 			continue
 		}
 		gv, _ := schema.ParseGroupVersion(version)
-		seen := map[string]bool{}
+		start := len(resources)
+		// Bound candidate identities by the remaining descriptor budget. Count
+		// their occurrences separately so invalid rows and late duplicates cannot
+		// leave an arbitrary first descriptor in the captured inventory.
+		seen := map[string]uint8{}
+		resourceLimited := false
 		for _, resource := range list.APIResources {
 			if ctx.Err() != nil {
 				return operations.APIInventoryFailed, nil, false
@@ -199,15 +204,47 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 				continue
 			} // Subresources are not independent graph objects.
 			r := operations.APIResourceDescriptor{Group: gv.Group, Version: gv.Version, Resource: resource.Name, Kind: resource.Kind, Namespaced: resource.Namespaced, List: slices.Contains(resource.Verbs, "list"), Watch: slices.Contains(resource.Verbs, "watch")}
-			if !operations.ValidAPIResourceDescriptor(r) || seen[r.Resource] || (resource.Group != "" && resource.Group != gv.Group) || (resource.Version != "" && resource.Version != gv.Version) {
+			if !operations.ValidAPIResourceDescriptor(r) || (resource.Group != "" && resource.Group != gv.Group) || (resource.Version != "" && resource.Version != gv.Version) {
 				state = operations.APIInventoryPartial
 				continue
 			}
-			seen[r.Resource] = true
-			if len(resources) >= operations.MaxInventoryResources {
-				return operations.APIInventoryPartial, resources, true
+			if _, exists := seen[r.Resource]; exists {
+				continue
 			}
+			if len(resources) >= operations.MaxInventoryResources {
+				resourceLimited = true
+				break
+			}
+			seen[r.Resource] = 0
 			resources = append(resources, r)
+		}
+		// Scan the whole returned list even after candidate selection hits the
+		// cap, without retaining additional names or starting another request.
+		for _, resource := range list.APIResources {
+			if ctx.Err() != nil {
+				return operations.APIInventoryFailed, nil, false
+			}
+			if count, exists := seen[resource.Name]; exists && count < 2 {
+				seen[resource.Name] = count + 1
+			}
+		}
+		end := len(resources)
+		kept := start
+		for _, r := range resources[start:end] {
+			if seen[r.Resource] != 1 {
+				state = operations.APIInventoryPartial
+				continue
+			}
+			resources[kept] = r
+			kept++
+		}
+		clear(resources[kept:end])
+		resources = resources[:kept]
+		if ctx.Err() != nil {
+			return operations.APIInventoryFailed, nil, false
+		}
+		if resourceLimited {
+			return operations.APIInventoryPartial, resources, true
 		}
 	}
 	if ctx.Err() != nil {

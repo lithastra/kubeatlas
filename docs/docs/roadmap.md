@@ -261,6 +261,14 @@ list/watch. Local scope, recovery, fake-informer and client-go HTTP regressions
 preserve failed qualification, prior write gaps and retained graph data. The
 existing discovery deadline, polling cadence and no-client compatibility remain;
 this does not qualify installation, watch reliability or M4 acceptance.
+API inventory now excludes every descriptor for a duplicated endpoint within a
+returned group/version, including malformed duplicates in either order and late
+duplicates beyond candidate selection's descriptor cap. Independent valid rows
+remain available in partial evidence. Both sequential and partial aggregated
+discovery preserve scoped captures, unknown optional API assessments and recovery
+from a fresh round. Candidate identity storage remains bounded by the existing
+256-descriptor budget; validation uses the existing round deadline and adds no
+request. Capped rounds remain limited even if exclusions reduce the retained set.
 CRD registration now follows selected endpoint/kind/scope/UID changes,
 with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
 handoff. Unserved CRDs stop collection; their evidence and graph data remain

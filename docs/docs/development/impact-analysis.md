@@ -1228,6 +1228,37 @@ collectors, and shutdown still joins them. Local client-go HTTP tests assert one
 exact discovery read without object requests. Real-cluster Gatekeeper behavior
 and M4 acceptance remain pending.
 
+### M2 API inventory endpoint identity follow-up
+
+API inventory no longer retains an arbitrary first descriptor when a discovery
+response contains repeated top-level resource names for the same group/version.
+Every candidate for that endpoint is excluded, even for identical duplicates or
+when the other row has an invalid Kind or inconsistent explicit group/version.
+Both row orders receive the same qualification. Subresources remain excluded;
+the same resource name in another group/version is independent. Other valid
+descriptors remain available, and the round is partial rather than proof of API
+presence, absence or complete observation.
+
+Selection retains at most the remaining portion of the existing 256-descriptor
+budget. A second contextual scan of that returned list counts only selected
+names, saturating at two occurrences, then removes ambiguous candidates. This
+also detects duplicates after selection reaches the cap without retaining
+additional identities. A capped round stays limited, starts no later version
+request, and does not backfill slots freed by exclusions. Cancellation discards
+the round. The 64-version budget, ten-second round deadline and five-minute
+worker interval remain unchanged; no object read, fallback, hot-path query or
+public schema change is added.
+
+Portable regressions cover sequential and partial aggregated discovery, member
+and standalone scope, Kind/scope/verb/identity conflicts, invalid rows before or
+after valid rows, duplicate counts beyond a byte counter's range, subresources,
+independent names and late duplicates after the descriptor cap. Recorded impact
+captures preserve only the scoped current round and leave optional API
+assessments unknown for partial evidence. A later complete response replaces the
+capture without merging older rows. Local HTTP tests use the real client-go
+parser and assert exact discovery paths without object requests. These checks
+do not establish real-cluster discovery behavior or M4 acceptance.
+
 ### M2 member-scoped API inventory follow-up
 
 The production federation path now creates a discovery client from each
