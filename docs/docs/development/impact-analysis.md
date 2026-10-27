@@ -241,6 +241,25 @@ a diamond/cycle graph, an independent shortest-distance relaxation oracle,
 exact-limit and dense-graph cases, UID replacement, synthetic Secret canaries,
 and cancellation checks. These exercise the pure core only, not all IA checks.
 
+The builtin Ingress routing extractor now also emits `ROUTES_TO` for
+`spec.defaultBackend.service.name`, alongside rule-path Service backends. Both
+paths use one target-ID deduplication set, including when ports differ. Targets
+remain in the Ingress namespace and cluster. A resource-only default backend is
+not guessed to be a Service; missing or unusable Service names emit no target.
+This adds a declaration to the graph without looking up backend objects,
+probing traffic or adding a watch, edge type or public response field.
+
+Same-UID/version informer replay still re-extracts edges, so an Ingress stored
+before this support can acquire its missing default-backend relationship without
+another resource write/history event. A failed edge write records the existing
+sticky persistence gap; later replay can restore the edge without clearing that
+gap or sending a false update for the failed write. Missing Services remain
+dangling relationships with unresolved/lower-bound impact qualification until
+the target is observed. Portable extractor and real-registry callback tests
+cover member/standalone scope, both history modes, deduplication, failed writes,
+retained receipts and forward/reverse memory-backed impact paths. Controller
+acceptance, actual traffic and real-cluster behavior remain unverified.
+
 The second M1 slice adds the optional `graph.ImpactSnapshotter` capability and
 `analysis.AnalyzeStoredImpact`. It does not change GraphStore v2's method set or
 the legacy `Snapshot`/`SnapshotMetadata` methods. Both built-in stores now supply

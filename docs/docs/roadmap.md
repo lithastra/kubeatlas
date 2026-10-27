@@ -88,6 +88,12 @@ counts remain unchanged; later valid source versions restore explanation.
 Portable regressions cover seven builtin consumers, both traversal directions,
 member/standalone scope and memory projection parity. This is validation of
 retained reference fields, not full Kubernetes schema or deployment acceptance.
+Ingress collection now also derives ROUTES_TO from defaultBackend Service
+references, deduplicated with rule backends. Same-version delivery fills the
+previously missing edge without rewriting the resource or duplicating history;
+failed edge writes retain gap evidence and later replay can recover. Missing
+Service targets remain unresolved rather than synthesized, with local scoped
+forward/reverse impact regressions. This does not establish effective routing.
 M2 records per-resource-type
 initial delivery, list/watch failures, and processing/write gaps, and now
 connects that evidence to internal analysis with before/after continuity checks.

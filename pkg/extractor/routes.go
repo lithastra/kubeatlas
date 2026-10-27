@@ -9,7 +9,8 @@ import (
 // RoutesExtractor emits ROUTES_TO edges from Ingress, HTTPRoute, and
 // OpenShift Route resources to the backend Services they target.
 //
-//   - Ingress: spec.rules[].http.paths[].backend.service.name
+//   - Ingress: spec.defaultBackend.service.name and
+//     spec.rules[].http.paths[].backend.service.name
 //   - HTTPRoute: spec.rules[].backendRefs[].name (kind defaults to
 //     Service; backendRefs[].namespace overrides the route's ns).
 //   - Route (route.openshift.io/v1): spec.to.{kind,name} and
@@ -39,20 +40,23 @@ func ingressEdges(r graph.Resource) []graph.Edge {
 	ns := r.Namespace
 	var edges []graph.Edge
 	seen := make(map[string]struct{})
+	emit := func(name string) {
+		if name == "" {
+			return
+		}
+		to := graph.Resource{Kind: "Service", Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
+		if _, ok := seen[to]; ok {
+			return
+		}
+		seen[to] = struct{}{}
+		edges = append(edges, graph.Edge{From: from, To: to, Type: graph.EdgeTypeRoutesTo})
+	}
+	emit(nestedString(r.Raw, "spec", "defaultBackend", "service", "name"))
 	for _, rule := range nestedSlice(r.Raw, "spec", "rules") {
 		rmap, _ := rule.(map[string]any)
 		for _, p := range nestedSlice(rmap, "http", "paths") {
 			pmap, _ := p.(map[string]any)
-			name := nestedString(pmap, "backend", "service", "name")
-			if name == "" {
-				continue
-			}
-			to := graph.Resource{Kind: "Service", Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
-			if _, ok := seen[to]; ok {
-				continue
-			}
-			seen[to] = struct{}{}
-			edges = append(edges, graph.Edge{From: from, To: to, Type: graph.EdgeTypeRoutesTo})
+			emit(nestedString(pmap, "backend", "service", "name"))
 		}
 	}
 	return edges
