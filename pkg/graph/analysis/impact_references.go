@@ -266,8 +266,10 @@ func (p *impactPodReferences) containers(ctx context.Context, spec map[string]an
 					entryPath += "/valueFrom"
 					refs = []string{"configMapKeyRef", "secretKeyRef"}
 				}
+				environmentSources := 0
 				for k, ref := range refs {
 					if value, present := object[ref]; present {
+						environmentSources++
 						kind := "ConfigMap"
 						if k == 1 {
 							kind = "Secret"
@@ -276,6 +278,9 @@ func (p *impactPodReferences) containers(ctx context.Context, spec map[string]an
 							return err
 						}
 					}
+				}
+				if environmentSources > 1 {
+					p.malformed = true
 				}
 			}
 		}

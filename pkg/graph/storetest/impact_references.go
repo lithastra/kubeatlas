@@ -109,6 +109,16 @@ func runImpactReferenceProjection(t *testing.T, factory Factory) {
 			fixtureMap(mounts[0])["subPath"] = "subpath-canary"
 			fixtureMap(mounts[0])["subPathExpr"] = "expression-canary"
 		}},
+		{"ambiguous envFrom source", "malformed_reference_fields", func(r *graph.Resource) {
+			containers := fixtureList(fixtureMap(r.Raw["spec"])["containers"])
+			refs := fixtureList(fixtureMap(containers[0])["envFrom"])
+			fixtureMap(refs[0])["secretRef"] = map[string]any{"name": "credentials", "optional": true}
+		}},
+		{"ambiguous env key source", "malformed_reference_fields", func(r *graph.Resource) {
+			containers := fixtureList(fixtureMap(r.Raw["spec"])["containers"])
+			env := fixtureList(fixtureMap(containers[0])["env"])
+			fixtureMap(fixtureMap(env[1])["valueFrom"])["secretKeyRef"] = map[string]any{"name": "credentials", "key": "key-canary"}
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := factory(t)

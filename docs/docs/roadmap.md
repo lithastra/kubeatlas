@@ -80,7 +80,10 @@ M3 clients/reports, and M4 candidate acceptance. M1 currently implements the
 internal core, consistent memory/PostgreSQL projections, reference evidence,
 and a separate bounded RBAC association facet. Reference explanation now also
 qualifies conflicting modeled volume sources, projected-source alternatives and
-nonempty subPath/subPathExpr combinations as unknown. Existing relationships and
+nonempty subPath/subPathExpr combinations as unknown. The same rule now applies
+to an envFrom entry with both ConfigMap/Secret sources or a valueFrom entry with
+both modeled key sources. Separate environment entries retain their own optional
+flags and container-restart classification. Existing relationships and
 counts remain unchanged; later valid source versions restore explanation.
 Portable regressions cover seven builtin consumers, both traversal directions,
 member/standalone scope and memory projection parity. This is validation of

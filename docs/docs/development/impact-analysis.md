@@ -382,6 +382,18 @@ and subsequent-version recovery. The shared store contract includes the three
 conflict classes for both backends; native PostgreSQL and real-cluster acceptance
 remain separate from the local short-mode results.
 
+Environment reference interpretation applies the same atomic qualification to
+an `envFrom` entry containing both `configMapRef` and `secretRef`, or a
+`valueFrom` entry containing both `configMapKeyRef` and `secretKeyRef`.
+Definitive uses from that consumer stay unavailable until a valid source version
+is captured. Separate entries keep their own required/optional flags and the
+existing container-restart classification. Checks cover the existing ordinary,
+init and ephemeral container arrays without copying literal environment values,
+reference keys, prefixes or unmodeled sources. Projection shapes, budgets and
+Secret handling remain unchanged. Pure/memory parity, both directions/scopes,
+retained relationships and subsequent-version recovery share the volume
+ambiguity oracle; both conflict classes also enter the shared store contract.
+
 The fifth M1 slice adds the independent `authorization` facet to the same pure
 result. It reuses the single impact projection, without another store query or
 reading role rules, binding payloads, tokens, or Kubernetes objects. Its finite

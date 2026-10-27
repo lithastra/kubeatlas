@@ -28,71 +28,76 @@ func TestImpactReferencesAmbiguousVolumesRemainUnknown(t *testing.T) {
 				for _, mode := range []string{"config-secret", "config-claim", "config-projected", "secret-claim", "secret-projected", "claim-projected", "projected-source", "mount-paths"} {
 					t.Run(fmt.Sprintf("%s/cluster=%s/%s/%s", schema.kind, cluster, relation, mode), func(t *testing.T) {
 						spec := referenceAmbiguitySpec(mode)
-						source := referenceSource(t, schema.kind, schema.version, spec)
-						source.ClusterID = cluster
-						g := referenceAmbiguityGraph(source)
-						store := memory.New()
-						for _, row := range g.Resources {
-							if err := store.UpsertResource(context.Background(), row); err != nil {
-								t.Fatal(err)
-							}
-						}
-						for _, edge := range g.Edges {
-							if err := store.UpsertEdge(context.Background(), edge); err != nil {
-								t.Fatal(err)
-							}
-						}
-						original, err := json.Marshal(source.Raw)
-						if err != nil {
-							t.Fatal(err)
-						}
-						root, wantCount := source.ID(), 3
-						if relation == analysis.ImpactDependents {
-							root, wantCount = g.Resources[1].ID(), 1
-						}
-						opts := analysis.ImpactOptions{ClusterID: cluster, Relation: relation}
-						pure := requireImpact(t, g, root, opts)
-						stored, err := analysis.AnalyzeStoredImpact(context.Background(), store, root, opts, graph.ImpactSnapshotOptions{ClusterID: cluster})
-						if err != nil || !reflect.DeepEqual(stored, pure) {
-							t.Fatal("stored projection changed ambiguity qualification", stored, pure, err)
-						}
-						if pure.Counts.Total != wantCount || len(pure.ReferenceEvidence) != wantCount {
-							t.Fatal("ambiguity removed stored relationships or synthesized new ones", pure.Counts, pure.ReferenceEvidence)
-						}
-						for _, evidence := range pure.ReferenceEvidence {
-							if evidence.Status != "unknown" || evidence.Reason != "malformed_reference_fields" || len(evidence.Uses) != 0 {
-								t.Fatal("ambiguous volume justified definitive use/defaults", evidence)
-							}
-						}
-						body, err := json.Marshal(stored)
-						if err != nil || strings.Contains(string(body), "canary") {
-							t.Fatal("source or Secret payload escaped qualification", string(body), err)
-						}
-						after, err := json.Marshal(source.Raw)
-						retained, readErr := store.GetResource(context.Background(), source.ID())
-						if err != nil || readErr != nil || string(after) != string(original) || !reflect.DeepEqual(retained.Raw, source.Raw) {
-							t.Fatal("ambiguity handling rewrote retained source", err, readErr)
-						}
-						// Qualification is per captured source version. A later valid
-						// version restores explanation without changing stored edges.
-						fixed := referenceSource(t, schema.kind, schema.version, `{"containers":[{"envFrom":[{"configMapRef":{"name":"settings"}},{"secretRef":{"name":"credentials"}}]}],"volumes":[{"name":"claim","persistentVolumeClaim":{"claimName":"data"}}]}`)
-						fixed.ClusterID, fixed.ResourceVersion = cluster, "18"
-						fixed.Raw["metadata"].(map[string]any)["resourceVersion"] = "18"
-						if err := store.UpsertResource(context.Background(), fixed); err != nil {
-							t.Fatal(err)
-						}
-						recovered, err := analysis.AnalyzeStoredImpact(context.Background(), store, root, opts, graph.ImpactSnapshotOptions{ClusterID: cluster})
-						if err != nil || recovered.Counts.Total != wantCount || len(recovered.ReferenceEvidence) != wantCount {
-							t.Fatal("fresh source version changed stored traversal", recovered, err)
-						}
-						for _, evidence := range recovered.ReferenceEvidence {
-							if evidence.Status != "version_bound" || evidence.SourceResourceVersion != "18" || len(evidence.Uses) == 0 {
-								t.Fatal("prior ambiguity poisoned a new source version", evidence)
-							}
-						}
+						assertReferenceAmbiguity(t, schema.kind, schema.version, cluster, relation, spec)
 					})
 				}
 			}
+		}
+	}
+}
+
+func assertReferenceAmbiguity(t *testing.T, kind, version, cluster string, relation analysis.ImpactRelation, spec string) {
+	t.Helper()
+	source := referenceSource(t, kind, version, spec)
+	source.ClusterID = cluster
+	g := referenceAmbiguityGraph(source)
+	store := memory.New()
+	for _, row := range g.Resources {
+		if err := store.UpsertResource(context.Background(), row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, edge := range g.Edges {
+		if err := store.UpsertEdge(context.Background(), edge); err != nil {
+			t.Fatal(err)
+		}
+	}
+	original, err := json.Marshal(source.Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, wantCount := source.ID(), 3
+	if relation == analysis.ImpactDependents {
+		root, wantCount = g.Resources[1].ID(), 1
+	}
+	opts := analysis.ImpactOptions{ClusterID: cluster, Relation: relation}
+	pure := requireImpact(t, g, root, opts)
+	stored, err := analysis.AnalyzeStoredImpact(context.Background(), store, root, opts, graph.ImpactSnapshotOptions{ClusterID: cluster})
+	if err != nil || !reflect.DeepEqual(stored, pure) {
+		t.Fatal("stored projection changed ambiguity qualification", stored, pure, err)
+	}
+	if pure.Counts.Total != wantCount || len(pure.ReferenceEvidence) != wantCount {
+		t.Fatal("ambiguity removed stored relationships or synthesized new ones", pure.Counts, pure.ReferenceEvidence)
+	}
+	for _, evidence := range pure.ReferenceEvidence {
+		if evidence.Status != "unknown" || evidence.Reason != "malformed_reference_fields" || len(evidence.Uses) != 0 {
+			t.Fatal("ambiguous source justified definitive use/defaults", evidence)
+		}
+	}
+	body, err := json.Marshal(stored)
+	if err != nil || strings.Contains(string(body), "canary") {
+		t.Fatal("source or Secret payload escaped qualification", string(body), err)
+	}
+	after, err := json.Marshal(source.Raw)
+	retained, readErr := store.GetResource(context.Background(), source.ID())
+	if err != nil || readErr != nil || string(after) != string(original) || !reflect.DeepEqual(retained.Raw, source.Raw) {
+		t.Fatal("ambiguity handling rewrote retained source", err, readErr)
+	}
+	// Qualification is per captured source version. A later valid
+	// version restores explanation without changing stored edges.
+	fixed := referenceSource(t, kind, version, `{"containers":[{"envFrom":[{"configMapRef":{"name":"settings"}},{"secretRef":{"name":"credentials"}}]}],"volumes":[{"name":"claim","persistentVolumeClaim":{"claimName":"data"}}]}`)
+	fixed.ClusterID, fixed.ResourceVersion = cluster, "18"
+	fixed.Raw["metadata"].(map[string]any)["resourceVersion"] = "18"
+	if err := store.UpsertResource(context.Background(), fixed); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := analysis.AnalyzeStoredImpact(context.Background(), store, root, opts, graph.ImpactSnapshotOptions{ClusterID: cluster})
+	if err != nil || recovered.Counts.Total != wantCount || len(recovered.ReferenceEvidence) != wantCount {
+		t.Fatal("fresh source version changed stored traversal", recovered, err)
+	}
+	for _, evidence := range recovered.ReferenceEvidence {
+		if evidence.Status != "version_bound" || evidence.SourceResourceVersion != "18" || len(evidence.Uses) == 0 {
+			t.Fatal("prior ambiguity poisoned a new source version", evidence)
 		}
 	}
 }
