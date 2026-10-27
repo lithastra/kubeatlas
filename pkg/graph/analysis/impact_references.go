@@ -298,6 +298,9 @@ func (p *impactPodReferences) containers(ctx context.Context, spec map[string]an
 					if !ok {
 						p.malformed = true
 					}
+					if subPath && text != "" {
+						p.malformed = true // subPath and subPathExpr are alternatives.
+					}
 					subPath = subPath || text != ""
 				}
 			}
@@ -323,23 +326,28 @@ func (p *impactPodReferences) volumes(ctx context.Context, spec map[string]any, 
 		}
 		seen[name] = true
 		path := prefix + "/" + strconv.Itoa(i)
+		volumeSources := 0
 		for _, ref := range []struct{ field, kind, name string }{
 			{"configMap", "ConfigMap", "name"}, {"secret", "Secret", "secretName"}, {"persistentVolumeClaim", "PersistentVolumeClaim", "claimName"},
 		} {
 			if value, present := volume[ref.field]; present {
+				volumeSources++
 				if err := p.volumeUse(ctx, p.object(value), ref.kind, ref.name, path+"/"+ref.field, name); err != nil {
 					return err
 				}
 			}
 		}
 		if value, present := volume["projected"]; present {
+			volumeSources++
 			for j, entry := range p.array(p.object(value), "sources") {
 				if err := p.reader.charge(ctx, 64); err != nil {
 					return err
 				}
 				object := p.object(entry)
+				projectionSources := 0
 				for k, ref := range []string{"configMap", "secret"} {
 					if value, present := object[ref]; present {
+						projectionSources++
 						kind := "ConfigMap"
 						if k == 1 {
 							kind = "Secret"
@@ -349,7 +357,13 @@ func (p *impactPodReferences) volumes(ctx context.Context, spec map[string]any, 
 						}
 					}
 				}
+				if projectionSources > 1 {
+					p.malformed = true
+				}
 			}
+		}
+		if volumeSources > 1 {
+			p.malformed = true
 		}
 	}
 	return nil

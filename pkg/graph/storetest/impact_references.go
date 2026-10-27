@@ -94,6 +94,21 @@ func runImpactReferenceProjection(t *testing.T, factory Factory) {
 			mounts := fixtureList(fixtureMap(containers[0])["volumeMounts"])
 			fixtureMap(mounts[0])["subPath"] = map[string]any{"payload": "path-canary"}
 		}},
+		{"ambiguous volume source", "malformed_reference_fields", func(r *graph.Resource) {
+			volumes := fixtureList(fixtureMap(r.Raw["spec"])["volumes"])
+			fixtureMap(volumes[0])["secret"] = map[string]any{"secretName": "credentials"}
+		}},
+		{"ambiguous projected source", "malformed_reference_fields", func(r *graph.Resource) {
+			volumes := fixtureList(fixtureMap(r.Raw["spec"])["volumes"])
+			sources := fixtureList(fixtureMap(fixtureMap(volumes[2])["projected"])["sources"])
+			fixtureMap(sources[0])["secret"] = map[string]any{"name": "credentials"}
+		}},
+		{"ambiguous mount paths", "malformed_reference_fields", func(r *graph.Resource) {
+			containers := fixtureList(fixtureMap(r.Raw["spec"])["containers"])
+			mounts := fixtureList(fixtureMap(containers[0])["volumeMounts"])
+			fixtureMap(mounts[0])["subPath"] = "subpath-canary"
+			fixtureMap(mounts[0])["subPathExpr"] = "expression-canary"
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := factory(t)

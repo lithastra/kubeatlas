@@ -78,7 +78,14 @@ access, and the reference-only Secret boundary remain unchanged.
 Implementation proceeds through M0 contract, M1 core, M2 observation/API,
 M3 clients/reports, and M4 candidate acceptance. M1 currently implements the
 internal core, consistent memory/PostgreSQL projections, reference evidence,
-and a separate bounded RBAC association facet. M2 records per-resource-type
+and a separate bounded RBAC association facet. Reference explanation now also
+qualifies conflicting modeled volume sources, projected-source alternatives and
+nonempty subPath/subPathExpr combinations as unknown. Existing relationships and
+counts remain unchanged; later valid source versions restore explanation.
+Portable regressions cover seven builtin consumers, both traversal directions,
+member/standalone scope and memory projection parity. This is validation of
+retained reference fields, not full Kubernetes schema or deployment acceptance.
+M2 records per-resource-type
 initial delivery, list/watch failures, and processing/write gaps, and now
 connects that evidence to internal analysis with before/after continuity checks.
 Requirements are independent of query matches; dynamic source scope remains

@@ -360,6 +360,28 @@ add missing edges.
 Image-pull, Ingress, ServiceAccount, and Gateway Secret-reference details,
 volumeDevices, and custom resource schemas are not interpreted by this slice.
 
+Reference interpretation also rejects conflicting volume alternatives already
+visible in that allowlist. A volume with more than one of `configMap`, `secret`,
+`persistentVolumeClaim` and `projected`, a single projected-source entry with
+both `configMap` and `secret`, or a mount with both nonempty `subPath` and
+`subPathExpr` cannot justify definitive use or refresh semantics. As with other
+malformed reference fields, every explanation from that captured consumer is
+`unknown` with `malformed_reference_fields` and no uses. Stored edges, traversal
+paths and counts remain intact; interpretation never repairs retained data or
+adds a relationship. A later valid source version restores version-bound
+explanation without an additional target or Kubernetes read.
+
+Different entries in `projected.sources` may still provide different sources,
+and one nonempty mount alternative (or both empty) retains the existing mount
+classification. Unmodeled alternatives are not copied or validated; this is not
+a complete Kubernetes schema validator. Projection shapes, Secret reference-only
+handling, field/byte budgets and the public response schema remain unchanged.
+Portable regressions cover all seven supported consumers, member/standalone
+scope, both query directions, pure/memory-projected result parity, retained data
+and subsequent-version recovery. The shared store contract includes the three
+conflict classes for both backends; native PostgreSQL and real-cluster acceptance
+remain separate from the local short-mode results.
+
 The fifth M1 slice adds the independent `authorization` facet to the same pure
 result. It reuses the single impact projection, without another store query or
 reading role rules, binding payloads, tokens, or Kubernetes objects. Its finite
