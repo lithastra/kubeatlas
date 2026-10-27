@@ -450,6 +450,34 @@ remain outside this slice. Old stored edges remain retained pending separate
 ownership-backed repair. Native Kubernetes/PostgreSQL and M4 acceptance remain
 separate gates.
 
+Gateway listener TLS `certificateRefs` now require omitted or empty group for
+core Secret references, following the
+[Gateway API SecretObjectReference definition](https://github.com/kubernetes-sigs/gateway-api/blob/main/apis/v1/object_reference_types.go).
+The literal group name `core` and other nonempty groups cannot emit a core Secret
+edge or cause the callback to create a local placeholder. Supported defaulted
+and explicit references share target-ID deduplication across listeners, retaining
+local/explicit namespace and member scope. Non-Secret kinds remain outside this
+collector's certificate model.
+
+A wrong-typed group, including null, returns the earlier confirmed certificate
+prefix with an extraction error and stops later certificates/listeners.
+Independent builtin extraction continues under an active parent. The group
+error contains no input values. Local callbacks cover both history modes and
+member/standalone scopes, qualified source receipts, new-version recovery and
+unchanged replay. Confirmed placeholder writes can remain after an edge-write
+failure; recovery retains those writes and prior gaps without duplicate source
+history or compensating cleanup.
+
+Secret targets are always reference-only: no Raw, labels, UID, resource version,
+API version or owner metadata is copied from a Secret object. Tests assert exact
+placeholder shape, no Secret history events, scoped forward/reverse paths and
+no ignored certificate values in serialized impact results. This adds no Secret
+reads/list/watch and proves neither Secret existence nor ReferenceGrant,
+controller acceptance, TLS validity or working traffic. Gateway reference-field
+explanations and complete schema validation are not added. Old edges and
+placeholders remain retained; native Kubernetes/PostgreSQL and M4 acceptance
+remain separate gates.
+
 Service and NetworkPolicy label equality requires a key to be present. For
 example, `flag: ""` matches a Pod or workload template carrying an empty `flag`
 label, but not one with no `flag` key. The same rule applies to NetworkPolicy

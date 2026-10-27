@@ -107,6 +107,13 @@ retain earlier backends and independent parent extraction with a gap. Portable
 parent/backend regressions cover scope/history modes, deduplication, failed
 writes, missing targets and forward/reverse recovery. Legacy custom-kind backend
 modeling remains unchanged; general group-qualified identity is still unverified.
+Gateway certificate references now likewise require omitted or empty group to
+identify a core Secret. The literal group name core and other nonempty groups
+cannot create local Secret references. Wrong-typed groups retain the confirmed
+certificate prefix and independent relationships with a gap. Portable callbacks
+verify scoped reference-only placeholders, retained writes after edge failure,
+history deduplication and impact paths without Secret payload or existence claims.
+Old edges/placeholders remain retained and no Secret list/watch is added.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another

@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"context"
+	"errors"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
@@ -17,7 +18,8 @@ import (
 //   - spec.imagePullSecrets[].name
 //   - ServiceAccount.secrets[] / imagePullSecrets[]
 //   - Ingress.tls[].secretName
-//   - Gateway listener TLS certificateRefs whose kind is Secret
+//   - Gateway listener TLS certificateRefs whose kind defaults to Secret
+//     and whose group is omitted or empty (the core API group)
 type SecretExtractor struct{}
 
 func (SecretExtractor) Type() graph.EdgeType { return graph.EdgeTypeUsesSecret }
@@ -89,14 +91,23 @@ func (SecretExtractor) Extract(_ context.Context, r graph.Resource, _ graph.Reso
 			for _, ref := range nestedSlice(listenerMap, "tls", "certificateRefs") {
 				refMap, _ := ref.(map[string]any)
 				kind := nestedString(refMap, "kind")
-				group := nestedString(refMap, "group")
-				if (kind == "" || kind == "Secret") && (group == "" || group == "core") {
-					ns := nestedString(refMap, "namespace")
-					if ns == "" {
-						ns = r.Namespace
-					}
-					edges = append(edges, emit(ns, nestedString(refMap, "name"))...)
+				if kind != "" && kind != "Secret" {
+					continue
 				}
+				if value, present := refMap["group"]; present {
+					group, ok := value.(string)
+					if !ok {
+						return edges, errors.New("SecretExtractor: Gateway certificate group must be a string")
+					}
+					if group != "" {
+						continue
+					}
+				}
+				ns := nestedString(refMap, "namespace")
+				if ns == "" {
+					ns = r.Namespace
+				}
+				edges = append(edges, emit(ns, nestedString(refMap, "name"))...)
 			}
 		}
 	}
