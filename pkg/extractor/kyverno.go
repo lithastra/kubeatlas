@@ -61,7 +61,8 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 			// mutate/generate.
 			continue
 		}
-		for _, desc := range kyvernoMatchDescriptors(rule) {
+		descriptors, selectorErr := kyvernoMatchDescriptors(rule)
+		for _, desc := range descriptors {
 			namespaces := desc.namespaces
 			if r.Kind == "Policy" {
 				// A namespaced Policy only ever applies in its own
@@ -86,7 +87,7 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 						return nil, ctx.Err()
 					}
 					if err != nil {
-						return edges, errors.Join(reportErr, err)
+						return edges, errors.Join(reportErr, selectorErr, err)
 					}
 					for _, m := range matched {
 						to := m.ID()
@@ -103,6 +104,9 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 				}
 			}
 		}
+		if selectorErr != nil {
+			return edges, errors.Join(reportErr, selectorErr)
+		}
 	}
 	return edges, reportErr
 }
@@ -117,8 +121,9 @@ type kyvernoDescriptor struct {
 // kyvernoMatchDescriptors flattens rule.match.any[] and rule.match.all[]
 // into selectors. any/all differ in admission semantics, but for the
 // graph's "which resources does this policy touch" view the union is
-// the right over-approximation.
-func kyvernoMatchDescriptors(rule map[string]any) []kyvernoDescriptor {
+// the right over-approximation. A malformed label selector stops at its
+// descriptor, retaining the validated prefix without dropping conditions.
+func kyvernoMatchDescriptors(rule map[string]any) ([]kyvernoDescriptor, error) {
 	var out []kyvernoDescriptor
 	for _, group := range []string{"any", "all"} {
 		for _, entryAny := range nestedSlice(rule, "match", group) {
@@ -127,14 +132,18 @@ func kyvernoMatchDescriptors(rule map[string]any) []kyvernoDescriptor {
 			if len(kinds) == 0 {
 				continue
 			}
+			labels, err := selectorStringMap(entry, "resources", "selector", "matchLabels")
+			if err != nil {
+				return out, fmt.Errorf("KyvernoExtractor: %w", err)
+			}
 			out = append(out, kyvernoDescriptor{
 				kinds:      kinds,
 				namespaces: stringSlice(nestedSlice(entry, "resources", "namespaces")),
-				labels:     nestedStringMap(entry, "resources", "selector", "matchLabels"),
+				labels:     labels,
 			})
 		}
 	}
-	return out
+	return out, nil
 }
 
 // normalizeKinds reduces Kyverno kind entries (which may be a bare Kind

@@ -427,6 +427,27 @@ delete retained relationships. Local real-registry callback and impact tests
 cover both member/standalone scopes and history modes; these are not native
 Kubernetes or PostgreSQL acceptance evidence.
 
+Gatekeeper `spec.match.labelSelector.matchLabels` and Kyverno resource
+`selector.matchLabels` use the same atomic shape guard. Malformed non-null
+selectors or non-string conditions cannot trigger target enumeration with dropped
+conditions. Kyverno keeps its existing two report lookups, then processes only
+the validated descriptor prefix in the existing any/all and rule order. The
+first malformed descriptor stops subsequent descriptors and rules; confirmed
+earlier matches and their report attributes survive alongside the selector error.
+Report/target read failures remain joined, and parent cancellation still discards
+the cancelled batch. This does not change the existing any/all approximation,
+add selector expressions, or evaluate admission decisions.
+
+Portable Gatekeeper and core Kyverno callback tests retain committed source
+receipts/history during malformed replay. Gatekeeper also retains its bound
+template/registration origin and observed violation attributes. A later valid
+source version recovers only scoped matching targets, including present-key
+equality for empty values, without duplicating history on unchanged replay or
+clearing earlier gaps. Omitted/null fields preserve their previous behavior and
+old edges are not cleaned. ENFORCES stays excluded from ordinary impact paths
+with an explicit notice. These local checks do not qualify deployed policy
+coverage, native PostgreSQL behavior or M4 acceptance.
+
 Memory-backed resource lists, kind/edge counts and namespace subgraphs now
 require the same key presence as the existing PostgreSQL JSONB containment
 queries; edge filtering requires both endpoints to match. The shared store

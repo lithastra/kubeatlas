@@ -5,6 +5,7 @@ package extractor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
@@ -44,7 +45,10 @@ func (GatekeeperExtractor) Extract(ctx context.Context, r graph.Resource, q grap
 		return nil, nil
 	}
 	namespaces := constraintMatchNamespaces(r)
-	labels := nestedStringMap(r.Raw, "spec", "match", "labelSelector", "matchLabels")
+	labels, err := selectorStringMap(r.Raw, "spec", "match", "labelSelector", "matchLabels")
+	if err != nil {
+		return nil, fmt.Errorf("GatekeeperExtractor: %w", err)
+	}
 	violations := constraintViolations(r)
 
 	// An empty namespace list means "every namespace" — the store's

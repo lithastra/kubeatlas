@@ -116,6 +116,13 @@ independent extractor results remain usable with an extraction gap; a later
 valid source version recovers collection without clearing prior loss evidence.
 Omitted/null fields retain their existing behavior. Local scope/history/replay
 regressions add no watches, selector operators or retained-edge cleanup.
+The same shape guard now covers Gatekeeper labelSelector and Kyverno resource
+selectors. Malformed policy conditions cannot become broader ENFORCES queries.
+Kyverno retains validated earlier descriptors/rules and report-read errors, then
+stops at the malformed descriptor. Local callback regressions preserve source
+receipts, Gatekeeper origin ownership, violation/report attributes, both scope
+and history modes, and sticky gaps during valid-version recovery. ENFORCES
+remains excluded from ordinary impact paths; this adds no admission evaluation.
 M2 records per-resource-type
 initial delivery, list/watch failures, and processing/write gaps, and now
 connects that evidence to internal analysis with before/after continuity checks.
