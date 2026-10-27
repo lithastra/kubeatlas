@@ -44,7 +44,10 @@ func (GatekeeperExtractor) Extract(ctx context.Context, r graph.Resource, q grap
 	if len(kinds) == 0 {
 		return nil, nil
 	}
-	namespaces := constraintMatchNamespaces(r)
+	namespaces, err := constraintMatchNamespaces(r)
+	if err != nil {
+		return nil, fmt.Errorf("GatekeeperExtractor: %w", err)
+	}
 	labels, err := selectorStringMap(r.Raw, "spec", "match", "labelSelector", "matchLabels")
 	if err != nil {
 		return nil, fmt.Errorf("GatekeeperExtractor: %w", err)
@@ -118,14 +121,8 @@ func constraintMatchKinds(r graph.Resource) []string {
 }
 
 // constraintMatchNamespaces reads spec.match.namespaces.
-func constraintMatchNamespaces(r graph.Resource) []string {
-	var out []string
-	for _, n := range nestedSlice(r.Raw, "spec", "match", "namespaces") {
-		if s, ok := n.(string); ok && s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
+func constraintMatchNamespaces(r graph.Resource) ([]string, error) {
+	return selectorNamespaces(nestedMap(r.Raw, "spec", "match")["namespaces"])
 }
 
 // constraintViolations indexes status.violations by kind/namespace/name

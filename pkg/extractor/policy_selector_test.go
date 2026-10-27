@@ -99,12 +99,25 @@ func TestPolicyLabelSelectorEmptyAndEqualityCompatibility(t *testing.T) {
 }
 
 func TestKyvernoMalformedSelectorPreservesPrefixAndErrors(t *testing.T) {
+	testKyvernoMalformedCondition(t, "labels")
+}
+
+func TestKyvernoMalformedNamespacePreservesPrefixAndErrors(t *testing.T) {
+	testKyvernoMalformedCondition(t, "namespaces")
+}
+
+func testKyvernoMalformedCondition(t *testing.T, field string) {
+	t.Helper()
 	for _, kind := range []string{"Policy", "ClusterPolicy"} {
 		for _, placement := range []string{"any", "all", "any-to-all", "later-rule"} {
 			for _, failed := range []string{"none", "report", "target", "cancel"} {
 				t.Run(kind+"/"+placement+"/"+failed, func(t *testing.T) {
 					good := map[string]any{"resources": map[string]any{"kinds": []any{"Pod"}, "selector": map[string]any{"matchLabels": map[string]any{"app": "web"}}}}
 					bad := map[string]any{"resources": map[string]any{"kinds": []any{"Deployment"}, "selector": map[string]any{"matchLabels": map[string]any{"app": "web", "invalid": true}}}}
+					if field == "namespaces" {
+						resources := bad["resources"].(map[string]any)
+						resources["selector"], resources["namespaces"] = nil, []any{true}
+					}
 					later := map[string]any{"resources": map[string]any{"kinds": []any{"Namespace"}}}
 					match := map[string]any{"any": []any{good, bad, later}}
 					switch placement {

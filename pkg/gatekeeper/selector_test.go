@@ -18,16 +18,25 @@ import (
 )
 
 func TestConstraintMalformedSelectorPreservesOriginAndRecovery(t *testing.T) {
+	runConstraintConditionRecovery(t, "labels")
+}
+
+func TestConstraintMalformedNamespacePreservesOriginAndRecovery(t *testing.T) {
+	runConstraintConditionRecovery(t, "namespaces")
+}
+
+func runConstraintConditionRecovery(t *testing.T, field string) {
+	t.Helper()
 	for _, cluster := range []string{"east", ""} {
 		for _, history := range []bool{false, true} {
 			t.Run(fmt.Sprintf("cluster=%s/history=%t", cluster, history), func(t *testing.T) {
-				testConstraintSelectorRecovery(t, cluster, history)
+				testConstraintSelectorRecovery(t, cluster, history, field)
 			})
 		}
 	}
 }
 
-func testConstraintSelectorRecovery(t *testing.T, cluster string, history bool) {
+func testConstraintSelectorRecovery(t *testing.T, cluster string, history bool, field string) {
 	t.Helper()
 	ctx := context.Background()
 	base := memory.New()
@@ -53,6 +62,10 @@ func testConstraintSelectorRecovery(t *testing.T, cluster string, history bool) 
 	token.RecordGap(coverageConstraintGVR, operations.CoverageProcessingFailed, prior)
 	_, obj := coverageObjects()
 	match := map[string]any{"kinds": []any{map[string]any{"kinds": []any{"Pod"}}}, "namespaces": []any{"default"}, "labelSelector": map[string]any{"matchLabels": map[string]any{"app": "web", "flag": "", "invalid": true}}}
+	if field == "namespaces" {
+		match["labelSelector"] = map[string]any{"matchLabels": map[string]any{"app": "web", "flag": ""}}
+		match["namespaces"] = []any{true}
+	}
 	obj.Object["spec"] = map[string]any{"match": match}
 	obj.Object["status"] = map[string]any{"violations": []any{map[string]any{"kind": "Pod", "namespace": "default", "name": "selected", "message": "observed violation"}}}
 	r := discovery.UnstructuredToResource(obj, obj.GetKind())
@@ -97,6 +110,7 @@ func testConstraintSelectorRecovery(t *testing.T, cluster string, history bool) 
 	}
 	obj.SetResourceVersion("valid-version")
 	match["labelSelector"] = map[string]any{"matchLabels": map[string]any{"app": "web", "flag": ""}}
+	match["namespaces"] = []any{"default"}
 	for range 2 {
 		d.handleConstraintEvent(ctx, r.Kind, obj.DeepCopy(), token, graph.EventTypeUpdate)
 	}

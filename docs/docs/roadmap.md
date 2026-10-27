@@ -123,6 +123,12 @@ stops at the malformed descriptor. Local callback regressions preserve source
 receipts, Gatekeeper origin ownership, violation/report attributes, both scope
 and history modes, and sticky gaps during valid-version recovery. ENFORCES
 remains excluded from ordinary impact paths; this adds no admission evaluation.
+Policy namespace lists now also reject malformed non-null values, non-string
+entries and empty-string entries as a whole. Invalid input cannot fall back to
+unrestricted namespace queries or silently lose conditions. Omitted/null/empty
+lists retain their existing meaning, and namespaced Kyverno Policy scope stays
+local. Portable regressions cover validated prefixes, error joining, cancellation,
+source/history receipts and recovery without clearing gaps or deleting old data.
 M2 records per-resource-type
 initial delivery, list/watch failures, and processing/write gaps, and now
 connects that evidence to internal analysis with before/after continuity checks.

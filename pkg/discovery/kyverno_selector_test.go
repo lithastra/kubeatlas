@@ -16,18 +16,27 @@ import (
 )
 
 func TestCoreKyvernoMalformedSelectorRecovery(t *testing.T) {
+	runCoreKyvernoConditionRecovery(t, "labels")
+}
+
+func TestCoreKyvernoMalformedNamespaceRecovery(t *testing.T) {
+	runCoreKyvernoConditionRecovery(t, "namespaces")
+}
+
+func runCoreKyvernoConditionRecovery(t *testing.T, field string) {
+	t.Helper()
 	for _, cluster := range []string{"east", ""} {
 		for _, history := range []bool{false, true} {
 			for _, prefix := range []bool{false, true} {
 				t.Run(fmt.Sprintf("cluster=%s/history=%t/prefix=%t", cluster, history, prefix), func(t *testing.T) {
-					testCoreKyvernoSelector(t, cluster, history, prefix)
+					testCoreKyvernoSelector(t, cluster, history, prefix, field)
 				})
 			}
 		}
 	}
 }
 
-func testCoreKyvernoSelector(t *testing.T, cluster string, history, prefix bool) {
+func testCoreKyvernoSelector(t *testing.T, cluster string, history, prefix bool, field string) {
 	t.Helper()
 	ctx := context.Background()
 	m, base, store, sink, tracker, obj := kyvernoCoverageFixture(t, cluster, history)
@@ -35,6 +44,10 @@ func testCoreKyvernoSelector(t *testing.T, cluster string, history, prefix bool)
 	prior := time.Now().Add(-time.Minute)
 	m.coverageSession.RecordGap(kyvernoCoverageGVR, operations.CoverageProcessingFailed, prior)
 	badResources := map[string]any{"kinds": []any{"Deployment"}, "namespaces": []any{"test"}, "selector": map[string]any{"matchLabels": map[string]any{"app": "selected", "flag": "", "invalid": true}}}
+	if field == "namespaces" {
+		badResources["selector"] = map[string]any{"matchLabels": map[string]any{"app": "selected", "flag": ""}}
+		badResources["namespaces"] = []any{true}
+	}
 	descriptors := []any{map[string]any{"resources": badResources}, map[string]any{"resources": map[string]any{"kinds": []any{"Service"}}}}
 	if prefix {
 		descriptors = append([]any{map[string]any{"resources": map[string]any{"kinds": []any{"Pod"}, "namespaces": []any{"test"}, "selector": map[string]any{"matchLabels": map[string]any{"app": "selected"}}}}}, descriptors...)
@@ -95,6 +108,7 @@ func testCoreKyvernoSelector(t *testing.T, cluster string, history, prefix bool)
 	}
 	obj.SetResourceVersion("valid-version")
 	badResources["selector"] = map[string]any{"matchLabels": map[string]any{"app": "selected", "flag": ""}}
+	badResources["namespaces"] = []any{"test"}
 	for range 2 {
 		m.handleUpsert(ctx, kyvernoCoverageGVR, obj.DeepCopy(), graph.EventTypeUpdate)
 	}

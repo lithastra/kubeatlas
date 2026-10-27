@@ -448,6 +448,24 @@ old edges are not cleaned. ENFORCES stays excluded from ordinary impact paths
 with an explicit notice. These local checks do not qualify deployed policy
 coverage, native PostgreSQL behavior or M4 acceptance.
 
+Gatekeeper `spec.match.namespaces` and Kyverno resource `namespaces` now require
+a list of nonempty strings when present and non-null. Scalars, objects, null or
+non-string list entries, and empty-string entries reject the whole constraint
+or descriptor before its target reads. In particular, an invalid list cannot
+silently become the empty store namespace filter, which means all namespaces.
+Kyverno retains the earlier validated descriptor/rule prefix and joined errors,
+and stops at the malformed descriptor just as for malformed label selectors.
+
+Omitted fields, null fields and empty lists keep their existing no-namespace-
+restriction behavior; a namespaced Kyverno Policy still uses only its own
+namespace. Strings retain their existing literal matching behavior without new
+wildcard interpretation, normalization or DNS/schema validation. Portable tests
+cover both policy kinds, any/all ordering, mixed lists, report/target failures,
+cancellation and member/standalone callbacks with history enabled or disabled.
+Valid new versions recover scoped matches while preserving origin receipts and
+loss evidence, and unchanged replay does not duplicate history. Stored edges
+remain retained and ENFORCES remains separate from ordinary impact traversal.
+
 Memory-backed resource lists, kind/edge counts and namespace subgraphs now
 require the same key presence as the existing PostgreSQL JSONB containment
 queries; edge filtering requires both endpoints to match. The shared store

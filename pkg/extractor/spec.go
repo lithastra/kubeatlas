@@ -103,6 +103,28 @@ func selectorStringMap(raw map[string]any, path ...string) (map[string]string, e
 	return out, nil
 }
 
+// selectorNamespaces preserves omitted/null/empty lists, but rejects malformed
+// lists atomically. Dropping all invalid entries would turn a constraint into
+// an unrestricted namespace query. Strings retain their existing literal meaning.
+func selectorNamespaces(value any) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return nil, errors.New("namespace selector must be a list")
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		namespace, ok := item.(string)
+		if !ok || namespace == "" {
+			return nil, errors.New("namespace selector entries must be nonempty strings")
+		}
+		out = append(out, namespace)
+	}
+	return out, nil
+}
+
 // podTemplateContainers returns one container field (regular, init or ephemeral)
 // from a workload's pod template, CronJob job template or raw Pod spec.
 func podTemplateContainers(r graph.Resource, field string) []any {

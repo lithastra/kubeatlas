@@ -136,9 +136,13 @@ func kyvernoMatchDescriptors(rule map[string]any) ([]kyvernoDescriptor, error) {
 			if err != nil {
 				return out, fmt.Errorf("KyvernoExtractor: %w", err)
 			}
+			namespaces, err := selectorNamespaces(nestedMap(entry, "resources")["namespaces"])
+			if err != nil {
+				return out, fmt.Errorf("KyvernoExtractor: %w", err)
+			}
 			out = append(out, kyvernoDescriptor{
 				kinds:      kinds,
-				namespaces: stringSlice(nestedSlice(entry, "resources", "namespaces")),
+				namespaces: namespaces,
 				labels:     labels,
 			})
 		}
@@ -159,16 +163,6 @@ func normalizeKinds(vals []any) []string {
 			s = s[i+1:]
 		}
 		if s != "" && s != "*" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func stringSlice(vals []any) []string {
-	out := make([]string, 0, len(vals))
-	for _, v := range vals {
-		if s, ok := v.(string); ok && s != "" {
 			out = append(out, s)
 		}
 	}
