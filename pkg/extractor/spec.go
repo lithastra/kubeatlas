@@ -123,7 +123,8 @@ func labelsMatch(have, want map[string]string) bool {
 		return false
 	}
 	for k, v := range want {
-		if have[k] != v {
+		actual, exists := have[k]
+		if !exists || actual != v {
 			return false
 		}
 	}

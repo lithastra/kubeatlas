@@ -100,6 +100,15 @@ locations. Same-version replay fills the missing relationships without another
 resource write/history event. Local regressions cover seven builtin sources,
 member/standalone scope, both history modes, failed writes, unresolved targets
 and version-bound forward/reverse reference explanations without payload reads.
+Label equality now requires the selected key to exist, including when its value
+is empty. Service and NetworkPolicy extraction no longer treat an absent key as
+an empty value. Memory list, count and namespace-subgraph filters follow the same
+key-presence rule as PostgreSQL's existing JSONB containment queries. Empty
+Service selectors still select nothing; empty NetworkPolicy matchLabels and
+store filters keep their existing match-all behavior. Portable regressions cover
+these distinctions, both scopes, replay/history and scoped impact paths. Stored
+relationships from earlier observations remain retained; this change does not
+prove deletion ownership or reconcile old edges, and adds no selector operators.
 M2 records per-resource-type
 initial delivery, list/watch failures, and processing/write gaps, and now
 connects that evidence to internal analysis with before/after continuity checks.

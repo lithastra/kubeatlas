@@ -596,7 +596,8 @@ func collect(peers map[edgeKey]graph.Edge) []graph.Edge {
 // in have. An empty want matches any have.
 func labelsMatch(have, want map[string]string) bool {
 	for k, v := range want {
-		if have[k] != v {
+		actual, exists := have[k]
+		if !exists || actual != v {
 			return false
 		}
 	}

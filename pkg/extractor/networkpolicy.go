@@ -326,7 +326,8 @@ func matchLabelSelector(have, want map[string]string) bool {
 		return true
 	}
 	for k, v := range want {
-		if have[k] != v {
+		actual, exists := have[k]
+		if !exists || actual != v {
 			return false
 		}
 	}

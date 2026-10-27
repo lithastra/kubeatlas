@@ -399,6 +399,30 @@ acceptance; collection adds no watches, public fields or projection changes.
 Image-pull, Ingress, ServiceAccount, and Gateway Secret-reference details,
 volumeDevices, and custom resource schemas are not interpreted by this slice.
 
+Service and NetworkPolicy label equality requires a key to be present. For
+example, `flag: ""` matches a Pod or workload template carrying an empty `flag`
+label, but not one with no `flag` key. The same rule applies to NetworkPolicy
+Namespace selection and to every pair in a multi-label selector. This is distinct
+from an empty selector: selectorless Services still select nothing, while empty
+NetworkPolicy matchLabels and empty store label filters retain their existing
+match-all behavior within the modeled query scope. Selector expressions and
+effective CNI enforcement remain outside this correction.
+
+Memory-backed resource lists, kind/edge counts and namespace subgraphs now
+require the same key presence as the existing PostgreSQL JSONB containment
+queries; edge filtering requires both endpoints to match. The shared store
+contract pins this distinction without changing SQL or GraphStore v2. Portable
+regressions compare equality with the pinned Kubernetes label matcher and cover
+member/standalone callbacks, same-version replay, both history modes, read-failure
+recovery with retained gap evidence, and forward/reverse impact paths. Native
+PostgreSQL and Kubernetes acceptance still require their separate gates.
+
+This corrects new extraction decisions and current label-filtered views. It does
+not remove relationships already stored from earlier observations: the callback
+upserts derived edges and does not prove which retained edges it owns for
+deletion. Existing data remains retained pending a separate ownership-backed
+repair; an unfiltered impact path can therefore still contain an old false edge.
+
 Reference interpretation also rejects conflicting volume alternatives already
 visible in that allowlist. A volume with more than one of `configMap`, `secret`,
 `persistentVolumeClaim` and `projected`, a single projected-source entry with
