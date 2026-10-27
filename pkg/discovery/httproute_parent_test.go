@@ -20,18 +20,27 @@ import (
 )
 
 func TestCoreHTTPRouteParentGroupReplayAndImpact(t *testing.T) {
+	runHTTPRouteReferenceGroupCases(t, false)
+}
+
+func TestCoreHTTPRouteServiceBackendGroupReplayAndImpact(t *testing.T) {
+	runHTTPRouteReferenceGroupCases(t, true)
+}
+
+func runHTTPRouteReferenceGroupCases(t *testing.T, backend bool) {
+	t.Helper()
 	for _, cluster := range []string{"east", ""} {
 		for _, history := range []bool{false, true} {
 			for _, state := range []string{"core-group", "foreign-group", "malformed-group", "write-failure", "missing-target"} {
 				t.Run(fmt.Sprintf("cluster=%s/history=%t/%s", cluster, history, state), func(t *testing.T) {
-					testHTTPRouteParentGroup(t, cluster, history, state)
+					testHTTPRouteReferenceGroup(t, cluster, history, state, backend)
 				})
 			}
 		}
 	}
 }
 
-func testHTTPRouteParentGroup(t *testing.T, cluster string, history bool, state string) {
+func testHTTPRouteReferenceGroup(t *testing.T, cluster string, history bool, state string, backend bool) {
 	t.Helper()
 	ctx := context.Background()
 	base := memory.New()
@@ -55,28 +64,45 @@ func testHTTPRouteParentGroup(t *testing.T, cluster string, history bool, state 
 	}
 	obj := resyncObject("HTTPRoute", "route", "route-uid", "version-one")
 	obj.SetAPIVersion(gvr.GroupVersion().String())
-	parent := map[string]any{"name": "selected", "namespace": "infra", "group": "gateway.networking.k8s.io"}
-	batchSize := 4 // Three parents plus an independent Service backend.
+	canonicalGroup, targetKind, targetVersion := "gateway.networking.k8s.io", "Gateway", "gateway.networking.k8s.io/v1"
+	otherName, otherKind, otherNamespace, otherVersion := "backend", "Service", obj.GetNamespace(), "v1"
+	edgeType := graph.EdgeTypeAttachedTo
+	if backend {
+		canonicalGroup, targetKind, targetVersion = "", "Service", "v1"
+		otherName, otherKind, otherNamespace, otherVersion = "gateway", "Gateway", "infra", "gateway.networking.k8s.io/v1"
+		edgeType = graph.EdgeTypeRoutesTo
+	}
+	reference := map[string]any{"name": "selected", "namespace": "infra", "group": canonicalGroup}
+	batchSize := 4 // Three references plus an independent relationship.
 	switch state {
 	case "core-group":
-		parent["group"], batchSize = "", 3
+		reference["group"], batchSize = "", 3
+		if backend {
+			reference["group"] = "core" // A literal group name is not the empty core group.
+		}
 	case "foreign-group":
-		parent["group"], batchSize = "example.org", 3
+		reference["group"], batchSize = "example.org", 3
 	case "malformed-group":
-		parent["group"], batchSize = map[string]any{"private": "parent-group-canary"}, 2
+		reference["group"], batchSize = map[string]any{"private": "reference-group-canary"}, 2
 	}
 	obj.Object["spec"] = map[string]any{
-		"parentRefs": []any{map[string]any{"name": "confirmed", "namespace": "infra"}, parent, map[string]any{"name": "later", "namespace": "infra"}},
+		"parentRefs": []any{map[string]any{"name": "confirmed", "namespace": "infra"}, reference, map[string]any{"name": "later", "namespace": "infra"}},
 		"rules":      []any{map[string]any{"backendRefs": []any{map[string]any{"name": "backend"}}}},
+	}
+	if backend {
+		obj.Object["spec"] = map[string]any{
+			"parentRefs": []any{map[string]any{"name": otherName, "namespace": otherNamespace}},
+			"rules":      []any{map[string]any{"backendRefs": []any{map[string]any{"name": "confirmed", "namespace": "infra"}, reference, map[string]any{"name": "later", "namespace": "infra"}}}},
+		}
 	}
 	r := UnstructuredToResource(obj, "HTTPRoute")
 	r.ClusterID = cluster
-	selected := graph.Resource{ClusterID: cluster, Kind: "Gateway", Namespace: "infra", Name: "selected", GroupVersion: "gateway.networking.k8s.io/v1", UID: "gateway-uid", ResourceVersion: "gateway-version"}
-	for _, name := range []string{"confirmed", "selected", "later", "backend"} {
+	selected := graph.Resource{ClusterID: cluster, Kind: targetKind, Namespace: "infra", Name: "selected", GroupVersion: targetVersion, UID: "target-uid", ResourceVersion: "target-version"}
+	for _, name := range []string{"confirmed", "selected", "later", otherName} {
 		row := selected
 		row.Name = name
-		if name == "backend" {
-			row.Kind, row.Namespace, row.GroupVersion = "Service", r.Namespace, "v1"
+		if name == otherName {
+			row.Kind, row.Namespace, row.GroupVersion = otherKind, otherNamespace, otherVersion
 		}
 		for _, owner := range []string{"east", "west", ""} {
 			if state == "missing-target" && owner == cluster && name == "selected" {
@@ -99,26 +125,26 @@ func testHTTPRouteParentGroup(t *testing.T, cluster string, history bool, state 
 		wantEdges, wantNotifications = 0, 1
 	}
 	if err != nil || len(edges) != wantEdges || store.resourceWrites.Load() != 1 || store.edgeWrites.Load() != int64(2*batchSize) || len(sink.recorded()) != 1 || notifications.Load() != wantNotifications {
-		t.Fatal("parent extraction/replay lost its receipt, prefix or independent backend", edges, sink.recorded(), err)
+		t.Fatal("reference extraction/replay lost its receipt, prefix or independent relationship", edges, sink.recorded(), err)
 	}
 	if state == "core-group" || state == "foreign-group" || state == "malformed-group" {
 		for _, edge := range edges {
 			if edge.To == selected.ID() {
-				t.Fatal("unqualified parent group bound to a same-name Gateway", edge)
+				t.Fatal("unqualified reference group bound to a same-name target", edge)
 			}
 		}
 	}
 	before := coverageView(t, tracker, cluster, gvr)
 	if before.ExtractionGapSince.IsZero() != (state != "malformed-group") || before.PersistenceGapSince.IsZero() != (state != "write-failure") || !before.ProcessingGapSince.Equal(prior) {
-		t.Fatal("parent extraction changed gap classification", before)
+		t.Fatal("reference extraction changed gap classification", before)
 	}
 	if state == "missing-target" {
 		result, err := analysis.AnalyzeStoredImpact(ctx, base, r.ID(), analysis.ImpactOptions{ClusterID: cluster, Relation: analysis.ImpactDependencies}, graph.ImpactSnapshotOptions{ClusterID: cluster})
 		if err != nil || result.Counts.Total != 3 || !result.Counts.LowerBound || len(result.Notices) != 1 || result.Notices[0].Reason != analysis.ImpactMissingResource || result.Notices[0].Count != 1 {
-			t.Fatal("foreign same-name Gateway concealed an unresolved parent", result, err)
+			t.Fatal("foreign same-name target concealed an unresolved reference", result, err)
 		}
 		if _, err := base.GetResource(ctx, selected.ID()); !errors.As(err, new(graph.ErrNotFound)) {
-			t.Fatal("parent declaration synthesized a Gateway", err)
+			t.Fatal("declaration synthesized a missing target", err)
 		}
 		if err := base.UpsertResource(ctx, selected); err != nil {
 			t.Fatal(err)
@@ -126,7 +152,7 @@ func testHTTPRouteParentGroup(t *testing.T, cluster string, history bool, state 
 	}
 	wantResources := int64(1)
 	if state == "core-group" || state == "foreign-group" || state == "malformed-group" {
-		parent["group"] = "gateway.networking.k8s.io"
+		reference["group"] = canonicalGroup
 		obj.SetResourceVersion("version-two")
 		wantResources = 2
 	}
@@ -136,15 +162,15 @@ func testHTTPRouteParentGroup(t *testing.T, cluster string, history bool, state 
 	}
 	edges, err = base.ListEdges(ctx, r.ID(), graph.DirectionOutgoing)
 	if err != nil || len(edges) != 4 || store.resourceWrites.Load() != wantResources || store.edgeWrites.Load() != int64(2*batchSize+8) || len(sink.recorded()) != int(wantResources) || notifications.Load() != wantNotifications+2 {
-		t.Fatal("valid parent recovery rewrote unchanged history or lost edges", edges, sink.recorded(), err)
+		t.Fatal("valid reference recovery rewrote unchanged history or lost edges", edges, sink.recorded(), err)
 	}
 	stored, err := base.GetResource(ctx, r.ID())
 	if err != nil || stored.ResourceVersion != obj.GetResourceVersion() || stored.UID != r.UID {
-		t.Fatal("parent recovery changed the committed source identity", stored, err)
+		t.Fatal("reference recovery changed the committed source identity", stored, err)
 	}
 	after := coverageView(t, tracker, cluster, gvr)
 	if !after.ExtractionGapSince.Equal(before.ExtractionGapSince) || !after.PersistenceGapSince.Equal(before.PersistenceGapSince) || !after.ProcessingGapSince.Equal(prior) {
-		t.Fatal("healthy parent replay cleared prior failure evidence", after)
+		t.Fatal("healthy reference replay cleared prior failure evidence", after)
 	}
 	for _, relation := range []analysis.ImpactRelation{analysis.ImpactDependencies, analysis.ImpactDependents} {
 		root, target, count := r.ID(), selected.ID(), 4
@@ -153,7 +179,7 @@ func testHTTPRouteParentGroup(t *testing.T, cluster string, history bool, state 
 		}
 		result, err := analysis.AnalyzeStoredImpact(ctx, base, root, analysis.ImpactOptions{ClusterID: cluster, Relation: relation}, graph.ImpactSnapshotOptions{ClusterID: cluster})
 		if err != nil || result.Counts.Total != count || result.Counts.Direct != count || len(result.Resources) != count || result.Counts.LowerBound {
-			t.Fatal("qualified parent did not produce the expected scoped impact", result, err)
+			t.Fatal("qualified reference did not produce the expected scoped impact", result, err)
 		}
 		found := false
 		for _, item := range result.Resources {
@@ -162,15 +188,15 @@ func testHTTPRouteParentGroup(t *testing.T, cluster string, history bool, state 
 			}
 			found = true
 			if len(item.Path) != 1 {
-				t.Fatal("parent path acquired an unexpected hop", item)
+				t.Fatal("reference path acquired an unexpected hop", item)
 			}
 			step := item.Path[0]
-			if step.From != r.ID() || step.To != selected.ID() || step.Type != graph.EdgeTypeAttachedTo || step.TraversalFrom != root || step.TraversalTo != target {
-				t.Fatal("parent path changed edge or traversal identity", step)
+			if step.From != r.ID() || step.To != selected.ID() || step.Type != edgeType || step.TraversalFrom != root || step.TraversalTo != target {
+				t.Fatal("reference path changed edge or traversal identity", step)
 			}
 		}
 		if !found {
-			t.Fatal("qualified parent missing from impact paths", result)
+			t.Fatal("qualified reference missing from impact paths", result)
 		}
 	}
 }

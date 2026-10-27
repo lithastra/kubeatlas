@@ -424,6 +424,32 @@ resource identities. Earlier stored edges remain retained pending separate
 ownership-backed repair. Native Kubernetes/PostgreSQL and M4 acceptance remain
 separate gates.
 
+For HTTPRoute Service `backendRefs`, omitted or empty group identifies the core
+API group, as defined by the
+[Gateway API BackendObjectReference type](https://github.com/kubernetes-sigs/gateway-api/blob/main/apis/v1/object_reference_types.go).
+Unlike parent Gateway references, an explicitly nonempty group cannot produce a
+core Service ROUTES_TO edge, including when kind defaults to Service. The string
+`core` is a group name, not an alias for the empty group. Defaulted and explicit
+core Service references still deduplicate by target ID across rules, preserving
+local/explicit namespace and member scope without target reads.
+
+A wrong-typed Service backend group, including null, returns the confirmed
+backend prefix with an extraction error, stops later backends/rules, and leaves
+independent parent extraction active. Local member/standalone callback tests
+cover both history modes, committed receipts, valid-version and unchanged replay,
+write-failure recovery, missing target qualification and forward/reverse paths.
+No Service target is synthesized and a foreign same-name target cannot conceal
+an unresolved reference. Recovery does not duplicate unchanged history or clear
+prior gaps. These are declarations, not ReferenceGrant/controller acceptance or
+effective routing evidence.
+
+This correction is limited to core Service targets. Existing custom-kind backend
+modeling retains its legacy behavior without new group resolution or watches;
+group-qualified resource IDs and complete BackendObjectReference schema validation
+remain outside this slice. Old stored edges remain retained pending separate
+ownership-backed repair. Native Kubernetes/PostgreSQL and M4 acceptance remain
+separate gates.
+
 Service and NetworkPolicy label equality requires a key to be present. For
 example, `flag: ""` matches a Pod or workload template carrying an empty `flag`
 label, but not one with no `flag` key. The same rule applies to NetworkPolicy

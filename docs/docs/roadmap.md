@@ -101,6 +101,12 @@ group values preserve the confirmed parent prefix and independent backend edges
 with an extraction gap. Local scope/history/replay regressions cover missing
 targets, failed writes and forward/reverse recovery without clearing known gaps.
 Existing stored edges remain retained; allowed attachment and traffic are unverified.
+HTTPRoute core Service backends now also require omitted or empty group. Other
+explicit groups cannot bind same-name core Services, and malformed group values
+retain earlier backends and independent parent extraction with a gap. Portable
+parent/backend regressions cover scope/history modes, deduplication, failed
+writes, missing targets and forward/reverse recovery. Legacy custom-kind backend
+modeling remains unchanged; general group-qualified identity is still unverified.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another
