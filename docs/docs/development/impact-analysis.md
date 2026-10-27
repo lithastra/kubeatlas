@@ -621,6 +621,28 @@ namespace. A workload/account edge must remain within their shared namespace.
 A ClusterRoleBinding can reference only a ClusterRole. These rules follow the
 [Kubernetes RBAC binding contract](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
 
+Builtin workload ServiceAccount extraction now distinguishes wrong-typed account
+names from empty fields. A non-null, non-string `serviceAccountName` returns an
+extraction error rather than falling through to `serviceAccount` or `default`.
+The legacy field has the same check when it is actually selected. A valid modern
+name still takes precedence without inspecting an unused legacy field. Omitted,
+null and empty fields preserve the existing fallback order. This is type checking
+for the modeled name fields, not complete Pod schema/name validation.
+
+The source receipt/history and other builtin relationships remain usable with
+an extraction gap. Unchanged invalid replay does not duplicate source history;
+a valid new version followed by same-version replay recovers the selected account
+without clearing prior gaps or deleting retained edges. Portable regressions
+cover Pod and all six builtin controller kinds, member/standalone scope and both
+history modes. Existing default/legacy-account bindings cannot fill a missing
+workload association, and valid recovery follows only the selected scoped
+account, binding and role. Independent ordinary counts and exact authorization
+step direction/binding metadata remain pinned by the tests. Disabling token
+automount in the fixture does not turn these stored associations into evidence
+of credential use or permissions. No new target reads, watches, API fields or
+node synthesis is introduced; native Kubernetes/PostgreSQL and M4 acceptance
+remain separate gates.
+
 The facet reports `stored_edge_association`, `sourceVersionEvidence: unknown`,
 `effectivePermissions: not_evaluated`, and `observationCoverage: unknown`.
 Observed identity UID/resourceVersion does not bind an edge to that source

@@ -114,6 +114,13 @@ certificate prefix and independent relationships with a gap. Portable callbacks
 verify scoped reference-only placeholders, retained writes after edge failure,
 history deduplication and impact paths without Secret payload or existence claims.
 Old edges/placeholders remain retained and no Secret list/watch is added.
+ServiceAccount collection now rejects wrong-typed selected account-name fields
+instead of inferring a legacy/default account. Valid modern names keep their
+precedence; omitted/null/empty fields retain existing fallback behavior. Portable
+regressions cover all seven builtin consumers, member/standalone and history
+modes, independent references, valid-version recovery and exact separate RBAC
+association paths. Old relationships and known gaps remain retained; effective
+permissions and runtime credential use remain unevaluated.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another
