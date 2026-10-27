@@ -374,8 +374,28 @@ nested payloads, large ignored environment values, and oversized allowed names.
 Local graph tests cover projection idempotence, immutable schema accessors,
 legacy serialization, escape expansion, and cancellation during field copying.
 
-Existing extractor coverage is unchanged: support in the interpreter does not
-add missing edges.
+Interpreter support alone does not add missing edges. ConfigMap collection now
+also walks environment references in init and ephemeral containers and
+`volumes[].projected.sources[].configMap.name`, alongside its existing regular
+container and direct-volume references. All locations share the same target-ID
+deduplication set and retain the consumer namespace/cluster. Other projected
+source types and unusable names produce no ConfigMap edge. No target object or
+configuration content is read to extract these declarations.
+
+Unchanged UID/version delivery still re-extracts these edges, allowing existing
+stored consumers to acquire previously missing relationships without a resource
+rewrite or duplicate history. Failed edge writes retain persistence-gap evidence
+and do not send false update notifications; later replay can recover the edges
+without clearing known gaps. Missing targets remain unresolved and are never
+synthesized or substituted from another member. Portable tests cover all seven
+supported consumer kinds, both scopes/history modes, mixed-source deduplication,
+failure recovery and real-registry callbacks through memory-backed forward and
+reverse impact analysis. The existing reference interpreter supplies separate
+field/mount paths, optional flags and refresh classifications for each use of a
+deduplicated edge. Keys, literal environment values and ConfigMap contents stay
+outside results. These tests do not qualify native Kubernetes or PostgreSQL/M4
+acceptance; collection adds no watches, public fields or projection changes.
+
 Image-pull, Ingress, ServiceAccount, and Gateway Secret-reference details,
 volumeDevices, and custom resource schemas are not interpreted by this slice.
 

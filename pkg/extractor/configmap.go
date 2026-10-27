@@ -7,12 +7,15 @@ import (
 )
 
 // ConfigMapExtractor emits USES_CONFIGMAP edges from workloads (and
-// raw Pods) to every ConfigMap they reference. Three reference styles
+// raw Pods) to every ConfigMap they reference. Four reference styles
 // are handled:
 //
 //   - container.envFrom[].configMapRef.name
 //   - container.env[].valueFrom.configMapKeyRef.name
 //   - volumes[].configMap.name
+//   - volumes[].projected.sources[].configMap.name
+//
+// Container references include regular, init and ephemeral containers.
 type ConfigMapExtractor struct{}
 
 func (ConfigMapExtractor) Type() graph.EdgeType { return graph.EdgeTypeUsesConfigMap }
@@ -37,20 +40,26 @@ func (ConfigMapExtractor) Extract(_ context.Context, r graph.Resource, _ graph.R
 	}
 
 	var edges []graph.Edge
-	for _, c := range podTemplateContainers(r) {
-		cmap, _ := c.(map[string]any)
-		for _, ef := range nestedSlice(cmap, "envFrom") {
-			efm, _ := ef.(map[string]any)
-			edges = append(edges, emit(nestedString(efm, "configMapRef", "name"))...)
-		}
-		for _, e := range nestedSlice(cmap, "env") {
-			em, _ := e.(map[string]any)
-			edges = append(edges, emit(nestedString(em, "valueFrom", "configMapKeyRef", "name"))...)
+	for _, field := range []string{"containers", "initContainers", "ephemeralContainers"} {
+		for _, c := range podTemplateContainers(r, field) {
+			cmap, _ := c.(map[string]any)
+			for _, ef := range nestedSlice(cmap, "envFrom") {
+				efm, _ := ef.(map[string]any)
+				edges = append(edges, emit(nestedString(efm, "configMapRef", "name"))...)
+			}
+			for _, e := range nestedSlice(cmap, "env") {
+				em, _ := e.(map[string]any)
+				edges = append(edges, emit(nestedString(em, "valueFrom", "configMapKeyRef", "name"))...)
+			}
 		}
 	}
 	for _, v := range podTemplateVolumes(r) {
 		vmap, _ := v.(map[string]any)
 		edges = append(edges, emit(nestedString(vmap, "configMap", "name"))...)
+		for _, source := range nestedSlice(vmap, "projected", "sources") {
+			sm, _ := source.(map[string]any)
+			edges = append(edges, emit(nestedString(sm, "configMap", "name"))...)
+		}
 	}
 	return edges, nil
 }

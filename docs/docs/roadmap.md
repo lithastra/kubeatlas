@@ -94,6 +94,12 @@ previously missing edge without rewriting the resource or duplicating history;
 failed edge writes retain gap evidence and later replay can recover. Missing
 Service targets remain unresolved rather than synthesized, with local scoped
 forward/reverse impact regressions. This does not establish effective routing.
+ConfigMap collection now also includes init/ephemeral container environment
+references and projected volume sources, with deduplication across all reference
+locations. Same-version replay fills the missing relationships without another
+resource write/history event. Local regressions cover seven builtin sources,
+member/standalone scope, both history modes, failed writes, unresolved targets
+and version-bound forward/reverse reference explanations without payload reads.
 M2 records per-resource-type
 initial delivery, list/watch failures, and processing/write gaps, and now
 connects that evidence to internal analysis with before/after continuity checks.

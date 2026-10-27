@@ -66,17 +66,16 @@ func nestedStringMap(raw map[string]any, path ...string) map[string]string {
 	return out
 }
 
-// podTemplateContainers returns the containers slice from a workload
-// resource's spec.template.spec.containers (Deployment, StatefulSet,
-// DaemonSet, Job, CronJob) or spec.containers (raw Pod).
-func podTemplateContainers(r graph.Resource) []any {
-	if c := nestedSlice(r.Raw, "spec", "template", "spec", "containers"); len(c) > 0 {
+// podTemplateContainers returns one container field (regular, init or ephemeral)
+// from a workload's pod template, CronJob job template or raw Pod spec.
+func podTemplateContainers(r graph.Resource, field string) []any {
+	if c := nestedSlice(r.Raw, "spec", "template", "spec", field); len(c) > 0 {
 		return c
 	}
-	if c := nestedSlice(r.Raw, "spec", "jobTemplate", "spec", "template", "spec", "containers"); len(c) > 0 {
+	if c := nestedSlice(r.Raw, "spec", "jobTemplate", "spec", "template", "spec", field); len(c) > 0 {
 		return c // CronJob
 	}
-	return nestedSlice(r.Raw, "spec", "containers")
+	return nestedSlice(r.Raw, "spec", field)
 }
 
 // podTemplateVolumes returns the volumes slice from a workload's
