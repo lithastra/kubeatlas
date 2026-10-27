@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"errors"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // nestedSlice walks raw at the given path and returns the slice at the
 // leaf. Returns nil if any intermediate key is absent or any value
@@ -64,6 +68,39 @@ func nestedStringMap(raw map[string]any, path ...string) map[string]string {
 		}
 	}
 	return out
+}
+
+// selectorStringMap keeps omitted/null selector fields compatible with empty
+// maps, but rejects malformed non-null objects and values atomically. Silently
+// dropping a condition would broaden the selector. Errors contain no input data.
+func selectorStringMap(raw map[string]any, path ...string) (map[string]string, error) {
+	var cur any = raw
+	for _, key := range path {
+		if cur == nil {
+			return nil, nil
+		}
+		object, ok := cur.(map[string]any)
+		if !ok {
+			return nil, errors.New("label selector must be an object")
+		}
+		cur = object[key]
+	}
+	if cur == nil {
+		return nil, nil
+	}
+	object, ok := cur.(map[string]any)
+	if !ok {
+		return nil, errors.New("label selector must be an object")
+	}
+	out := make(map[string]string, len(object))
+	for key, value := range object {
+		text, ok := value.(string)
+		if !ok {
+			return nil, errors.New("label selector values must be strings")
+		}
+		out[key] = text
+	}
+	return out, nil
 }
 
 // podTemplateContainers returns one container field (regular, init or ephemeral)

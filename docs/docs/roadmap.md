@@ -109,6 +109,13 @@ store filters keep their existing match-all behavior. Portable regressions cover
 these distinctions, both scopes, replay/history and scoped impact paths. Stored
 relationships from earlier observations remain retained; this change does not
 prove deletion ownership or reconcile old edges, and adds no selector operators.
+Service selectors and NetworkPolicy matchLabels now also reject malformed
+non-null objects and non-string values before target reads, instead of dropping
+conditions or broadening them into empty selectors. Earlier valid peers and
+independent extractor results remain usable with an extraction gap; a later
+valid source version recovers collection without clearing prior loss evidence.
+Omitted/null fields retain their existing behavior. Local scope/history/replay
+regressions add no watches, selector operators or retained-edge cleanup.
 M2 records per-resource-type
 initial delivery, list/watch failures, and processing/write gaps, and now
 connects that evidence to internal analysis with before/after continuity checks.

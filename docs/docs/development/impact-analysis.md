@@ -408,6 +408,25 @@ NetworkPolicy matchLabels and empty store label filters retain their existing
 match-all behavior within the modeled query scope. Selector expressions and
 effective CNI enforcement remain outside this correction.
 
+Selector decoding also rejects malformed non-null object shapes or non-string
+label values as a whole, before reading target candidates. For example, a
+Service selector containing `app: web` and an invalid numeric condition cannot
+silently become an `app: web` query. NetworkPolicy pod/namespace selectors cannot
+turn wrong-typed objects or label maps into a match-all query. Omitted/null
+fields keep their previous empty-field behavior; this is a shape guard for the
+modeled equality fields, not complete Kubernetes schema validation or support
+for matchExpressions. Error messages contain no label keys or values.
+
+A malformed later NetworkPolicy peer stops further peer reads while retaining
+the earlier confirmed prefix. Other builtin extractors still run under an
+active parent, so independent valid relationships remain available alongside an
+extraction gap. The stored source receipt/history is preserved, unchanged invalid
+replay does not duplicate that history, and a later valid source version followed
+by same-version replay can recover edges. Recovery does not clear prior gaps or
+delete retained relationships. Local real-registry callback and impact tests
+cover both member/standalone scopes and history modes; these are not native
+Kubernetes or PostgreSQL acceptance evidence.
+
 Memory-backed resource lists, kind/edge counts and namespace subgraphs now
 require the same key presence as the existing PostgreSQL JSONB containment
 queries; edge filtering requires both endpoints to match. The shared store

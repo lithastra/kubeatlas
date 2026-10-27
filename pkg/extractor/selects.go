@@ -20,7 +20,10 @@ func (SelectsExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 	if r.Kind != "Service" {
 		return nil, nil
 	}
-	selector := nestedStringMap(r.Raw, "spec", "selector")
+	selector, err := selectorStringMap(r.Raw, "spec", "selector")
+	if err != nil {
+		return nil, fmt.Errorf("SelectsExtractor: %w", err)
+	}
 	if len(selector) == 0 {
 		return nil, nil
 	}

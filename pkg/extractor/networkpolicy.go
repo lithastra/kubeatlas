@@ -70,7 +70,10 @@ func (SelectsNPExtractor) Extract(ctx context.Context, r graph.Resource, q graph
 	if r.Kind != "NetworkPolicy" {
 		return nil, nil
 	}
-	selector := nestedStringMap(r.Raw, "spec", "podSelector", "matchLabels")
+	selector, err := selectorStringMap(r.Raw, "spec", "podSelector", "matchLabels")
+	if err != nil {
+		return nil, fmt.Errorf("SelectsNPExtractor: %w", err)
+	}
 	// podSelector resolves only against the policy's own namespace,
 	// and only its own cluster in multi-cluster mode.
 	candidates, err := listNetworkPolicyResources(ctx, q, graph.Filter{
@@ -197,8 +200,14 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 		return nil, nil
 	}
 
-	podSel := nestedStringMap(peer, "podSelector", "matchLabels")
-	nsSel := nestedStringMap(peer, "namespaceSelector", "matchLabels")
+	podSel, err := selectorStringMap(peer, "podSelector", "matchLabels")
+	if err != nil {
+		return nil, fmt.Errorf("peerEdges: podSelector: %w", err)
+	}
+	nsSel, err := selectorStringMap(peer, "namespaceSelector", "matchLabels")
+	if err != nil {
+		return nil, fmt.Errorf("peerEdges: namespaceSelector: %w", err)
+	}
 
 	// namespaceSelector only — edge target is each matching Namespace.
 	if hasNsSel && !hasPodSel {
