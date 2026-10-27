@@ -399,6 +399,31 @@ acceptance; collection adds no watches, public fields or projection changes.
 Image-pull, Ingress, ServiceAccount, and Gateway Secret-reference details,
 volumeDevices, and custom resource schemas are not interpreted by this slice.
 
+HTTPRoute `parentRefs` produce ATTACHED_TO only for the modeled Gateway kind in
+`gateway.networking.k8s.io`. As specified by the
+[Gateway API ParentReference contract](https://gateway-api.sigs.k8s.io/reference/api-spec/main/spec/#parentreference),
+an omitted group defaults to that group; an explicitly empty string refers to
+the core group. Core and other explicit groups are skipped rather than linked to
+a same-name Gateway. Explicit and defaulted supported references share the same
+target-ID deduplication set, preserving route namespace fallback, explicit parent
+namespace and member scope. This adds no target reads or new parent kinds.
+
+A present group of the wrong type, including null, returns an extraction error
+with no input values in its message. Earlier confirmed parents survive, later
+parents stop, and independent builtin backend extraction still runs under an
+active parent. Local callbacks cover both scope/history modes, committed source
+receipts, unchanged replay, valid-version recovery, failed edge writes, missing
+targets and forward/reverse impact. A missing Gateway remains unresolved; a
+foreign member's same-name resource cannot fill it, and no target is synthesized.
+Recovery preserves known gaps and does not duplicate unchanged resource history.
+
+These are declared parent references, not proof of AllowedRoutes, controller
+acceptance, effective cross-namespace permission or traffic. The guard is not
+complete ParentReference schema validation and does not change group-less stored
+resource identities. Earlier stored edges remain retained pending separate
+ownership-backed repair. Native Kubernetes/PostgreSQL and M4 acceptance remain
+separate gates.
+
 Service and NetworkPolicy label equality requires a key to be present. For
 example, `flag: ""` matches a Pod or workload template carrying an empty `flag`
 label, but not one with no `flag` key. The same rule applies to NetworkPolicy

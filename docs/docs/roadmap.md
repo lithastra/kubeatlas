@@ -94,6 +94,13 @@ previously missing edge without rewriting the resource or duplicating history;
 failed edge writes retain gap evidence and later replay can recover. Missing
 Service targets remain unresolved rather than synthesized, with local scoped
 forward/reverse impact regressions. This does not establish effective routing.
+HTTPRoute parent extraction now also checks the declared API group before
+building ATTACHED_TO edges. Omitted group defaults to gateway.networking.k8s.io;
+explicit core/other groups cannot bind a same-name modeled Gateway. Malformed
+group values preserve the confirmed parent prefix and independent backend edges
+with an extraction gap. Local scope/history/replay regressions cover missing
+targets, failed writes and forward/reverse recovery without clearing known gaps.
+Existing stored edges remain retained; allowed attachment and traffic are unverified.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another
