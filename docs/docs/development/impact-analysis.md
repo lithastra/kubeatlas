@@ -1959,6 +1959,39 @@ pre-cancelled entry, cancellation errors, sticky gaps, committed notifications
 and active partial extraction. These offline tests do not qualify real-cluster
 reliability, deployed PostgreSQL cancellation or M4 acceptance.
 
+### M2 builtin extraction cancellation boundary follow-up
+
+The shared builtin extractor registry now checks its parent context before each
+extractor, after each dependency returns and before exposing the final batch.
+Cancellation or an expired deadline returns the parent's context error and no
+edges, including when an earlier extractor succeeded or failed with usable
+partial results. Already-started dependencies may still return late; the
+registry does not launch another extractor or expose their late output. Empty
+registries also preserve parent cancellation rather than reporting success.
+
+An extractor error under a still-active parent remains an ordinary partial
+failure: keep its usable edges, run later extractors and return the first
+error. This includes a dependency's own cancellation/deadline error when the
+registry's parent remains active. There is no detached goroutine, global lock,
+retry, new watch or additional query. Concurrent callers retain independent
+contexts, so an old cancelled callback does not stop a healthy successor.
+
+Core and Gatekeeper callbacks still keep resources, private writer receipts and
+metadata-only history committed before cancellation. Cancelled registry output
+cannot start Secret-reference placeholder or edge writes. Existing loss
+evidence remains sticky; teardown does not create a new extraction/persistence
+gap. Later active delivery re-extracts relationships without duplicating
+unchanged resource history or adopting a new stored writer. The registry change
+does not alter active partial-result persistence or the whole-batch scope guard.
+
+Portable tests cover pre-cancelled and expired entry, every extractor position,
+late success/error output, earlier partial failures, empty registries, real
+builtin Service selection and phase-controlled concurrent callers. Core and
+Gatekeeper callback regressions use the real registry across member/standalone
+scope and both history modes, checking retained data, replay and scoped reads.
+These checks do not establish real-cluster shutdown or deployed PostgreSQL/M4
+acceptance.
+
 ### M2 shared Rego evaluation cancellation and failure handoff follow-up
 
 The existing rule-evaluation cache now waits for a shared evaluation through a

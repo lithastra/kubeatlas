@@ -154,6 +154,13 @@ after cancellation while retaining confirmed in-flight writes/history. Upsert
 notifications follow confirmed graph writes, including edge-only replay recovery;
 failed replays do not send false updates. Local fake-client shutdown and failure
 regressions cover both scope/history modes and preserve active partial extraction.
+The shared builtin extractor registry now also stops between individual
+extractors when the parent context is cancelled or expired. It discards the
+whole cancelled batch, including late dependency output, instead of starting
+later target reads. Ordinary dependency failures under an active parent still
+retain partial edges and run subsequent extractors. Local registry/concurrent
+handoff and core/Gatekeeper callback regressions preserve committed resources,
+writer receipts, history deduplication, sticky gaps and healthy replay recovery.
 Shared Rego evaluation now lets waiting callers cancel independently. Failed
 evaluators hand ownership to one active waiter under the existing mutex rather
 than an unlocked fallback; cancelled late results are excluded from the cache.
