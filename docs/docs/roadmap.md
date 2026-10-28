@@ -121,6 +121,13 @@ regressions cover all seven builtin consumers, member/standalone and history
 modes, independent references, valid-version recovery and exact separate RBAC
 association paths. Old relationships and known gaps remain retained; effective
 permissions and runtime credential use remain unevaluated.
+Role references now also check explicit apiGroup values before emitting BINDS_ROLE.
+Omitted/empty groups retain RBAC defaulting; other groups or wrong-typed values
+return extraction-gap evidence without suppressing valid subjects. Portable tests
+cover all three supported binding/role combinations, member/history modes,
+missing-role qualification, fresh valid same-name replacements, failed writes
+and exact scoped authorization paths. Old edges and known gaps remain retained;
+roleRef mutation and effective-permission evaluation are not introduced.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another

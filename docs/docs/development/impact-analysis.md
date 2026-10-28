@@ -643,6 +643,29 @@ of credential use or permissions. No new target reads, watches, API fields or
 node synthesis is introduced; native Kubernetes/PostgreSQL and M4 acceptance
 remain separate gates.
 
+RoleBinding and ClusterRoleBinding role extraction now checks an explicit
+`roleRef.apiGroup` before creating BINDS_ROLE. Omitted and empty strings retain
+[Kubernetes RBAC defaulting](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/v1/defaults.go)
+to `rbac.authorization.k8s.io`; an explicit different group or non-string value,
+including null, returns an extraction error without a role edge. This mirrors
+the supported group in the
+[Kubernetes binding validation](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/validation/validation.go)
+after defaulting. Error messages contain no supplied group/key values. Existing
+subject extraction remains independent, so the authorization facet can expose
+the binding's missing-role notice instead of joining a same-name stored role.
+
+Portable callbacks cover RoleBinding-to-Role, RoleBinding-to-ClusterRole and
+ClusterRoleBinding-to-ClusterRole in member/standalone and both history modes.
+Invalid replay retains source/subject receipts and one source history event;
+write failure has separate gap evidence. Recovery tests use a fresh valid
+same-name UID replacement, respecting Kubernetes roleRef immutability, or an
+unchanged replay after write recovery. Exact account/binding/role paths retain
+binding namespace/scope and original/traversal direction, independently of the
+ordinary result direction and counts. Known gaps and old edges are not cleared.
+This adds no role/rule reads, watches, schema fields, permission evaluation or
+complete RBAC schema validation. Native Kubernetes/PostgreSQL and M4 acceptance
+remain separate gates.
+
 The facet reports `stored_edge_association`, `sourceVersionEvidence: unknown`,
 `effectivePermissions: not_evaluated`, and `observationCoverage: unknown`.
 Observed identity UID/resourceVersion does not bind an edge to that source

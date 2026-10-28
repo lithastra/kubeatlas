@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"context"
+	"errors"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
@@ -63,7 +64,8 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 // BindsRoleExtractor emits a single BINDS_ROLE edge from a binding to
 // the Role / ClusterRole referenced by `roleRef`. RoleBinding can
 // reference EITHER Role (same namespace) OR ClusterRole (cluster-
-// scoped); ClusterRoleBinding must reference ClusterRole.
+// scoped); ClusterRoleBinding must reference ClusterRole. Omitted/empty
+// roleRef.apiGroup retains RBAC defaulting; explicit values must name that group.
 type BindsRoleExtractor struct{}
 
 func (BindsRoleExtractor) Type() graph.EdgeType { return graph.EdgeTypeBindsRole }
@@ -80,6 +82,12 @@ func (BindsRoleExtractor) Extract(_ context.Context, r graph.Resource, _ graph.R
 	name, _ := ref["name"].(string)
 	if kind == "" || name == "" {
 		return nil, nil
+	}
+	if value, present := ref["apiGroup"]; present {
+		group, ok := value.(string)
+		if !ok || group != "" && group != "rbac.authorization.k8s.io" {
+			return nil, errors.New("BindsRoleExtractor: unsupported or malformed roleRef apiGroup")
+		}
 	}
 	// ClusterRole is cluster-scoped — empty namespace produces the
 	// "/ClusterRole/<name>" ID. Role lives in the binding's
