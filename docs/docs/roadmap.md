@@ -141,6 +141,12 @@ nonempty namespace instead of emitting namespace-less edges. Portable regression
 cover valid defaults, partial subjects, independent roles, sticky gaps, replay
 and scoped authorization recovery without connecting a same-name fallback
 account. Existing edges remain retained; native acceptance is still pending.
+RBAC extraction now also reports malformed declaration containers instead of
+silently treating them as empty: non-null subjects must be an array, entries
+must be objects, and non-null roleRef must be an object. Earlier valid subjects
+and independent extraction remain usable. Portable callbacks cover replay,
+distinct sticky gaps and scoped recovery, with fresh same-name replacements for
+immutable roleRef. Omitted/null fields keep legacy behavior; old edges remain.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another

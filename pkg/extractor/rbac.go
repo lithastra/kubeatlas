@@ -13,6 +13,8 @@ import (
 // also references; User and Group subjects are emitted as edges to
 // dangling endpoints (no informer creates User / Group resources).
 // UI consumers decide whether to render those endpoints.
+// Non-null subjects must be an array of objects. Malformed entries
+// retain earlier subjects and return an error before later entries.
 // For the three supported subject kinds, explicit apiGroup values must
 // match Kubernetes defaulting/validation. A bad group retains earlier
 // subjects and returns an error before later entries are processed.
@@ -35,15 +37,22 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 	if r.Kind != "RoleBinding" && r.Kind != "ClusterRoleBinding" {
 		return nil, nil
 	}
-	subjects := nestedSliceTop(r.Raw, "subjects")
+	value := r.Raw["subjects"]
+	if value == nil {
+		return nil, nil
+	}
+	subjects, ok := value.([]any)
+	if !ok {
+		return nil, errors.New("BindsSubjectExtractor: subjects must be an array")
+	}
 	if len(subjects) == 0 {
 		return nil, nil
 	}
 	out := make([]graph.Edge, 0, len(subjects))
 	for _, s := range subjects {
 		sm, ok := s.(map[string]any)
-		if !ok {
-			continue
+		if !ok || sm == nil {
+			return out, errors.New("BindsSubjectExtractor: subject must be an object")
 		}
 		kind, _ := sm["kind"].(string)
 		name, _ := sm["name"].(string)
@@ -85,6 +94,7 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 // reference EITHER Role (same namespace) OR ClusterRole (cluster-
 // scoped); ClusterRoleBinding must reference ClusterRole. Omitted/empty
 // roleRef.apiGroup retains RBAC defaulting; explicit values must name that group.
+// A non-null roleRef must be an object; wrong container types return an error.
 type BindsRoleExtractor struct{}
 
 func (BindsRoleExtractor) Type() graph.EdgeType { return graph.EdgeTypeBindsRole }
@@ -93,9 +103,13 @@ func (BindsRoleExtractor) Extract(_ context.Context, r graph.Resource, _ graph.R
 	if r.Kind != "RoleBinding" && r.Kind != "ClusterRoleBinding" {
 		return nil, nil
 	}
-	ref := nestedMapTop(r.Raw, "roleRef")
-	if ref == nil {
+	value := r.Raw["roleRef"]
+	if value == nil {
 		return nil, nil
+	}
+	ref, ok := value.(map[string]any)
+	if !ok {
+		return nil, errors.New("BindsRoleExtractor: roleRef must be an object")
 	}
 	kind, _ := ref["kind"].(string)
 	name, _ := ref["name"].(string)
@@ -122,32 +136,4 @@ func (BindsRoleExtractor) Extract(_ context.Context, r graph.Resource, _ graph.R
 		To:   graph.Resource{Kind: kind, Namespace: targetNS, Name: name, ClusterID: r.ClusterID}.ID(),
 		Type: graph.EdgeTypeBindsRole,
 	}}, nil
-}
-
-// nestedSliceTop is the top-level twin of nestedSlice: RoleBinding's
-// `subjects` and `roleRef` live at the resource root, not under
-// `spec`, so the existing nestedSlice (which always descends through
-// nested keys) is awkward to use. Returns nil when the path is
-// absent or the wrong type.
-func nestedSliceTop(raw map[string]any, key string) []any {
-	if raw == nil {
-		return nil
-	}
-	v, ok := raw[key].([]any)
-	if !ok {
-		return nil
-	}
-	return v
-}
-
-// nestedMapTop is the top-level twin of nestedMap.
-func nestedMapTop(raw map[string]any, key string) map[string]any {
-	if raw == nil {
-		return nil
-	}
-	v, ok := raw[key].(map[string]any)
-	if !ok {
-		return nil
-	}
-	return v
 }

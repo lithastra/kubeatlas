@@ -714,6 +714,26 @@ scoped, exclude sibling/foreign accounts and stay separate from ordinary counts.
 Old relationships are not deleted, and these local checks do not establish
 effective permissions, native Kubernetes/PostgreSQL or M4 acceptance.
 
+RBAC declaration shape checks now distinguish a non-null wrong container from
+an absent field. `subjects` must be an array, and each entry must be an object.
+A malformed entry, including null, returns the earlier valid subject prefix
+with an extraction error and stops before later entries. A non-null `roleRef`
+must be an object; strings, arrays and other scalar values return an extraction
+error instead of silently producing no role. Independent subject/role extraction
+continues, and errors include no input values or keys. Omitted/null top-level
+fields, empty valid containers and legacy incomplete identity-map handling are
+unchanged. These checks do not constitute complete RBAC schema validation.
+
+Portable regressions cover both binding kinds, member/standalone scope, prefix
+retention and registry error propagation without target reads. Shared core
+callbacks verify committed source receipts/history, independent valid edges,
+distinct sticky gaps, unchanged replay and exact scoped authorization recovery.
+Subject recovery uses a valid new source version; immutable roleRef recovery
+uses a fresh same-name binding UID. Existing same-name accounts/roles do not fill
+the malformed associations. Ordinary counts remain separate, and old stored
+relationships are retained. Native Kubernetes/PostgreSQL, effective permissions
+and M4 acceptance remain unqualified by these local tests.
+
 The facet reports `stored_edge_association`, `sourceVersionEvidence: unknown`,
 `effectivePermissions: not_evaluated`, and `observationCoverage: unknown`.
 Observed identity UID/resourceVersion does not bind an edge to that source

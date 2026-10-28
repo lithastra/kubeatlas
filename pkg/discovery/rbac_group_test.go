@@ -25,7 +25,7 @@ func TestCoreRoleRefGroupRecoveryAndAuthorization(t *testing.T) {
 			for _, history := range []bool{false, true} {
 				for _, state := range []string{"foreign-group", "malformed-group", "write-failure"} {
 					t.Run(fmt.Sprintf("%s/%s/cluster=%s/history=%t/%s", fixture.binding, fixture.role, cluster, history, state), func(t *testing.T) {
-						testRoleRefGroupRecovery(t, fixture.binding, fixture.role, cluster, history, state)
+						testRoleRefRecovery(t, fixture.binding, fixture.role, cluster, history, state)
 					})
 				}
 			}
@@ -33,7 +33,7 @@ func TestCoreRoleRefGroupRecoveryAndAuthorization(t *testing.T) {
 	}
 }
 
-func testRoleRefGroupRecovery(t *testing.T, bindingKind, roleKind, cluster string, history bool, state string) {
+func testRoleRefRecovery(t *testing.T, bindingKind, roleKind, cluster string, history bool, state string) {
 	t.Helper()
 	ctx := context.Background()
 	base := memory.New()
@@ -73,6 +73,12 @@ func testRoleRefGroupRecovery(t *testing.T, bindingKind, roleKind, cluster strin
 		ref["apiGroup"] = map[string]any{"private": "role-group-canary"}
 	}
 	obj.Object["roleRef"] = ref
+	switch state {
+	case "roleRef-string":
+		obj.Object["roleRef"] = "shape-canary"
+	case "roleRef-array":
+		obj.Object["roleRef"] = []any{ref}
+	}
 	obj.Object["subjects"] = []any{map[string]any{"kind": "ServiceAccount", "name": "worker", "namespace": "app", "apiGroup": ""}}
 	r := UnstructuredToResource(obj, bindingKind)
 	r.ClusterID = cluster
@@ -102,19 +108,19 @@ func testRoleRefGroupRecovery(t *testing.T, bindingKind, roleKind, cluster strin
 		wantEdges, wantAttempts, wantNotifications = 0, 4, 1
 	}
 	if err != nil || len(edges) != wantEdges || store.edgeWrites.Load() != wantAttempts || store.resourceWrites.Load() != 1 || len(sink.recorded()) != 1 || notifications.Load() != wantNotifications {
-		t.Fatal("role group replay invented a role or lost subject/source receipts", edges, sink.recorded(), err)
+		t.Fatal("role reference replay invented a role or lost subject/source receipts", edges, sink.recorded(), err)
 	}
 	if len(edges) == 1 && (edges[0].From != r.ID() || edges[0].To != account.ID() || edges[0].Type != graph.EdgeTypeBindsSubject) {
-		t.Fatal("invalid role group suppressed or changed the independent subject", edges)
+		t.Fatal("invalid role reference suppressed or changed the independent subject", edges)
 	}
 	before := coverageView(t, tracker, cluster, gvr)
 	if before.ExtractionGapSince.IsZero() != (state == "write-failure") || before.PersistenceGapSince.IsZero() != (state != "write-failure") || !before.ProcessingGapSince.Equal(prior) {
-		t.Fatal("role group failure lost distinct gap evidence", before)
+		t.Fatal("role reference failure lost distinct gap evidence", before)
 	}
 	if state != "write-failure" {
 		initial, err := analysis.AnalyzeStoredImpact(ctx, base, workload.ID(), analysis.ImpactOptions{ClusterID: cluster}, graph.ImpactSnapshotOptions{ClusterID: cluster})
 		if err != nil || initial.Authorization.Counts.Total != 2 || !initial.Authorization.Counts.LowerBound || len(initial.Authorization.Notices) != 1 || initial.Authorization.Notices[0].Reason != analysis.ImpactAuthorizationMissingRole || initial.Authorization.Notices[0].Count != 1 {
-			t.Fatal("same-name role concealed the invalid group/missing role association", initial, err)
+			t.Fatal("same-name role concealed the invalid reference/missing role association", initial, err)
 		}
 	}
 	wantSources := int64(1)
@@ -124,6 +130,7 @@ func testRoleRefGroupRecovery(t *testing.T, bindingKind, roleKind, cluster strin
 		obj.SetUID("replacement-uid")
 		obj.SetResourceVersion("version-two")
 		ref["apiGroup"] = "rbac.authorization.k8s.io"
+		obj.Object["roleRef"] = ref
 		wantSources = 2
 	}
 	store.failEdge.Store(false)
@@ -154,11 +161,11 @@ func testRoleRefGroupRecovery(t *testing.T, bindingKind, roleKind, cluster strin
 		}
 		auth := result.Authorization
 		if auth.Counts.Total != 3 || auth.Counts.Direct != 1 || auth.Counts.Indirect != 2 || auth.Counts.Roles != 1 || auth.Counts.Bindings != 1 || auth.Counts.ServiceAccounts != 1 || auth.Counts.LowerBound || len(auth.Resources) != 3 || len(auth.Notices) != 0 || !auth.ModeledTraversalComplete || auth.EffectivePermissions != "not_evaluated" || auth.SourceVersionEvidence != "unknown" || auth.EvidenceCategory != "stored_edge_association" {
-			t.Fatal("role group recovery joined foreign data or overstated authorization evidence", auth)
+			t.Fatal("role reference recovery joined foreign data or overstated authorization evidence", auth)
 		}
 		for i, id := range []string{account.ID(), r.ID(), role.ID()} {
 			if auth.Resources[i].Resource.ID != id || !reflect.DeepEqual(auth.Resources[i].Path, wantPath[:i+1]) {
-				t.Fatal("role group recovery changed exact association scope/direction", auth)
+				t.Fatal("role reference recovery changed exact association scope/direction", auth)
 			}
 		}
 		wantOrdinary := 0

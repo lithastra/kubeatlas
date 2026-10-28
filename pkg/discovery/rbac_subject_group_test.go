@@ -84,10 +84,24 @@ func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster s
 	case "empty-namespace":
 		subject["namespace"] = ""
 	}
-	obj.Object["subjects"] = []any{
+	subjects := []any{
 		map[string]any{"kind": "ServiceAccount", "name": "prefix", "namespace": "app"},
 		subject,
 		map[string]any{"kind": "ServiceAccount", "name": "tail", "namespace": "app"},
+	}
+	obj.Object["subjects"] = subjects
+	wholeContainer := false
+	switch state {
+	case "subjects-object":
+		wholeContainer = true
+		obj.Object["subjects"] = map[string]any{"private": "shape-canary"}
+	case "subjects-string":
+		wholeContainer = true
+		obj.Object["subjects"] = "shape-canary"
+	case "subject-null":
+		subjects[1] = nil
+	case "subject-array":
+		subjects[1] = []any{subject}
 	}
 	obj.Object["roleRef"] = map[string]any{"kind": roleKind, "name": "reader", "apiGroup": "rbac.authorization.k8s.io"}
 	r := UnstructuredToResource(obj, bindingKind)
@@ -130,6 +144,9 @@ func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster s
 	}
 	edges, err := base.ListEdges(ctx, r.ID(), graph.DirectionOutgoing)
 	wantEdges, wantAttempts, wantNotifications := 2, int64(4), int64(2)
+	if wholeContainer {
+		wantEdges, wantAttempts = 1, 2
+	}
 	if state == "write-failure" {
 		wantEdges, wantAttempts, wantNotifications = 0, 8, 1
 	}
@@ -137,7 +154,7 @@ func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster s
 		t.Fatal("subject replay lost the confirmed prefix, role or source receipts", edges, sink.recorded(), err)
 	}
 	for _, edge := range edges {
-		validPrefix := edge.Type == graph.EdgeTypeBindsSubject && edge.To == prefix.ID()
+		validPrefix := !wholeContainer && edge.Type == graph.EdgeTypeBindsSubject && edge.To == prefix.ID()
 		validRole := edge.Type == graph.EdgeTypeBindsRole && edge.To == role.ID()
 		if edge.From != r.ID() || !validPrefix && !validRole {
 			t.Fatal("invalid subject reference invented an account association or continued after failure", edges)
@@ -163,6 +180,8 @@ func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster s
 		obj.SetResourceVersion("version-two")
 		subject["apiGroup"] = ""
 		subject["namespace"] = "app"
+		subjects[1] = subject
+		obj.Object["subjects"] = subjects
 		wantSources = 2
 	}
 	store.failEdge.Store(false)
