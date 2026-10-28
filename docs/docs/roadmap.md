@@ -128,6 +128,13 @@ cover all three supported binding/role combinations, member/history modes,
 missing-role qualification, fresh valid same-name replacements, failed writes
 and exact scoped authorization paths. Old edges and known gaps remain retained;
 roleRef mutation and effective-permission evaluation are not introduced.
+Subject extraction now also checks apiGroup for ServiceAccount, User and Group.
+Omitted/empty groups retain Kubernetes defaulting; explicit nonempty groups must
+match the subject kind, and wrong-typed groups return an extraction gap. Earlier
+valid subjects and independent role extraction remain usable. Portable tests
+cover defaulting, member/history modes, unchanged replay, failed writes and
+valid subject updates with exact separate authorization paths. Known gaps and
+old edges remain retained; this does not evaluate effective permissions.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another

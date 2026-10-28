@@ -666,6 +666,31 @@ This adds no role/rule reads, watches, schema fields, permission evaluation or
 complete RBAC schema validation. Native Kubernetes/PostgreSQL and M4 acceptance
 remain separate gates.
 
+Subject extraction likewise checks `subjects[].apiGroup` for ServiceAccount,
+User and Group before creating BINDS_SUBJECT. Omitted/empty strings retain
+[Kubernetes subject defaulting](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/v1/defaults.go):
+ServiceAccount uses the empty core group; User/Group default to
+`rbac.authorization.k8s.io`. An explicit nonempty group must be the RBAC group
+for User/Group and is invalid for ServiceAccount, including the literal `core`.
+An unsupported group or non-string value, including null, preserves only the
+earlier valid subject prefix and returns a static extraction error before later
+subjects. It does not suppress independent BINDS_ROLE extraction or query any
+target objects. Error messages contain no supplied group/key values.
+
+Portable regressions cover all three subject kinds, namespace defaulting,
+member/standalone scope and registry error propagation. Core callback tests cover
+all three binding/role combinations and both history modes: invalid replay
+retains the prefix, role, source receipt and one history event while preventing
+a same-name core ServiceAccount from joining the binding. A valid new source
+version can update subjects without changing the binding UID or immutable
+roleRef; unchanged replay also recovers failed edge writes. Exact authorization
+paths stay scoped and do not traverse sibling subjects or foreign members.
+Extraction, persistence and older processing gaps remain distinct and sticky.
+Ordinary counts stay separate, and stored associations still do not establish
+effective permissions. Old edges are retained; this does not validate subject
+names/namespaces, change legacy unknown-kind handling, introduce new watches or
+qualify native Kubernetes/PostgreSQL and M4 acceptance.
+
 The facet reports `stored_edge_association`, `sourceVersionEvidence: unknown`,
 `effectivePermissions: not_evaluated`, and `observationCoverage: unknown`.
 Observed identity UID/resourceVersion does not bind an edge to that source

@@ -13,6 +13,9 @@ import (
 // also references; User and Group subjects are emitted as edges to
 // dangling endpoints (no informer creates User / Group resources).
 // UI consumers decide whether to render those endpoints.
+// For the three supported subject kinds, explicit apiGroup values must
+// match Kubernetes defaulting/validation. A bad group retains earlier
+// subjects and returns an error before later entries are processed.
 //
 // Subject namespace handling:
 //
@@ -47,6 +50,15 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 		name, _ := sm["name"].(string)
 		if kind == "" || name == "" {
 			continue
+		}
+		switch kind {
+		case "ServiceAccount", "User", "Group":
+			if value, present := sm["apiGroup"]; present {
+				group, ok := value.(string)
+				if !ok || group != "" && (kind == "ServiceAccount" || group != "rbac.authorization.k8s.io") {
+					return out, errors.New("BindsSubjectExtractor: unsupported or malformed subject apiGroup")
+				}
+			}
 		}
 		ns, _ := sm["namespace"].(string)
 		if kind == "ServiceAccount" && ns == "" && r.Kind == "RoleBinding" {
