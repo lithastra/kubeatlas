@@ -126,27 +126,15 @@ func selectorNamespaces(value any) ([]string, error) {
 }
 
 // podTemplateContainers returns one container field (regular, init or ephemeral)
-// from a workload's pod template, CronJob job template or raw Pod spec.
+// from the kind's Pod spec, without falling through empty lists to other paths.
 func podTemplateContainers(r graph.Resource, field string) []any {
-	if c := nestedSlice(r.Raw, "spec", "template", "spec", field); len(c) > 0 {
-		return c
-	}
-	if c := nestedSlice(r.Raw, "spec", "jobTemplate", "spec", "template", "spec", field); len(c) > 0 {
-		return c // CronJob
-	}
-	return nestedSlice(r.Raw, "spec", field)
+	return nestedSlice(podSpec(r), field)
 }
 
-// podTemplateVolumes returns the volumes slice from a workload's
-// spec.template.spec.volumes or a raw Pod's spec.volumes.
+// podTemplateVolumes returns volumes from the same kind-selected Pod spec
+// used by container references.
 func podTemplateVolumes(r graph.Resource) []any {
-	if v := nestedSlice(r.Raw, "spec", "template", "spec", "volumes"); len(v) > 0 {
-		return v
-	}
-	if v := nestedSlice(r.Raw, "spec", "jobTemplate", "spec", "template", "spec", "volumes"); len(v) > 0 {
-		return v // CronJob
-	}
-	return nestedSlice(r.Raw, "spec", "volumes")
+	return nestedSlice(podSpec(r), "volumes")
 }
 
 // podTemplateMeta returns the spec.template.metadata map for workloads,
@@ -162,16 +150,20 @@ func podTemplateMeta(r graph.Resource) map[string]any {
 	return nestedMap(r.Raw, "metadata")
 }
 
-// podSpec returns the pod template spec for workloads or the
-// resource's own spec for raw Pods.
+// podSpec selects the builtin kind's canonical path. Missing/empty fields must
+// not redirect collection to a Pod-like object at another path.
 func podSpec(r graph.Resource) map[string]any {
-	if m := nestedMap(r.Raw, "spec", "template", "spec"); m != nil {
-		return m
+	switch r.Kind {
+	case "Pod":
+		return nestedMap(r.Raw, "spec")
+	case "CronJob":
+		return nestedMap(r.Raw, "spec", "jobTemplate", "spec", "template", "spec")
+	default:
+		if hasPodTemplate(r.Kind) {
+			return nestedMap(r.Raw, "spec", "template", "spec")
+		}
+		return nil
 	}
-	if m := nestedMap(r.Raw, "spec", "jobTemplate", "spec", "template", "spec"); m != nil {
-		return m
-	}
-	return nestedMap(r.Raw, "spec")
 }
 
 // labelsMatch reports whether every key/value pair in want is present

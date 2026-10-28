@@ -161,6 +161,13 @@ errors. Portable regressions cover independent owner edges, scoped receipts,
 history deduplication, sticky gaps, replay and missing targets. Custom target
 kinds retain legacy modeling; group resolution and scale support are unverified.
 SCALES remains excluded from modeled impact traversal with an unmodeled notice.
+Builtin ConfigMap/Secret/PVC/ServiceAccount collection now selects the Pod spec
+by source kind instead of falling through empty fields to another path. Pod,
+CronJob and the other five controller kinds retain their distinct canonical
+paths. Portable regressions cover empty/null/omitted lists, missing templates,
+decoy fields, scoped replay/history, retained writes/gaps and exact canonical
+reference explanations. Unrelated Pod-like fields cannot create new edges or
+Secret placeholders; previously stored relationships remain retained.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another

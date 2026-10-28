@@ -289,6 +289,32 @@ traversal does not qualify observation continuity or scaling behavior. Old
 relationships remain retained; native Kubernetes/PostgreSQL and M4 acceptance
 remain separate gates.
 
+Builtin ConfigMap, Secret, PVC and ServiceAccount reference collection now
+selects the Pod spec by source kind. Pod uses `/spec`; CronJob uses
+`/spec/jobTemplate/spec/template/spec`; Deployment, ReplicaSet, StatefulSet,
+DaemonSet and Job use `/spec/template/spec`. Container and volume helpers share
+that selection instead of falling through empty fields to other paths.
+Unrelated Pod-like objects at another path cannot replace the selected spec or
+fill its empty, null or omitted lists. Missing/null/non-object canonical template
+specs likewise do not fall back. Default ServiceAccount inference still applies
+to a present selected Pod spec with no account name; it is not inferred from a
+Pod-like object at another path. This does not add complete schema validation.
+
+Portable regressions cover all seven builtin consumers and both scopes,
+including regular/init/ephemeral containers, direct/projected volume sources,
+image-pull references, PVCs and account defaults. Core callbacks cover both
+history modes, valid version updates, unchanged replay, failed edge writes and
+unobserved targets. Unrelated fields do not materialize Secret placeholders;
+canonical Secret references retain only reference identity, including after
+an edge failure. Source history stays deduplicated while reference-only Secret
+receipts may be written each delivery. Missing ConfigMap/PVC targets remain
+unresolved despite foreign same-name resources, then recover when observed.
+Scoped forward/reverse counts and stored/traversal directions remain exact;
+ConfigMap/PVC explanations bind canonical field paths to the source UID/version.
+Known gaps and previously stored edges/placeholders remain retained. No target
+reads, watches, public fields or cleanup are introduced; native Kubernetes/
+PostgreSQL and M4 acceptance remain separate gates.
+
 The second M1 slice adds the optional `graph.ImpactSnapshotter` capability and
 `analysis.AnalyzeStoredImpact`. It does not change GraphStore v2's method set or
 the legacy `Snapshot`/`SnapshotMetadata` methods. Both built-in stores now supply
