@@ -67,7 +67,8 @@ func TestRBACDeclarationShapes(t *testing.T) {
 							return nil, nil
 						})
 						edges, err := check.Extract(context.Background(), r, q)
-						if (err == nil) != tc.valid || len(edges) != 0 {
+						valid := tc.valid && (field != "roleRef" || tc.name != "empty")
+						if (err == nil) != valid || len(edges) != 0 {
 							t.Fatal("malformed RBAC container was ignored or invented edges", edges, err)
 						}
 						if err != nil && (strings.Contains(err.Error(), "shape-canary") || strings.Contains(err.Error(), "private-key-canary")) {
@@ -77,7 +78,7 @@ func TestRBACDeclarationShapes(t *testing.T) {
 						registry.Register(BindsSubjectExtractor{})
 						registry.Register(BindsRoleExtractor{})
 						batch, batchErr := registry.ExtractAll(context.Background(), r, q)
-						if (batchErr == nil) != tc.valid || !reflect.DeepEqual(batch, []graph.Edge{independent}) {
+						if (batchErr == nil) != valid || !reflect.DeepEqual(batch, []graph.Edge{independent}) {
 							t.Fatal("shape error suppressed independent RBAC extraction", batch, batchErr)
 						}
 					})

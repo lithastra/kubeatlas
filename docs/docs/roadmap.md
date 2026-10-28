@@ -147,6 +147,13 @@ must be objects, and non-null roleRef must be an object. Earlier valid subjects
 and independent extraction remain usable. Portable callbacks cover replay,
 distinct sticky gaps and scoped recovery, with fresh same-name replacements for
 immutable roleRef. Omitted/null fields keep legacy behavior; old edges remain.
+Provided RBAC subject/role objects now also require nonempty string kind/name
+fields. Unsupported subject kinds and role kinds invalid for the binding return
+extraction errors instead of emitting arbitrary endpoints or silently skipping
+incomplete identities. Local regressions pin supported kinds, confirmed prefixes,
+independent edges, scoped recovery and no Secret placeholder from an invalid
+Secret subject. Existing stored edges/placeholders remain retained; this is not
+complete schema or effective-permission validation.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another

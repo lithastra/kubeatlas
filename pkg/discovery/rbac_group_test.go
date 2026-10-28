@@ -71,6 +71,14 @@ func testRoleRefRecovery(t *testing.T, bindingKind, roleKind, cluster string, hi
 		ref["apiGroup"] = "example.org"
 	case "malformed-group":
 		ref["apiGroup"] = map[string]any{"private": "role-group-canary"}
+	case "roleRef-unsupported-kind":
+		ref["kind"] = "Secret"
+	case "roleRef-namespaced-role":
+		ref["kind"] = "Role"
+	case "roleRef-missing-name":
+		delete(ref, "name")
+	case "roleRef-malformed-kind":
+		ref["kind"] = true
 	}
 	obj.Object["roleRef"] = ref
 	switch state {
@@ -130,6 +138,7 @@ func testRoleRefRecovery(t *testing.T, bindingKind, roleKind, cluster string, hi
 		obj.SetUID("replacement-uid")
 		obj.SetResourceVersion("version-two")
 		ref["apiGroup"] = "rbac.authorization.k8s.io"
+		ref["kind"], ref["name"] = roleKind, "reader"
 		obj.Object["roleRef"] = ref
 		wantSources = 2
 	}

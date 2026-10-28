@@ -15,6 +15,7 @@ import (
 // UI consumers decide whether to render those endpoints.
 // Non-null subjects must be an array of objects. Malformed entries
 // retain earlier subjects and return an error before later entries.
+// Each subject requires nonempty string kind/name fields and a supported kind.
 // For the three supported subject kinds, explicit apiGroup values must
 // match Kubernetes defaulting/validation. A bad group retains earlier
 // subjects and returns an error before later entries are processed.
@@ -57,7 +58,7 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 		kind, _ := sm["kind"].(string)
 		name, _ := sm["name"].(string)
 		if kind == "" || name == "" {
-			continue
+			return out, errors.New("BindsSubjectExtractor: kind and name must be nonempty strings")
 		}
 		switch kind {
 		case "ServiceAccount", "User", "Group":
@@ -67,6 +68,8 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 					return out, errors.New("BindsSubjectExtractor: unsupported or malformed subject apiGroup")
 				}
 			}
+		default:
+			return out, errors.New("BindsSubjectExtractor: unsupported subject kind")
 		}
 		ns, stringNamespace := sm["namespace"].(string)
 		if kind == "ServiceAccount" {
@@ -95,6 +98,7 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 // scoped); ClusterRoleBinding must reference ClusterRole. Omitted/empty
 // roleRef.apiGroup retains RBAC defaulting; explicit values must name that group.
 // A non-null roleRef must be an object; wrong container types return an error.
+// Nonempty string kind/name and a kind supported by this binding are required.
 type BindsRoleExtractor struct{}
 
 func (BindsRoleExtractor) Type() graph.EdgeType { return graph.EdgeTypeBindsRole }
@@ -111,10 +115,16 @@ func (BindsRoleExtractor) Extract(_ context.Context, r graph.Resource, _ graph.R
 	if !ok {
 		return nil, errors.New("BindsRoleExtractor: roleRef must be an object")
 	}
+	if ref == nil {
+		return nil, nil
+	}
 	kind, _ := ref["kind"].(string)
 	name, _ := ref["name"].(string)
 	if kind == "" || name == "" {
-		return nil, nil
+		return nil, errors.New("BindsRoleExtractor: kind and name must be nonempty strings")
+	}
+	if kind != "ClusterRole" && (kind != "Role" || r.Kind != "RoleBinding") {
+		return nil, errors.New("BindsRoleExtractor: unsupported roleRef kind for binding")
 	}
 	if value, present := ref["apiGroup"]; present {
 		group, ok := value.(string)
@@ -124,9 +134,7 @@ func (BindsRoleExtractor) Extract(_ context.Context, r graph.Resource, _ graph.R
 	}
 	// ClusterRole is cluster-scoped — empty namespace produces the
 	// "/ClusterRole/<name>" ID. Role lives in the binding's
-	// namespace; ClusterRoleBinding cannot reference Role at all
-	// (the API forbids it), but we don't enforce that here — a
-	// malformed CRB with kind=Role would emit a dangling edge.
+	// namespace. The kind check above excludes Role in ClusterRoleBinding.
 	targetNS := ""
 	if kind == "Role" {
 		targetNS = r.Namespace

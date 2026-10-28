@@ -688,8 +688,8 @@ paths stay scoped and do not traverse sibling subjects or foreign members.
 Extraction, persistence and older processing gaps remain distinct and sticky.
 Ordinary counts stay separate, and stored associations still do not establish
 effective permissions. Old edges are retained; this does not validate subject
-names or namespace syntax, change legacy unknown-kind handling, introduce new
-watches or qualify native Kubernetes/PostgreSQL and M4 acceptance.
+names or namespace syntax, introduce new watches or qualify native
+Kubernetes/PostgreSQL and M4 acceptance.
 
 ServiceAccount subject namespace handling now distinguishes wrong types from
 omitted/null/empty values. A non-null, non-string namespace returns a static
@@ -702,7 +702,7 @@ edge, matching the
 [Kubernetes required-namespace check](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/validation/validation.go).
 Explicit string namespaces remain literal, including cross-namespace subjects;
 this does not validate namespace syntax or prove namespace/account existence.
-User/Group and unknown-kind namespace handling is unchanged.
+User/Group namespace handling is unchanged.
 
 Portable namespace regressions cover both binding kinds and member/standalone
 scope. Shared core callback tests retain source receipts, history deduplication,
@@ -721,8 +721,8 @@ with an extraction error and stops before later entries. A non-null `roleRef`
 must be an object; strings, arrays and other scalar values return an extraction
 error instead of silently producing no role. Independent subject/role extraction
 continues, and errors include no input values or keys. Omitted/null top-level
-fields, empty valid containers and legacy incomplete identity-map handling are
-unchanged. These checks do not constitute complete RBAC schema validation.
+fields and empty subjects arrays keep their existing compatibility behavior.
+These checks do not constitute complete RBAC schema validation.
 
 Portable regressions cover both binding kinds, member/standalone scope, prefix
 retention and registry error propagation without target reads. Shared core
@@ -733,6 +733,29 @@ uses a fresh same-name binding UID. Existing same-name accounts/roles do not fil
 the malformed associations. Ordinary counts remain separate, and old stored
 relationships are retained. Native Kubernetes/PostgreSQL, effective permissions
 and M4 acceptance remain unqualified by these local tests.
+
+Provided RBAC identity objects now require nonempty string `kind` and `name`.
+Missing, null, empty or wrong-typed identity fields return a static extraction
+error rather than silently skipping the entry; an empty roleRef object is
+therefore invalid. Subjects support only ServiceAccount, User and Group.
+RoleBinding roleRef supports Role and ClusterRole; ClusterRoleBinding supports
+only ClusterRole, following the
+[Kubernetes kind restrictions](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/validation/validation.go).
+Subject errors retain only the earlier confirmed prefix and stop later entries;
+independent role/subject extraction still runs. Group defaulting and valid
+namespace handling remain unchanged. Names are retained literally, without
+syntax validation or target existence/rule reads; this is not a complete RBAC
+schema validator or effective-permission evaluation.
+
+Portable identity regressions cover kind restrictions and required-field types,
+both binding kinds, member/standalone scope and both history modes. Core callback
+tests show that an unsupported Secret subject cannot materialize a Secret
+reference-only placeholder. Invalid replay retains committed receipts, history
+deduplication, independent edges and distinct sticky gaps. Valid subject updates
+and fresh same-name binding replacements for immutable roleRef recover exact
+scoped authorization paths, with ordinary counts kept separate. No Secret
+payload read or new watch is added. Previously stored edges/placeholders remain
+retained, and native Kubernetes/PostgreSQL and M4 acceptance are still separate.
 
 The facet reports `stored_edge_association`, `sourceVersionEvidence: unknown`,
 `effectivePermissions: not_evaluated`, and `observationCoverage: unknown`.

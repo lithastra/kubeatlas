@@ -5,6 +5,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync/atomic"
@@ -83,6 +84,12 @@ func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster s
 		subject["namespace"] = nil
 	case "empty-namespace":
 		subject["namespace"] = ""
+	case "subject-unsupported-kind":
+		subject["kind"] = "Secret"
+	case "subject-missing-kind":
+		delete(subject, "kind")
+	case "subject-malformed-name":
+		subject["name"] = true
 	}
 	subjects := []any{
 		map[string]any{"kind": "ServiceAccount", "name": "prefix", "namespace": "app"},
@@ -142,6 +149,9 @@ func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster s
 	for _, event := range []graph.EventType{graph.EventTypeAdd, graph.EventTypeUpdate} {
 		m.handleUpsert(ctx, gvr, obj.DeepCopy(), event)
 	}
+	if _, err := base.GetResource(ctx, graph.SecretReferenceResource("app", "worker", cluster).ID()); !errors.As(err, new(graph.ErrNotFound)) {
+		t.Fatal("invalid RBAC declaration materialized a Secret reference", err)
+	}
 	edges, err := base.ListEdges(ctx, r.ID(), graph.DirectionOutgoing)
 	wantEdges, wantAttempts, wantNotifications := 2, int64(4), int64(2)
 	if wholeContainer {
@@ -180,6 +190,7 @@ func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster s
 		obj.SetResourceVersion("version-two")
 		subject["apiGroup"] = ""
 		subject["namespace"] = "app"
+		subject["kind"], subject["name"] = "ServiceAccount", "worker"
 		subjects[1] = subject
 		obj.Object["subjects"] = subjects
 		wantSources = 2
@@ -191,6 +202,9 @@ func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster s
 	edges, err = base.ListEdges(ctx, r.ID(), graph.DirectionOutgoing)
 	if err != nil || len(edges) != 4 || store.resourceWrites.Load() != wantSources || store.edgeWrites.Load() != wantAttempts+8 || len(sink.recorded()) != int(wantSources) || notifications.Load() != wantNotifications+2 {
 		t.Fatal("valid subject update/replay failed to recover without duplicate history", edges, sink.recorded(), err)
+	}
+	if _, err := base.GetResource(ctx, graph.SecretReferenceResource("app", "worker", cluster).ID()); !errors.As(err, new(graph.ErrNotFound)) {
+		t.Fatal("RBAC recovery invented a Secret reference", err)
 	}
 	stored, err := base.GetResource(ctx, r.ID())
 	if err != nil || stored.UID != obj.GetUID() || stored.ResourceVersion != obj.GetResourceVersion() {
