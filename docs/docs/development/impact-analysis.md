@@ -62,6 +62,7 @@ indirect means more than one. The root is never included in result counts.
 | `SELECTS`, `ROUTES_TO`, `ATTACHED_TO` | Selector, backend, or parent reference | Declared routing/selection relationship, not an active endpoint or a verified traffic path. |
 | `USES_SERVICEACCOUNT` | Workload/Pod service-account reference | Declared identity use, not proof that an operation was performed or authorized. |
 | `BINDS_ROLE`, `BINDS_SUBJECT` | Binding roleRef and subjects | Authorization association; report separately from ordinary dependent counts. |
+| `SCALES` | HPA scaleTargetRef declaration | Currently unmodeled in impact traversal; no proof of target scale support or scaling activity. |
 | Other rule/policy/platform edges | Stored edge and available provenance | Show as unmodeled relationships, not automatic outage propagation. OTel overlay edges do not enter this traversal. |
 
 RBAC is a branching relation: `binding -> role` and `binding -> subject`.
@@ -259,6 +260,34 @@ the target is observed. Portable extractor and real-registry callback tests
 cover member/standalone scope, both history modes, deduplication, failed writes,
 retained receipts and forward/reverse memory-backed impact paths. Controller
 acceptance, actual traffic and real-cluster behavior remain unverified.
+
+HPA target extraction now distinguishes malformed declarations from absent
+fields. Non-null `spec` and `scaleTargetRef` values must be objects; a provided
+reference requires nonempty string `kind` and `name`. A non-null `apiVersion`
+must be a string accepted by the pinned Kubernetes `schema.ParseGroupVersion`,
+matching the parser used by the
+[HPA controller](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/podautoscaler/horizontal.go).
+Failures return static extraction errors with no target edge or supplied input
+values, while independent owner-reference extraction continues. Omitted/null
+spec/reference fields retain compatibility, as do omitted/null/empty version
+fields and custom target kinds. The GroupVersion parser is not full version
+syntax validation: it also accepts strings such as `/` and `apps/`. Parsing
+does not establish served group/version equivalence, target existence, scale
+subresource support or controller activity. General group-qualified identity
+resolution remains outside this change; legacy group-less target IDs persist.
+
+Portable regressions pin the parser behavior, required-field shapes, scope and
+independent owner edges without target reads. Core callbacks cover core/apps/
+custom target kinds, member/standalone scope and both history modes, with
+committed source receipts, unchanged history deduplication, distinct sticky
+extraction/persistence gaps, valid-version recovery and failed-write replay.
+Unobserved targets remain dangling instead of being synthesized or filled from
+foreign members. SCALES stays unmodeled in impact traversal: forward/reverse
+queries retain its exclusion notice, ordinary counts cover only modeled paths,
+and the independent UID-matched owner path remains available. Complete modeled
+traversal does not qualify observation continuity or scaling behavior. Old
+relationships remain retained; native Kubernetes/PostgreSQL and M4 acceptance
+remain separate gates.
 
 The second M1 slice adds the optional `graph.ImpactSnapshotter` capability and
 `analysis.AnalyzeStoredImpact`. It does not change GraphStore v2's method set or

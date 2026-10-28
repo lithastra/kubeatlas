@@ -154,6 +154,13 @@ incomplete identities. Local regressions pin supported kinds, confirmed prefixes
 independent edges, scoped recovery and no Secret placeholder from an invalid
 Secret subject. Existing stored edges/placeholders remain retained; this is not
 complete schema or effective-permission validation.
+HPA collection now reports malformed spec/scaleTargetRef objects and missing or
+wrong-typed target identities. Optional apiVersion values require strings and
+use the Kubernetes controller's GroupVersion parser without exposing input in
+errors. Portable regressions cover independent owner edges, scoped receipts,
+history deduplication, sticky gaps, replay and missing targets. Custom target
+kinds retain legacy modeling; group resolution and scale support are unverified.
+SCALES remains excluded from modeled impact traversal with an unmodeled notice.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another
