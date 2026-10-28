@@ -688,8 +688,31 @@ paths stay scoped and do not traverse sibling subjects or foreign members.
 Extraction, persistence and older processing gaps remain distinct and sticky.
 Ordinary counts stay separate, and stored associations still do not establish
 effective permissions. Old edges are retained; this does not validate subject
-names/namespaces, change legacy unknown-kind handling, introduce new watches or
-qualify native Kubernetes/PostgreSQL and M4 acceptance.
+names or namespace syntax, change legacy unknown-kind handling, introduce new
+watches or qualify native Kubernetes/PostgreSQL and M4 acceptance.
+
+ServiceAccount subject namespace handling now distinguishes wrong types from
+omitted/null/empty values. A non-null, non-string namespace returns a static
+extraction error with only the earlier valid subject prefix; it cannot fall back
+to the RoleBinding namespace. Omitted/null/empty values retain the existing
+[same-namespace RoleBinding resolution](https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/rbac/validation/rule.go).
+The resolved namespace must be nonempty: ClusterRoleBinding subjects therefore
+report a missing-namespace error instead of emitting a namespace-less account
+edge, matching the
+[Kubernetes required-namespace check](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/validation/validation.go).
+Explicit string namespaces remain literal, including cross-namespace subjects;
+this does not validate namespace syntax or prove namespace/account existence.
+User/Group and unknown-kind namespace handling is unchanged.
+
+Portable namespace regressions cover both binding kinds and member/standalone
+scope. Shared core callback tests retain source receipts, history deduplication,
+confirmed earlier subjects and independent roles, with distinct sticky
+extraction/persistence gaps. Same-name accounts in the binding namespace cannot
+fill malformed references. Valid subject updates retain binding UID/roleRef,
+while unchanged replay recovers failed writes. Exact authorization paths remain
+scoped, exclude sibling/foreign accounts and stay separate from ordinary counts.
+Old relationships are not deleted, and these local checks do not establish
+effective permissions, native Kubernetes/PostgreSQL or M4 acceptance.
 
 The facet reports `stored_edge_association`, `sourceVersionEvidence: unknown`,
 `effectivePermissions: not_evaluated`, and `observationCoverage: unknown`.

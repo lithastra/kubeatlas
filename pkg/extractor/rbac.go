@@ -20,14 +20,13 @@ import (
 // Subject namespace handling:
 //
 //   - ServiceAccount in a RoleBinding: subject.namespace defaults to
-//     the RoleBinding's own namespace when absent. The K8s API
-//     enforces this defaulting; we replay it for clarity.
+//     the RoleBinding's own namespace when absent/null/empty, matching
+//     Kubernetes' same-namespace subject resolution. Wrong types return
+//     an error instead of taking that fallback.
 //   - ServiceAccount in a ClusterRoleBinding: subject.namespace is
-//     mandatory. We trust the API server: if absent the edge would
-//     point at "/ServiceAccount/<name>" which is invalid and
-//     dangling — better surfaced than silently dropped.
-//   - User / Group: subject.namespace is meaningless; the resulting
-//     ID is "/User/<name>" (cluster-scoped notation).
+//     mandatory. An unresolved namespace returns an extraction error
+//     with the confirmed subject prefix, not a namespace-less edge.
+//   - User / Group: legacy subject.namespace handling is unchanged.
 type BindsSubjectExtractor struct{}
 
 func (BindsSubjectExtractor) Type() graph.EdgeType { return graph.EdgeTypeBindsSubject }
@@ -60,9 +59,17 @@ func (BindsSubjectExtractor) Extract(_ context.Context, r graph.Resource, _ grap
 				}
 			}
 		}
-		ns, _ := sm["namespace"].(string)
-		if kind == "ServiceAccount" && ns == "" && r.Kind == "RoleBinding" {
-			ns = r.Namespace
+		ns, stringNamespace := sm["namespace"].(string)
+		if kind == "ServiceAccount" {
+			if sm["namespace"] != nil && !stringNamespace {
+				return out, errors.New("BindsSubjectExtractor: malformed ServiceAccount namespace")
+			}
+			if ns == "" && r.Kind == "RoleBinding" {
+				ns = r.Namespace
+			}
+			if ns == "" {
+				return out, errors.New("BindsSubjectExtractor: missing ServiceAccount namespace")
+			}
 		}
 		out = append(out, graph.Edge{
 			From: r.ID(),

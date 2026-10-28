@@ -25,7 +25,7 @@ func TestCoreSubjectGroupRecoveryAndAuthorization(t *testing.T) {
 			for _, history := range []bool{false, true} {
 				for _, state := range []string{"foreign-group", "rbac-group", "malformed-group", "write-failure"} {
 					t.Run(fmt.Sprintf("%s/%s/cluster=%s/history=%t/%s", fixture.binding, fixture.role, cluster, history, state), func(t *testing.T) {
-						testSubjectGroupRecovery(t, fixture.binding, fixture.role, cluster, history, state)
+						testSubjectReferenceRecovery(t, fixture.binding, fixture.role, cluster, history, state)
 					})
 				}
 			}
@@ -33,7 +33,7 @@ func TestCoreSubjectGroupRecoveryAndAuthorization(t *testing.T) {
 	}
 }
 
-func testSubjectGroupRecovery(t *testing.T, bindingKind, roleKind, cluster string, history bool, state string) {
+func testSubjectReferenceRecovery(t *testing.T, bindingKind, roleKind, cluster string, history bool, state string) {
 	t.Helper()
 	ctx := context.Background()
 	base := memory.New()
@@ -73,6 +73,16 @@ func testSubjectGroupRecovery(t *testing.T, bindingKind, roleKind, cluster strin
 		subject["apiGroup"] = "rbac.authorization.k8s.io"
 	case "malformed-group":
 		subject["apiGroup"] = map[string]any{"private": "subject-group-canary"}
+	case "boolean-namespace":
+		subject["namespace"] = true
+	case "object-namespace":
+		subject["namespace"] = map[string]any{"private": "namespace-canary"}
+	case "missing-namespace":
+		delete(subject, "namespace")
+	case "null-namespace":
+		subject["namespace"] = nil
+	case "empty-namespace":
+		subject["namespace"] = ""
 	}
 	obj.Object["subjects"] = []any{
 		map[string]any{"kind": "ServiceAccount", "name": "prefix", "namespace": "app"},
@@ -87,8 +97,15 @@ func testSubjectGroupRecovery(t *testing.T, bindingKind, roleKind, cluster strin
 	prefix.Name, prefix.UID, tail.Name, tail.UID = "prefix", "prefix-uid", "tail", "tail-uid"
 	workload := graph.Resource{ClusterID: cluster, Kind: "Deployment", Namespace: "app", Name: "consumer", GroupVersion: "apps/v1", UID: "workload-uid", ResourceVersion: "workload-version"}
 	role := graph.Resource{ClusterID: cluster, Kind: roleKind, Namespace: roleNS, Name: "reader", GroupVersion: gvr.GroupVersion().String(), UID: "role-uid", ResourceVersion: "role-version"}
+	fallbackAccount, fallbackWorkload := account, workload
+	fallbackAccount.Namespace, fallbackWorkload.Namespace = bindingNS, bindingNS
+	fallbackAccount.UID, fallbackWorkload.UID = "fallback-account-uid", "fallback-workload-uid"
 	for _, scope := range []string{"east", "west", ""} {
-		for _, row := range []graph.Resource{account, prefix, tail, workload, role} {
+		rows := []graph.Resource{account, prefix, tail, workload, role}
+		if bindingNS != "" {
+			rows = append(rows, fallbackAccount, fallbackWorkload)
+		}
+		for _, row := range rows {
 			row.ClusterID = scope
 			if err := base.UpsertResource(ctx, row); err != nil {
 				t.Fatal(err)
@@ -98,6 +115,13 @@ func testSubjectGroupRecovery(t *testing.T, bindingKind, roleKind, cluster strin
 		a.ClusterID, w.ClusterID = scope, scope
 		if err := base.UpsertEdge(ctx, graph.Edge{From: w.ID(), To: a.ID(), Type: graph.EdgeTypeUsesServiceAccount}); err != nil {
 			t.Fatal(err)
+		}
+		if bindingNS != "" {
+			a, w = fallbackAccount, fallbackWorkload
+			a.ClusterID, w.ClusterID = scope, scope
+			if err := base.UpsertEdge(ctx, graph.Edge{From: w.ID(), To: a.ID(), Type: graph.EdgeTypeUsesServiceAccount}); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	store.failEdge.Store(state == "write-failure")
@@ -110,28 +134,35 @@ func testSubjectGroupRecovery(t *testing.T, bindingKind, roleKind, cluster strin
 		wantEdges, wantAttempts, wantNotifications = 0, 8, 1
 	}
 	if err != nil || len(edges) != wantEdges || store.edgeWrites.Load() != wantAttempts || store.resourceWrites.Load() != 1 || len(sink.recorded()) != 1 || notifications.Load() != wantNotifications {
-		t.Fatal("subject group replay lost the confirmed prefix, role or source receipts", edges, sink.recorded(), err)
+		t.Fatal("subject replay lost the confirmed prefix, role or source receipts", edges, sink.recorded(), err)
 	}
 	for _, edge := range edges {
 		validPrefix := edge.Type == graph.EdgeTypeBindsSubject && edge.To == prefix.ID()
 		validRole := edge.Type == graph.EdgeTypeBindsRole && edge.To == role.ID()
 		if edge.From != r.ID() || !validPrefix && !validRole {
-			t.Fatal("invalid subject group invented an account association or continued after failure", edges)
+			t.Fatal("invalid subject reference invented an account association or continued after failure", edges)
 		}
 	}
 	before := coverageView(t, tracker, cluster, gvr)
 	if before.ExtractionGapSince.IsZero() != (state == "write-failure") || before.PersistenceGapSince.IsZero() != (state != "write-failure") || !before.ProcessingGapSince.Equal(prior) {
-		t.Fatal("subject group failure lost distinct gap evidence", before)
+		t.Fatal("subject reference failure lost distinct gap evidence", before)
 	}
 	initial, err := analysis.AnalyzeStoredImpact(ctx, base, workload.ID(), analysis.ImpactOptions{ClusterID: cluster}, graph.ImpactSnapshotOptions{ClusterID: cluster})
 	if err != nil || initial.Authorization.Counts.Total != 1 || initial.Authorization.Counts.ServiceAccounts != 1 || initial.Authorization.Counts.Bindings != 0 || initial.Authorization.Counts.Roles != 0 || len(initial.Authorization.Resources) != 1 || initial.Authorization.Resources[0].Resource.ID != account.ID() {
-		t.Fatal("same-name account concealed the invalid group/missing binding association", initial, err)
+		t.Fatal("same-name account concealed the invalid subject/missing binding association", initial, err)
+	}
+	if bindingNS != "" {
+		fallback, err := analysis.AnalyzeStoredImpact(ctx, base, fallbackWorkload.ID(), analysis.ImpactOptions{ClusterID: cluster}, graph.ImpactSnapshotOptions{ClusterID: cluster})
+		if err != nil || fallback.Authorization.Counts.Total != 1 || fallback.Authorization.Counts.Bindings != 0 || fallback.Authorization.Counts.Roles != 0 {
+			t.Fatal("malformed namespace fell back to a same-name account in the binding namespace", fallback, err)
+		}
 	}
 	wantSources := int64(1)
 	if state != "write-failure" {
 		// Subjects are mutable; retain the binding identity and immutable roleRef.
 		obj.SetResourceVersion("version-two")
 		subject["apiGroup"] = ""
+		subject["namespace"] = "app"
 		wantSources = 2
 	}
 	store.failEdge.Store(false)

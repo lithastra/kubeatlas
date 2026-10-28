@@ -135,6 +135,12 @@ valid subjects and independent role extraction remain usable. Portable tests
 cover defaulting, member/history modes, unchanged replay, failed writes and
 valid subject updates with exact separate authorization paths. Known gaps and
 old edges remain retained; this does not evaluate effective permissions.
+ServiceAccount subjects now also reject wrong-typed namespaces before applying
+the RoleBinding namespace fallback. ClusterRoleBinding subjects require a
+nonempty namespace instead of emitting namespace-less edges. Portable regressions
+cover valid defaults, partial subjects, independent roles, sticky gaps, replay
+and scoped authorization recovery without connecting a same-name fallback
+account. Existing edges remain retained; native acceptance is still pending.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another
