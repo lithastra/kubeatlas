@@ -197,6 +197,16 @@ independent extractor results remain usable with an extraction gap; a later
 valid source version recovers collection without clearing prior loss evidence.
 Omitted/null fields retain their existing behavior. Local scope/history/replay
 regressions add no watches, selector operators or retained-edge cleanup.
+NetworkPolicy selectors now additionally support all four LabelSelector
+expression operators (`In`, `NotIn`, `Exists`, `DoesNotExist`) and conjunction
+with matchLabels, evaluated against existing scoped store candidates. Malformed
+expressions fail before target reads instead of becoming unconstrained matches.
+Portable tests cover Pod/template and Namespace selection, combined peers,
+read/cancellation failures, retained prefixes, replay/history and failed-write
+recovery. This adds no watches or store query operators and does not change
+Service or Gatekeeper/Kyverno selector handling. NetworkPolicy edges remain
+unmodeled in ordinary impact; retained-edge reconciliation, native CNI/storage
+qualification and M4 acceptance remain pending.
 The same shape guard now covers Gatekeeper labelSelector and Kyverno resource
 selectors. Malformed policy conditions cannot become broader ENFORCES queries.
 Kyverno retains validated earlier descriptors/rules and report-read errors, then

@@ -563,8 +563,8 @@ label, but not one with no `flag` key. The same rule applies to NetworkPolicy
 Namespace selection and to every pair in a multi-label selector. This is distinct
 from an empty selector: selectorless Services still select nothing, while empty
 NetworkPolicy matchLabels and empty store label filters retain their existing
-match-all behavior within the modeled query scope. Selector expressions and
-effective CNI enforcement remain outside this correction.
+match-all behavior within the modeled query scope. Effective CNI enforcement
+remains outside this correction.
 
 Selector decoding also rejects malformed non-null object shapes or non-string
 label values as a whole, before reading target candidates. For example, a
@@ -572,8 +572,34 @@ Service selector containing `app: web` and an invalid numeric condition cannot
 silently become an `app: web` query. NetworkPolicy pod/namespace selectors cannot
 turn wrong-typed objects or label maps into a match-all query. Omitted/null
 fields keep their previous empty-field behavior; this is a shape guard for the
-modeled equality fields, not complete Kubernetes schema validation or support
-for matchExpressions. Error messages contain no label keys or values.
+modeled equality fields, not complete Kubernetes schema validation. Error
+messages contain no label keys or values.
+
+NetworkPolicy pod and namespace selectors now also evaluate `matchExpressions`
+with `In`, `NotIn`, `Exists` and `DoesNotExist`, using the pinned Kubernetes
+LabelSelector evaluator. All expressions and `matchLabels` are ANDed together.
+`NotIn` can match a missing key; `In` requires a present key, including when its
+allowed value is empty. Empty/null expression lists retain equality-only
+behavior. Expression-only selectors no longer become unconstrained matches.
+Malformed expression containers, entries, key/operator/value types, unsupported
+operators, invalid expression label syntax or incompatible value cardinalities
+reject that entire selector before candidate reads. Errors omit input data.
+The existing equality shape/empty-field behavior is unchanged; this does not
+add complete policy schema validation.
+
+Evaluation uses existing scoped store queries and the kind-selected Pod/template
+labels; namespace-only peers still produce Namespace targets, and combined
+selectors still enumerate only matching namespaces. There are no new watches,
+Kubernetes API reads or GraphStore filter operators. Service selectors and
+Gatekeeper/Kyverno selectors retain their existing equality-only behavior.
+Portable tests compare expression matching with the pinned evaluator and cover
+all seven Pod-like kinds, namespace-only/combined peers, invalid later
+requirements, read failures, cancellation, source-history deduplication, target
+updates and failed-write replay across member/standalone and history modes.
+Existing edges are retained without deletion ownership. `SELECTS_NP`,
+`ALLOWS_FROM` and `ALLOWS_TO` remain excluded from ordinary modeled impact with
+unmodeled relationship notices; expression support proves neither CNI traffic,
+native Kubernetes/PostgreSQL behavior nor M4 acceptance.
 
 A malformed later NetworkPolicy peer stops further peer reads while retaining
 the earlier confirmed prefix. Other builtin extractors still run under an

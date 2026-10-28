@@ -27,7 +27,7 @@ func TestCoreSelectorMetadataPathReplayAndImpact(t *testing.T) {
 				for _, history := range []bool{false, true} {
 					for _, state := range []string{"missing-metadata", "wrong-template", "masked-match", "write-failure"} {
 						t.Run(fmt.Sprintf("%s/service=%t/cluster=%s/history=%t/%s", kind, service, cluster, history, state), func(t *testing.T) {
-							testSelectorMetadataReplay(t, kind, service, cluster, history, state)
+							testSelectorMetadataReplay(t, kind, service, cluster, history, state, false)
 						})
 					}
 				}
@@ -36,7 +36,7 @@ func TestCoreSelectorMetadataPathReplayAndImpact(t *testing.T) {
 	}
 }
 
-func testSelectorMetadataReplay(t *testing.T, kind string, service bool, cluster string, history bool, state string) {
+func testSelectorMetadataReplay(t *testing.T, kind string, service bool, cluster string, history bool, state string, expressions bool) {
 	t.Helper()
 	ctx := context.Background()
 	base := memory.New()
@@ -73,6 +73,14 @@ func testSelectorMetadataReplay(t *testing.T, kind string, service bool, cluster
 	}
 	if service {
 		obj.Object["spec"] = map[string]any{"selector": labels}
+	}
+	if expressions {
+		selector := map[string]any{"matchExpressions": []any{map[string]any{"key": "app", "operator": "In", "values": []any{"selected"}}}}
+		obj.Object["spec"] = map[string]any{
+			"podSelector": selector, "policyTypes": []any{"Ingress", "Egress"},
+			"ingress": []any{map[string]any{"from": []any{map[string]any{"podSelector": selector}}}},
+			"egress":  []any{map[string]any{"to": []any{map[string]any{"podSelector": selector}}}},
+		}
 	}
 	r := UnstructuredToResource(obj, sourceKind)
 	r.ClusterID = cluster

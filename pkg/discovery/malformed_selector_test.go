@@ -23,14 +23,14 @@ func TestCoreMalformedSelectorRecoveryAndImpact(t *testing.T) {
 		for _, history := range []bool{false, true} {
 			for _, mode := range []string{"service", "selects", "ingress", "egress"} {
 				t.Run(fmt.Sprintf("cluster=%s/history=%t/%s", cluster, history, mode), func(t *testing.T) {
-					testCoreMalformedSelector(t, cluster, history, mode)
+					testCoreMalformedSelector(t, cluster, history, mode, false)
 				})
 			}
 		}
 	}
 }
 
-func testCoreMalformedSelector(t *testing.T, cluster string, history bool, mode string) {
+func testCoreMalformedSelector(t *testing.T, cluster string, history bool, mode string, expressions bool) {
 	t.Helper()
 	ctx := context.Background()
 	base := memory.New()
@@ -60,6 +60,10 @@ func testCoreMalformedSelector(t *testing.T, cluster string, history bool, mode 
 	obj.SetAPIVersion(gvr.GroupVersion().String())
 	good := map[string]any{"matchLabels": map[string]any{"app": "web"}}
 	bad := map[string]any{"matchLabels": map[string]any{"app": "web", "invalid": int64(7)}}
+	if expressions {
+		good = map[string]any{"matchExpressions": []any{map[string]any{"key": "app", "operator": "In", "values": []any{"web"}}}}
+		bad = map[string]any{"matchExpressions": []any{map[string]any{"key": "app", "operator": "In", "values": []any{"web"}}, nil}}
+	}
 	field, policyType := "from", "Ingress"
 	direction := "ingress"
 	if mode == "egress" {

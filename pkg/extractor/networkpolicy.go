@@ -32,11 +32,9 @@ import (
 // Scope limits in this v0.1 implementation, documented so future
 // contributors see them at code-review time:
 //
-//   1. Only spec.{podSelector,namespaceSelector}.matchLabels is
-//      consulted; matchExpressions is ignored. This drops some
-//      precision but lets us ship a useful first cut without
-//      pulling in the full LabelSelector evaluator. A follow-up
-//      can switch to k8s.io/apimachinery/pkg/labels.Selector.
+//   1. Pod and namespace selectors support matchLabels and the four
+//      LabelSelector expression operators. Expressions are evaluated
+//      against stored labels, without additional Kubernetes API reads.
 //   2. ipBlock peers are skipped — CIDR ranges aren't K8s
 //      resources, per the F-109 anti-pattern guard.
 //   3. policyTypes is honoured strictly: ALLOWS_FROM only emits
@@ -56,7 +54,7 @@ import (
 
 // SelectsNPExtractor emits SELECTS_NP edges from a NetworkPolicy
 // to every Pod (and Pod-template-carrying workload) in the same
-// namespace whose labels match spec.podSelector.matchLabels.
+// namespace whose labels satisfy spec.podSelector.
 //
 // An empty podSelector ({}) matches every Pod in the namespace —
 // that is the K8s semantics ("apply to all pods") and the right
@@ -70,7 +68,7 @@ func (SelectsNPExtractor) Extract(ctx context.Context, r graph.Resource, q graph
 	if r.Kind != "NetworkPolicy" {
 		return nil, nil
 	}
-	selector, err := selectorStringMap(r.Raw, "spec", "podSelector", "matchLabels")
+	selector, err := networkPolicyLabelSelector(r.Raw, "spec", "podSelector")
 	if err != nil {
 		return nil, fmt.Errorf("SelectsNPExtractor: %w", err)
 	}
@@ -200,11 +198,11 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 		return nil, nil
 	}
 
-	podSel, err := selectorStringMap(peer, "podSelector", "matchLabels")
+	podSel, err := networkPolicyLabelSelector(peer, "podSelector")
 	if err != nil {
 		return nil, fmt.Errorf("peerEdges: podSelector: %w", err)
 	}
-	nsSel, err := selectorStringMap(peer, "namespaceSelector", "matchLabels")
+	nsSel, err := networkPolicyLabelSelector(peer, "namespaceSelector")
 	if err != nil {
 		return nil, fmt.Errorf("peerEdges: namespaceSelector: %w", err)
 	}
@@ -217,7 +215,7 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 		}
 		var edges []graph.Edge
 		for _, t := range namespaces {
-			if !matchLabelSelector(t.Labels, nsSel) {
+			if !nsSel.matches(t.Labels) {
 				continue
 			}
 			edges = append(edges, graph.Edge{From: from, To: t.ID(), Type: edgeType})
@@ -254,7 +252,7 @@ func peerEdges(ctx context.Context, r graph.Resource, q graph.ResourceLister, pe
 	}
 	var edges []graph.Edge
 	for _, nsRes := range namespaces {
-		if !matchLabelSelector(nsRes.Labels, nsSel) {
+		if !nsSel.matches(nsRes.Labels) {
 			continue
 		}
 		pods, err := listNetworkPolicyResources(ctx, q, graph.Filter{Namespace: nsRes.Name, ClusterID: r.ClusterID})
@@ -292,16 +290,15 @@ func listNetworkPolicyResources(ctx context.Context, q graph.ResourceLister, fil
 
 // podLikeMatches reports whether t is a Pod or a workload carrying
 // a Pod template, and its (Pod label or pod-template label) set
-// satisfies sel. An empty sel matches every Pod-like resource —
-// the K8s "podSelector: {}" semantics, applied via
-// matchLabelSelector (NOT labelsMatch — see that helper's godoc).
-func podLikeMatches(t graph.Resource, sel map[string]string) bool {
+// satisfies both equality and expression requirements. An empty selector
+// matches every Pod-like resource, preserving podSelector: {} semantics.
+func podLikeMatches(t graph.Resource, sel networkPolicySelector) bool {
 	switch {
 	case t.Kind == "Pod":
-		return matchLabelSelector(t.Labels, sel)
+		return sel.matches(t.Labels)
 	case hasPodTemplate(t.Kind):
 		labels := nestedStringMap(podTemplateMeta(t), "labels")
-		return matchLabelSelector(labels, sel)
+		return sel.matches(labels)
 	default:
 		return false
 	}
