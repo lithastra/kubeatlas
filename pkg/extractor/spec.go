@@ -137,17 +137,20 @@ func podTemplateVolumes(r graph.Resource) []any {
 	return nestedSlice(podSpec(r), "volumes")
 }
 
-// podTemplateMeta returns the spec.template.metadata map for workloads,
-// or the resource's own metadata map for raw Pods. Used by SELECTS
-// matching to look at pod labels.
+// podTemplateMeta selects the kind's Pod metadata. Missing template metadata
+// must not substitute controller labels or another kind's template path.
 func podTemplateMeta(r graph.Resource) map[string]any {
-	if m := nestedMap(r.Raw, "spec", "template", "metadata"); m != nil {
-		return m
+	switch r.Kind {
+	case "Pod":
+		return nestedMap(r.Raw, "metadata")
+	case "CronJob":
+		return nestedMap(r.Raw, "spec", "jobTemplate", "spec", "template", "metadata")
+	default:
+		if hasPodTemplate(r.Kind) {
+			return nestedMap(r.Raw, "spec", "template", "metadata")
+		}
+		return nil
 	}
-	if m := nestedMap(r.Raw, "spec", "jobTemplate", "spec", "template", "metadata"); m != nil {
-		return m
-	}
-	return nestedMap(r.Raw, "metadata")
 }
 
 // podSpec selects the builtin kind's canonical path. Missing/empty fields must

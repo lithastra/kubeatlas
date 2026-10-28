@@ -168,6 +168,13 @@ paths. Portable regressions cover empty/null/omitted lists, missing templates,
 decoy fields, scoped replay/history, retained writes/gaps and exact canonical
 reference explanations. Unrelated Pod-like fields cannot create new edges or
 Secret placeholders; previously stored relationships remain retained.
+Service and NetworkPolicy template-label lookup now also selects metadata by
+target kind. Missing or malformed template metadata cannot substitute controller
+labels, and CronJob labels come only from its job template. Portable tests pin
+all seven Pod-like kinds, existing empty-selector semantics, scoped candidate
+updates, source-history deduplication and failed-write replay. Service paths
+remain modeled associations; NetworkPolicy edges retain unmodeled notices.
+Previously stored selection edges and known gaps remain retained.
 ConfigMap collection now also includes init/ephemeral container environment
 references and projected volume sources, with deduplication across all reference
 locations. Same-version replay fills the missing relationships without another

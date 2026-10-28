@@ -315,6 +315,30 @@ Known gaps and previously stored edges/placeholders remain retained. No target
 reads, watches, public fields or cleanup are introduced; native Kubernetes/
 PostgreSQL and M4 acceptance remain separate gates.
 
+Service SELECTS and NetworkPolicy SELECTS_NP/ALLOWS_FROM/ALLOWS_TO now also locate
+workload template metadata by target kind. CronJob uses
+`/spec/jobTemplate/spec/template/metadata`; the other five builtin controllers
+use `/spec/template/metadata`. Missing/null/non-object template metadata does
+not fall back to controller metadata or an alternate template path. Raw Pod
+selection continues to use its normalized resource labels. Existing label
+conjunction/key-presence behavior and empty selectors are preserved: Service
+empty selectors match nothing; NetworkPolicy empty Pod selectors still match
+every Pod-like resource within the existing query scope. Controller matches are
+template associations, not observed Pod endpoints or verified traffic.
+
+Portable metadata-path regressions cover all seven Pod-like kinds and all four
+extractors, including empty, missing, null and malformed metadata. Core callbacks
+exercise all three path layouts in named/standalone scopes and both history
+modes, with matching foreign-member/namespace candidates. A canonical candidate
+metadata update is visible on unchanged source replay without another source
+write/history event. Independent ownership, failed-write recovery and existing
+sticky gaps remain intact. Forward/reverse Service paths keep exact directions
+and scope; NetworkPolicy relationships remain excluded from modeled impact with
+unmodeled notices. Old selection edges are retained rather than reconciled or
+deleted. No new target query, watch or public schema is added; complete label
+schema validation, actual endpoints/CNI behavior and native Kubernetes/
+PostgreSQL or M4 acceptance remain separate.
+
 The second M1 slice adds the optional `graph.ImpactSnapshotter` capability and
 `analysis.AnalyzeStoredImpact`. It does not change GraphStore v2's method set or
 the legacy `Snapshot`/`SnapshotMetadata` methods. Both built-in stores now supply
