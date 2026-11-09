@@ -193,3 +193,47 @@ func TestImpactAPIInventoryWindowAndResponseOwnership(t *testing.T) {
 		t.Fatal("response aliases inventory provider")
 	}
 }
+
+func TestImpactInventoryRegistrationRequiresMatchingShape(t *testing.T) {
+	for _, scenario := range []string{"active", "kind-changed", "scope-changed", "other-version", "unowned", "retired", "foreign-member"} {
+		t.Run(scenario, func(t *testing.T) {
+			tracker := operations.NewCoverageTracker(time.Minute)
+			readyImpactObservation(t, tracker, "", observedImpactTypes(false))
+			member := ""
+			if scenario == "foreign-member" {
+				member = "foreign"
+			}
+			_, token := readyImpactSource(t, tracker, member, operations.CoverageSourceCRD)
+			gvr := impactSourceGVR
+			if scenario != "unowned" && !token.BindOrigin(graph.ResourceOrigin{
+				OwnerName: "widgets.example.com", OwnerUID: "owner", Group: gvr.Group, Version: gvr.Version,
+				Resource: gvr.Resource, Kind: "Widget", Namespaced: true,
+			}) {
+				t.Fatal("fixture did not bind registration")
+			}
+			if scenario == "retired" {
+				token.Stop(time.Now())
+			}
+			dynamic := operations.APIResourceDescriptor{
+				Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource,
+				Kind: "Widget", Namespaced: true, List: true, Watch: true,
+			}
+			switch scenario {
+			case "kind-changed":
+				dynamic.Kind = "OtherWidget"
+			case "scope-changed":
+				dynamic.Namespaced = false
+			case "other-version":
+				dynamic.Version = "v2"
+			}
+			wrongPod := operations.APIResourceDescriptor{Version: "v1", Resource: "pods", Kind: "Pod", List: true, Watch: true}
+			namespace := operations.APIResourceDescriptor{Version: "v1", Resource: "namespaces", Kind: "Namespace", List: true, Watch: true}
+			impactInventory(t, tracker, "", operations.APIInventoryComplete, []operations.APIResourceDescriptor{dynamic, wrongPod, namespace}, false, time.Now())
+			o := observedImpact(t, authorizationFixture(), tracker, nil).Observation.Ordinary
+			if !slices.Contains(o.UnobservedAPIs, wrongPod) || slices.Contains(o.UnobservedAPIs, namespace) ||
+				slices.Contains(o.UnobservedAPIs, dynamic) != (scenario != "active") || o.TypeScopeClosed {
+				t.Fatalf("registration evidence did not match endpoint shape: %+v", o.UnobservedAPIs)
+			}
+		})
+	}
+}
