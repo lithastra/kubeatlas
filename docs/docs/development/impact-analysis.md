@@ -3344,12 +3344,19 @@ recorded candidate values.
 }
 ```
 
+When freezing the plan, record the SHA-256 of its exact file bytes with the
+candidate evidence. For example, `shasum -a 256 /absolute/private/plan.json`
+prints the digest. Supply the recorded lowercase digest when running the probe.
+Even formatting changes require a new digest. A missing or mismatched digest
+stops the probe before the first HTTP request.
+
 Provide an already established local tunnel to the configured authentication
 path. The test accepts a literal HTTP loopback address with an explicit port.
 Supply the token through `KUBEATLAS_TOKEN` and keep it out of the plan and logs.
 
 ```bash
 KUBEATLAS_IMPACT_CANDIDATE_PLAN=/absolute/private/plan.json \
+KUBEATLAS_IMPACT_CANDIDATE_PLAN_SHA256="<recorded lowercase SHA-256>" \
 KUBEATLAS_IMPACT_CANDIDATE_SERVER=http://127.0.0.1:18080 \
   go test ./pkg/api -run '^TestImpactFrozenCandidate$' -count=1 -v
 ```
@@ -3365,8 +3372,10 @@ retained window, including exact `FirstEventAt`, `LastEventAt` and
 `LatestMarkerAt` timestamps when the fixture defines them. This uses cached
 metadata. A marker observation alone cannot establish a restorable backup.
 
-The probe checks build metadata before and after the run and uses only bounded
-GETs. Use the deployed Web and CLI for the release client flows. Capture the
+The probe logs the verified plan digest before the opening build check. It
+uses bounded GETs and emits a completion marker with the same digest after
+the closing build check succeeds and all cases and thresholds pass. Use the
+deployed Web and CLI for the release client flows. Capture the
 upgrade, Secret sentinel and destructive restore results from the isolated
 deployment checks. Keep the plan and command output with the candidate evidence.
 See [impact performance preparation](./impact-performance.md) for optional

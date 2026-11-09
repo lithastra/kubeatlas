@@ -5,10 +5,15 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -26,6 +31,10 @@ import (
 
 const candidateTestCommit = "0123456789abcdef0123456789abcdef01234567"
 
+func candidateTestSHA(data []byte) string {
+	return fmt.Sprintf("%x", sha256.Sum256(data))
+}
+
 func TestImpactCandidatePlan(t *testing.T) {
 	valid := `{
 		"commit":"0123456789abcdef0123456789abcdef01234567","version":"1.7.0-rc.1","tier":"tier1",
@@ -34,7 +43,7 @@ func TestImpactCandidatePlan(t *testing.T) {
 		"paths":{"prod:other/Pod/consumer":["USES_CONFIGMAP"]}}],
 		"performance":{"case":"allowed","shape":"baseline-5k","resources":5000,"edges":6000,"host":"recorded host"}
 	}`
-	if _, err := readImpactCandidatePlan(strings.NewReader(valid)); err != nil {
+	if _, err := readImpactCandidatePlan(strings.NewReader(valid), candidateTestSHA([]byte(valid))); err != nil {
 		t.Fatal(err)
 	}
 	for _, input := range []string{
@@ -47,7 +56,7 @@ func TestImpactCandidatePlan(t *testing.T) {
 		strings.Replace(valid, `"status":200`, `"status":200,"unexpected":true`, 1),
 		strings.Repeat(" ", candidatePlanBytes+1),
 	} {
-		if _, err := readImpactCandidatePlan(strings.NewReader(input)); err == nil {
+		if _, err := readImpactCandidatePlan(strings.NewReader(input), candidateTestSHA([]byte(input))); err == nil {
 			t.Fatal("accepted invalid candidate plan")
 		}
 	}
@@ -83,7 +92,8 @@ func TestImpactCandidateBuildCheck(t *testing.T) {
 	}
 }
 
-func TestImpactCandidateCasesAgainstRealHandler(t *testing.T) {
+func candidateFixtureHandler(t *testing.T) http.Handler {
+	t.Helper()
 	s := New("", seedImpactAPI(t), aggregator.NewRegistry(),
 		WithClusterLister(&impactAPIClusters{clusters: []string{"prod", "hidden"}}),
 		WithClusterRBAC(multicluster.NewRBACScope([]multicluster.RBACRule{{Token: "fixture", Clusters: []string{"prod"}}})),
@@ -97,7 +107,11 @@ func TestImpactCandidateCasesAgainstRealHandler(t *testing.T) {
 				}, nil
 			}),
 		}))
-	srv := httptest.NewServer(impactTestMux(s))
+	return impactTestMux(s)
+}
+
+func TestImpactCandidateCasesAgainstRealHandler(t *testing.T) {
+	srv := httptest.NewServer(candidateFixtureHandler(t))
 	defer srv.Close()
 	query := impact.Query{Namespace: "demo", Kind: "ConfigMap", Name: "settings", ClusterID: "prod", ExpectedUID: "root-instance",
 		Relation: analysis.ImpactDependents, MaxDepth: 5, Limit: 200}
@@ -188,7 +202,7 @@ func TestImpactCandidateEmptyPathOracle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readImpactCandidatePlan(strings.NewReader(string(b))); err != nil {
+	if _, err := readImpactCandidatePlan(strings.NewReader(string(b)), candidateTestSHA(b)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -214,5 +228,115 @@ func TestImpactCandidateHistoryRejectsUnqualifiedBounds(t *testing.T) {
 		if expected.matches(history) {
 			t.Fatal("accepted stale, stopped or incorrect marker evidence")
 		}
+	}
+}
+
+func TestImpactCandidatePinnedProbe(t *testing.T) {
+	const fixtureVersion = "1.7.0-rc.1"
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, diagnostic      string
+		wantInfo, wantQueries int64
+	}{
+		{name: "bound", wantInfo: 2, wantQueries: 111},
+		{name: "edited", diagnostic: "candidate plan SHA-256 mismatch"},
+		{name: "missing-digest", diagnostic: "candidate plan requires a lowercase SHA-256 digest"},
+		{name: "closing-drift", diagnostic: "closing build check", wantInfo: 2, wantQueries: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plan := impactCandidatePlan{Commit: candidateTestCommit, Version: fixtureVersion, Tier: "tier1",
+				Cases: []impactCandidateCase{{
+					Name: "allowed", Status: http.StatusOK,
+					Query: impact.Query{Namespace: "demo", Kind: "ConfigMap", Name: "settings", ClusterID: "prod",
+						ExpectedUID: "root-instance", Relation: analysis.ImpactDependents, MaxDepth: 5, Limit: 200},
+					Paths: map[string][]graph.EdgeType{"prod:other/Pod/consumer": {graph.EdgeTypeUsesConfigMap}},
+				}},
+			}
+			if tc.name == "bound" {
+				plan.Performance = &impactCandidatePerformance{Case: "allowed", Shape: "dense-5k", Resources: 5000, Edges: 18000, Host: "synthetic fixture"}
+			}
+			data, err := json.Marshal(plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			digest := candidateTestSHA(data)
+			switch tc.name {
+			case "edited":
+				// The same JSON after reformatting has different sealed bytes.
+				data = append(data, '\n')
+			case "missing-digest":
+				digest = ""
+			}
+			path := filepath.Join(t.TempDir(), "plan.json")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			handler := candidateFixtureHandler(t)
+			var infoReads, queryReads atomic.Int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer fixture" {
+					t.Error("probe changed HTTP method or bearer scope")
+				}
+				if r.URL.Path == "/api/v1/info" {
+					read := infoReads.Add(1)
+					commit := candidateTestCommit
+					if read == 2 {
+						if queryReads.Load() != tc.wantQueries {
+							t.Error("closing build check preceded expected queries")
+						}
+						if tc.name == "closing-drift" {
+							commit = strings.Repeat("a", 40)
+						}
+					}
+					writeJSON(w, http.StatusOK, InfoResponse{Commit: commit, Version: fixtureVersion, GraphStoreVersion: "v2"})
+					return
+				}
+
+				queryReads.Add(1)
+				if infoReads.Load() != 1 {
+					t.Error("query did not run between build checks")
+				}
+				// Serve the actual scoped handler against a seeded memory graph.
+				// Stamp only the fixture version so no process globals are changed.
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, r)
+				var capture ImpactResponse
+				if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &capture) != nil {
+					t.Error("fixture impact query failed")
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				capture.KubeAtlasVersion = fixtureVersion
+				writeJSON(w, http.StatusOK, capture)
+			}))
+			defer srv.Close()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, executable, "-test.run=^TestImpactFrozenCandidate$", "-test.v")
+			cmd.Env = append(os.Environ(),
+				"KUBEATLAS_IMPACT_CANDIDATE_PLAN="+path,
+				"KUBEATLAS_IMPACT_CANDIDATE_PLAN_SHA256="+digest,
+				"KUBEATLAS_IMPACT_CANDIDATE_SERVER="+srv.URL,
+				"KUBEATLAS_TOKEN=fixture",
+			)
+			out, err := cmd.CombinedOutput()
+			result := string(out)
+			complete := "candidate probe complete plan-sha256=" + digest
+			if tc.diagnostic == "" {
+				if err != nil || !strings.Contains(result, complete) || !strings.Contains(result, "warmups=10 samples=100") {
+					t.Fatalf("bound probe did not complete: %v\n%s", err, result)
+				}
+			} else if err == nil || !strings.Contains(result, tc.diagnostic) || strings.Contains(result, complete) {
+				t.Fatalf("probe did not retain the expected failure: %v\n%s", err, result)
+			}
+			if infoReads.Load() != tc.wantInfo || queryReads.Load() != tc.wantQueries {
+				t.Fatalf("unexpected probe sequence: info=%d queries=%d", infoReads.Load(), queryReads.Load())
+			}
+		})
 	}
 }

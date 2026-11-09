@@ -6,6 +6,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +34,7 @@ const (
 )
 
 var (
+	candidatePlanSHA = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	candidateCommit  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	candidateVersion = regexp.MustCompile(`^v?1\.7\.0(?:-[0-9A-Za-z.-]+)?$`)
 	candidateLabel   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
@@ -81,11 +83,17 @@ type impactCandidatePerformance struct {
 	Host      string `json:"host"`
 }
 
-func readImpactCandidatePlan(reader io.Reader) (impactCandidatePlan, error) {
+func readImpactCandidatePlan(reader io.Reader, expectedSHA string) (impactCandidatePlan, error) {
 	var plan impactCandidatePlan
+	if !candidatePlanSHA.MatchString(expectedSHA) {
+		return plan, errors.New("candidate plan requires a lowercase SHA-256 digest")
+	}
 	data, err := io.ReadAll(io.LimitReader(reader, candidatePlanBytes+1))
 	if err != nil || len(data) > candidatePlanBytes {
 		return plan, errors.New("candidate plan could not be read within its byte limit")
+	}
+	if fmt.Sprintf("%x", sha256.Sum256(data)) != expectedSHA {
+		return plan, errors.New("candidate plan SHA-256 mismatch")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -347,7 +355,8 @@ func TestImpactFrozenCandidate(t *testing.T) {
 		t.Fatal("cannot open candidate plan")
 	}
 	defer file.Close()
-	plan, err := readImpactCandidatePlan(file)
+	planSHA := os.Getenv("KUBEATLAS_IMPACT_CANDIDATE_PLAN_SHA256")
+	plan, err := readImpactCandidatePlan(file, planSHA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,10 +371,11 @@ func TestImpactFrozenCandidate(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 8*time.Minute)
 	defer cancel()
+	t.Logf("candidate plan-sha256=%s commit=%s version=%s declared-tier=%s", planSHA, plan.Commit, plan.Version, plan.Tier)
 	if err := verifyImpactCandidateBuild(ctx, base, token, plan); err != nil {
-		t.Fatal(err)
+		t.Fatalf("opening build check: %v", err)
 	}
-	t.Logf("candidate commit=%s version=%s declared-tier=%s", plan.Commit, plan.Version, plan.Tier)
+
 	for _, c := range plan.Cases {
 		if err := checkImpactCandidateCase(ctx, base, token, plan.Version, plan.Tier, c); err != nil {
 			t.Fatalf("case %s: %v", c.Name, err)
@@ -394,6 +404,9 @@ func TestImpactFrozenCandidate(t *testing.T) {
 		}
 	}
 	if err := verifyImpactCandidateBuild(ctx, base, token, plan); err != nil {
-		t.Fatal(err)
+		t.Fatalf("closing build check: %v", err)
+	}
+	if !t.Failed() {
+		t.Logf("candidate probe complete plan-sha256=%s", planSHA)
 	}
 }
