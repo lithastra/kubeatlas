@@ -113,6 +113,34 @@ func RunHistoryBounds(t *testing.T, factory func(*testing.T) graph.GraphStore) {
 			}
 		}
 	})
+	t.Run("prune preserves exact event and marker boundaries", func(t *testing.T) {
+		s := factory(t)
+		at := base.Add(time.Microsecond)
+		for _, cluster := range []string{"east", "west", ""} {
+			for _, stamp := range []time.Time{at, at.Add(time.Microsecond)} {
+				if err := s.AppendEvent(ctx, graph.ResourceEvent{ClusterID: cluster, Kind: "Pod", Timestamp: stamp, EventType: graph.EventTypeAdd}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := s.AppendSnapshotMeta(ctx, graph.SnapshotMeta{ClusterID: cluster, Timestamp: at, Trigger: graph.SnapshotTriggerManual}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if deleted, err := s.DeleteEventsBefore(ctx, at); err != nil || deleted != 0 {
+			t.Fatalf("cutoff equality must survive: deleted=%d err=%v", deleted, err)
+		}
+		if deleted, err := s.DeleteEventsBefore(ctx, at.Add(time.Nanosecond)); err != nil || deleted != 3 {
+			t.Fatalf("fractional cutoff missed earlier events: deleted=%d err=%v", deleted, err)
+		}
+		for _, cluster := range []string{"east", "west", ""} {
+			q := graph.HistoryBoundsQuery{ClusterID: cluster, From: base, To: at.Add(time.Second)}
+			got, err := requireHistoryBoundsReader(t, s).ReadHistoryBounds(ctx, q)
+			if err != nil || !got.ValidFor(q) || !got.FirstEventAt.Equal(at.Add(time.Microsecond)) ||
+				!got.LastEventAt.Equal(got.FirstEventAt) || !got.LatestMarkerAt.Equal(at) {
+				t.Fatalf("prune did not preserve scoped marker and event boundaries: %+v %v", got, err)
+			}
+		}
+	})
 	t.Run("cancellation and invalid queries return no partial evidence", func(t *testing.T) {
 		reader := requireHistoryBoundsReader(t, factory(t))
 		cancelled, cancel := context.WithCancel(ctx)

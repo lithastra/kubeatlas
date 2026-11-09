@@ -112,6 +112,7 @@ func (s *Store) DeleteEventsBefore(ctx context.Context, cutoff time.Time) (int64
 			LIMIT $2
 		)
 	`
+	cutoff = ceilHistoryTimestamp(cutoff)
 	var total int64
 	for {
 		if err := ctx.Err(); err != nil {
