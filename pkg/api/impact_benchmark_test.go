@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"testing"
 	"time"
 
@@ -124,6 +123,5 @@ func benchmarkImpactAPI(b *testing.B, groups int, shared bool, wantTotal int, wa
 		samples[i] = time.Since(start)
 	}
 	b.StopTimer()
-	slices.Sort(samples)
-	b.ReportMetric(float64(samples[(95*b.N+99)/100-1])/float64(time.Millisecond), "p95-ms")
+	b.ReportMetric(float64(impactP95(samples))/float64(time.Millisecond), "p95-ms")
 }

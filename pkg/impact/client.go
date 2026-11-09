@@ -160,6 +160,16 @@ func Fetch(ctx context.Context, base, token string, q Query) (*Response, error) 
 	return &result, nil
 }
 
+// HTTPStatusError carries the status of a rejected impact query.
+type HTTPStatusError struct {
+	StatusCode int
+	message    string
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("impact HTTP %d: %s", e.StatusCode, e.message)
+}
+
 func statusError(status int) error {
 	message := map[int]string{
 		400: "invalid query or cluster selection", 401: "bearer authentication required (KUBEATLAS_TOKEN)",
@@ -170,7 +180,7 @@ func statusError(status int) error {
 	if message == "" {
 		message = "unexpected server response (redirects are not followed)"
 	}
-	return fmt.Errorf("impact HTTP %d: %s", status, message)
+	return &HTTPStatusError{StatusCode: status, message: message}
 }
 
 func validateResponse(r *Response, q Query) error {

@@ -3300,6 +3300,78 @@ missed-delete repair as described above. Federated members run their own bounded
 Gatekeeper workers as described above; failed, denied, stale, unsupported or
 limited evidence remains qualified and cannot prove absence.
 
+#### Read-only candidate probe
+
+Use the same clean source revision as the running candidate. Record the
+application image, database image and Chart digests, Kubernetes version, tier,
+upgrade baseline and authentication configuration in the candidate evidence.
+Compare the deployed identities with that record before probing. The API
+probe checks the server's reported build metadata and storage durability.
+
+Place a private JSON plan outside the source tree. The following is a fixture
+example. Replace the commit, identities and expected observations with the
+recorded candidate values.
+
+```json
+{
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "version": "1.7.0-rc.1",
+  "tier": "tier2",
+  "cases": [
+    {
+      "name": "member-reference",
+      "query": {
+        "Namespace": "demo",
+        "Kind": "ConfigMap",
+        "Name": "settings",
+        "ClusterID": "east",
+        "ExpectedUID": "fixture-root-uid",
+        "Relation": "dependents",
+        "MaxDepth": 5,
+        "Limit": 200
+      },
+      "status": 200,
+      "paths": {"east:demo/Pod/consumer": ["USES_CONFIGMAP"]},
+      "coverage": {
+        "Source": "core",
+        "Version": "v1",
+        "Resource": "pods",
+        "State": "initialized_no_known_gap"
+      },
+      "history": {"State": "recording", "RetainedData": "observed"}
+    }
+  ]
+}
+```
+
+Provide an already established local tunnel to the configured authentication
+path. The test accepts a literal HTTP loopback address with an explicit port.
+Supply the token through `KUBEATLAS_TOKEN` and keep it out of the plan and logs.
+
+```bash
+KUBEATLAS_IMPACT_CANDIDATE_PLAN=/absolute/private/plan.json \
+KUBEATLAS_IMPACT_CANDIDATE_SERVER=http://127.0.0.1:18080 \
+  go test ./pkg/api -run '^TestImpactFrozenCandidate$' -count=1 -v
+```
+
+Run a plan for each prepared tier and fault condition. Positive cases require
+the exact ordinary target IDs and path edge sequences. Use an empty `paths`
+object for an expected empty result. Add 401, 403 and 409 cases for anonymous
+access, denied member access and replacement of the expected UID. Select the
+collector in a coverage oracle with `core`, `crd` or `gatekeeper` and identify
+its exact served version. Use `Reason` to check the specific list or watch
+failure. A history oracle can check independent writer state and a fresh
+retained window, including exact `FirstEventAt`, `LastEventAt` and
+`LatestMarkerAt` timestamps when the fixture defines them. This uses cached
+metadata. A marker observation alone cannot establish a restorable backup.
+
+The probe checks build metadata before and after the run and uses only bounded
+GETs. Use the deployed Web and CLI for the release client flows. Capture the
+upgrade, Secret sentinel and destructive restore results from the isolated
+deployment checks. Keep the plan and command output with the candidate evidence.
+See [impact performance preparation](./impact-performance.md) for optional
+sampling in the same probe.
+
 M4 verifies upgrade from the latest v1.6 patch, frozen supported Kubernetes
 versions, existing API compatibility, Secret sentinel checks, bounded query
 performance, immutable public artifacts, and operator documentation. Benchmark

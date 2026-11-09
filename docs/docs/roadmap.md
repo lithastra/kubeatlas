@@ -418,6 +418,12 @@ discovery preserve scoped captures, unknown optional API assessments and recover
 from a fresh round. Candidate identity storage remains bounded by the existing
 256-descriptor budget; validation uses the existing round deadline and adds no
 request. Capped rounds remain limited even if exclusions reduce the retained set.
+Advertised endpoints match captured collector registrations by full served
+version, Kind and namespace scope. Unowned dynamic registrations stay
+unqualified when their shape cannot be verified. Registration and list/watch
+health are reported separately. PostgreSQL retention pruning now applies its
+cutoff at stored timestamp precision. Portable contracts verify that pruning
+preserves matching snapshot markers and later events in each scope.
 CRD registration now follows selected endpoint/kind/scope/UID changes,
 with fresh coverage tokens, UID-bound deletion, and ordered in-flight callback
 handoff. Unserved CRDs stop collection; their evidence and graph data remain
