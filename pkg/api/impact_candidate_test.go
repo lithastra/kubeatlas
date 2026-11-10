@@ -50,14 +50,15 @@ type impactCandidatePlan struct {
 }
 
 type impactCandidateCase struct {
-	Name      string                           `json:"name"`
-	Query     impact.Query                     `json:"query"`
-	Status    int                              `json:"status"`
-	Anonymous bool                             `json:"anonymous,omitempty"`
-	Paths     map[string][]analysis.ImpactStep `json:"paths"`
-	Truncated bool                             `json:"truncated,omitempty"`
-	Coverage  *impactCandidateCoverage         `json:"coverage,omitempty"`
-	History   *impactCandidateHistory          `json:"history,omitempty"`
+	Name          string                           `json:"name"`
+	Query         impact.Query                     `json:"query"`
+	Status        int                              `json:"status"`
+	Anonymous     bool                             `json:"anonymous,omitempty"`
+	Paths         map[string][]analysis.ImpactStep `json:"paths"`
+	Truncated     bool                             `json:"truncated,omitempty"`
+	Coverage      *impactCandidateCoverage         `json:"coverage,omitempty"`
+	History       *impactCandidateHistory          `json:"history,omitempty"`
+	Authorization *impactCandidateAuthorization    `json:"authorization,omitempty"`
 }
 
 type impactCandidateCoverage struct {
@@ -129,8 +130,11 @@ func (p impactCandidatePlan) validate() error {
 			if h := c.History; h != nil && !h.valid() {
 				return fmt.Errorf("invalid history oracle in case %d", i+1)
 			}
+			if auth := c.Authorization; auth != nil && !auth.valid(c.Query) {
+				return fmt.Errorf("invalid authorization oracle in case %d", i+1)
+			}
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict:
-			if c.Paths != nil || c.Coverage != nil || c.History != nil || c.Truncated ||
+			if c.Paths != nil || c.Coverage != nil || c.History != nil || c.Authorization != nil || c.Truncated ||
 				c.Status == http.StatusUnauthorized && !c.Anonymous ||
 				c.Status == http.StatusForbidden && (c.Anonymous || c.Query.ClusterID == "") ||
 				c.Status == http.StatusConflict && c.Query.ExpectedUID == "" {
@@ -279,6 +283,9 @@ func checkImpactCandidateCase(ctx context.Context, base, token, version, tier st
 		if steps, ok := c.Paths[match.Resource.ID]; !ok || !slices.Equal(steps, match.Path) {
 			return errors.New("response target or exact path differs from the oracle")
 		}
+	}
+	if c.Authorization != nil && !c.Authorization.matches(a.Authorization) {
+		return errors.New("response authorization evidence differs from the oracle")
 	}
 	if c.Coverage != nil && !c.Coverage.matches(a.Observation.Ordinary.After) {
 		return errors.New("response lacks the expected endpoint coverage evidence")

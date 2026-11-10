@@ -134,6 +134,8 @@ func TestImpactCandidateCasesAgainstRealHandler(t *testing.T) {
 		Relation: analysis.ImpactDependents, MaxDepth: 5, Limit: 200}
 	allowed := impactCandidateCase{Query: query, Status: 200, Paths: candidateFixturePaths()}
 	allowed.History = &impactCandidateHistory{State: operations.HistoryDisabled, RetainedData: "not_queried", Reason: operations.HistoryNotConfigured}
+	notApplicable := false
+	allowed.Authorization = &impactCandidateAuthorization{Applicable: &notApplicable, Paths: map[string][]analysis.ImpactAuthorizationStep{}}
 	denied := impactCandidateCase{Query: query, Status: 403}
 	denied.Query.ClusterID = "hidden"
 	unauthenticated := impactCandidateCase{Query: query, Status: 401, Anonymous: true}

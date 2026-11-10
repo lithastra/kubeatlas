@@ -3386,6 +3386,41 @@ retained window, including exact `FirstEventAt`, `LastEventAt` and
 `LatestMarkerAt` timestamps when the fixture defines them. This uses cached
 metadata. A marker observation alone cannot establish a restorable backup.
 
+For a case that verifies RBAC associations, add an `authorization` oracle
+alongside the ordinary `paths` object. Specify `applicable`, the exact
+authorization paths and `truncated` if the authorization result reaches its
+own limit. Use an empty authorization `paths` object to assert no associations.
+Authorization steps can walk either direction in the same path. For
+`BINDS_ROLE` and `BINDS_SUBJECT`, record `bindingScope` and, for a RoleBinding,
+the binding's namespace. Each intermediate resource belongs in the
+authorization result. The probe checks the association evidence category,
+unknown source-version evidence and `effectivePermissions: not_evaluated`.
+Omit the oracle for cases that only verify ordinary paths.
+
+For example, the following oracle expects the role `east:grant/Role/reader`
+to have one matching binding in the `grant` namespace.
+
+```json
+{
+  "authorization": {
+    "applicable": true,
+    "paths": {
+      "east:grant/RoleBinding/reader": [
+        {
+          "from": "east:grant/RoleBinding/reader",
+          "to": "east:grant/Role/reader",
+          "type": "BINDS_ROLE",
+          "traversalFrom": "east:grant/Role/reader",
+          "traversalTo": "east:grant/RoleBinding/reader",
+          "bindingScope": "namespace",
+          "bindingNamespace": "grant"
+        }
+      ]
+    }
+  }
+}
+```
+
 The probe logs the verified plan digest before the opening build check. It
 uses bounded GETs and emits a completion marker with the same digest after
 the closing build check succeeds and all cases and thresholds pass. Use the
