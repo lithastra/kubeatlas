@@ -225,15 +225,21 @@ func TestImpactCandidateSamplingRetainsOrderAndRejectsAnyFailure(t *testing.T) {
 
 // Make sure the plan can be generated from its fixture structs.
 func TestImpactCandidateEmptyPathOracle(t *testing.T) {
+	noReferences := []analysis.ImpactReferenceEvidence{}
 	plan := impactCandidatePlan{Commit: candidateTestCommit, Version: "1.7.0", Tier: "tier1",
 		Cases: []impactCandidateCase{{Name: "empty", Status: 200, Paths: map[string][]analysis.ImpactStep{},
-			Query: impact.Query{Namespace: "demo", Kind: "ConfigMap", Name: "settings", Relation: analysis.ImpactDependents, MaxDepth: 1, Limit: 1}}}}
+			ReferenceEvidence: &noReferences,
+			Query:             impact.Query{Namespace: "demo", Kind: "ConfigMap", Name: "settings", Relation: analysis.ImpactDependents, MaxDepth: 1, Limit: 1}}}}
 	b, err := json.Marshal(plan)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readImpactCandidatePlan(strings.NewReader(string(b)), candidateTestSHA(b)); err != nil {
+	decoded, err := readImpactCandidatePlan(strings.NewReader(string(b)), candidateTestSHA(b))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if decoded.Cases[0].ReferenceEvidence == nil || len(*decoded.Cases[0].ReferenceEvidence) != 0 {
+		t.Fatal("explicit empty reference oracle was lost in the plan")
 	}
 }
 

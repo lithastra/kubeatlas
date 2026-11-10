@@ -3386,6 +3386,41 @@ retained window, including exact `FirstEventAt`, `LastEventAt` and
 `LatestMarkerAt` timestamps when the fixture defines them. This uses cached
 metadata. A marker observation alone cannot establish a restorable backup.
 
+To verify reference explanations, add a `referenceEvidence` array alongside
+`paths`. Include one record per distinct stored `USES_CONFIGMAP`, `USES_SECRET`
+or `MOUNTS_VOLUME` edge used by the expected ordinary paths. The probe matches
+records by stored edge and compares consumer UID and resource version, status,
+reason and each use in capture order. A `version_bound` record requires the
+consumer version and at least one use. An `unknown` record requires a reason
+and an empty `uses` array. Use `[]` for a case with no reference edges. Omit the
+field for a case that only verifies other evidence.
+
+For example, the ConfigMap case above can assert one optional environment
+reference from the recorded consumer version.
+
+```json
+{
+  "referenceEvidence": [
+    {
+      "from": "east:demo/Pod/consumer",
+      "to": "east:demo/ConfigMap/settings",
+      "type": "USES_CONFIGMAP",
+      "sourceUID": "fixture-consumer-uid",
+      "sourceResourceVersion": "17",
+      "status": "version_bound",
+      "uses": [
+        {
+          "fieldPath": "/spec/containers/0/envFrom/0/configMapRef",
+          "mode": "environment",
+          "optional": "optional",
+          "refresh": "container_restart_required"
+        }
+      ]
+    }
+  ]
+}
+```
+
 For a case that verifies RBAC associations, add an `authorization` oracle
 alongside the ordinary `paths` object. Specify `applicable`, the exact
 authorization paths and `truncated` if the authorization result reaches its
