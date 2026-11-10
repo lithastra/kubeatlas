@@ -278,6 +278,8 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 		wantInfo, wantQueries int64
 	}{
 		{name: "bound", wantInfo: 2, wantQueries: 111},
+		{name: "wrong-shape", diagnostic: "impact projection size differs from the plan", wantInfo: 1, wantQueries: 2},
+		{name: "shape-drift", diagnostic: "impact projection size differs from the plan", wantInfo: 1, wantQueries: 12},
 		{name: "edited", diagnostic: "candidate plan SHA-256 mismatch"},
 		{name: "missing-digest", diagnostic: "candidate plan requires a lowercase SHA-256 digest"},
 		{name: "invalid-path", diagnostic: "invalid path oracle"},
@@ -292,8 +294,8 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 					Paths: candidateFixturePaths(),
 				}},
 			}
-			if tc.name == "bound" {
-				plan.Performance = &impactCandidatePerformance{Case: "allowed", Shape: "dense-5k", Resources: 5000, Edges: 18000, Host: "synthetic fixture"}
+			if tc.name == "bound" || tc.name == "wrong-shape" || tc.name == "shape-drift" {
+				plan.Performance = &impactCandidatePerformance{Case: "allowed", Shape: "baseline-5k", Resources: 5000, Edges: 6000, Host: "synthetic fixture"}
 			}
 			if tc.name == "invalid-path" {
 				plan.Cases[0].Paths["prod:other/Pod/consumer"][0].TraversalFrom = "prod:other/Pod/consumer"
@@ -315,7 +317,11 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			handler := candidateFixtureHandler(seedImpactAPI(t))
+			store := seedImpactAPI(t)
+			if tc.name == "bound" || tc.name == "shape-drift" {
+				seedCandidatePerformanceProjection(t, store)
+			}
+			handler := candidateFixtureHandler(store)
 			var infoReads, queryReads atomic.Int64
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer fixture" {
@@ -336,7 +342,16 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 					return
 				}
 
-				queryReads.Add(1)
+				sequence := queryReads.Add(1)
+				if tc.name == "shape-drift" && sequence == candidateWarmups+2 {
+					if err := store.DeleteResource(r.Context(), "prod:bench/ConfigMap/cm-0"); err != nil {
+						t.Error(err)
+					}
+				}
+				measured := plan.Performance != nil && sequence > 1
+				if (r.URL.Query().Get("projection_counts") == "true") != measured {
+					t.Error("projection counts must be requested on every warm-up and sample only")
+				}
 				if infoReads.Load() != 1 {
 					t.Error("query did not run between build checks")
 				}
@@ -351,6 +366,9 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 					return
 				}
 				capture.KubeAtlasVersion = fixtureVersion
+				if counts := recorder.Header().Get(impact.ProjectionCountsHeader); counts != "" {
+					w.Header().Set(impact.ProjectionCountsHeader, counts)
+				}
 				writeJSON(w, http.StatusOK, capture)
 			}))
 			defer srv.Close()
@@ -368,11 +386,15 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 			result := string(out)
 			complete := "candidate probe complete plan-sha256=" + digest
 			if tc.diagnostic == "" {
-				if err != nil || !strings.Contains(result, complete) || !strings.Contains(result, "warmups=10 samples=100") {
+				if err != nil || !strings.Contains(result, complete) || !strings.Contains(result, "warmups=10 samples=100") ||
+					!strings.Contains(result, "verified-projection-resources=5000 verified-projection-edges=6000") {
 					t.Fatalf("bound probe did not complete: %v\n%s", err, result)
 				}
 			} else if err == nil || !strings.Contains(result, tc.diagnostic) || strings.Contains(result, complete) {
 				t.Fatalf("probe did not retain the expected failure: %v\n%s", err, result)
+			}
+			if (tc.name == "wrong-shape" || tc.name == "shape-drift") && strings.Contains(result, "samples-ns=") {
+				t.Fatal("invalid workload yielded accepted samples")
 			}
 			if infoReads.Load() != tc.wantInfo || queryReads.Load() != tc.wantQueries {
 				t.Fatalf("unexpected probe sequence: info=%d queries=%d", infoReads.Load(), queryReads.Load())
@@ -470,5 +492,34 @@ func TestImpactCandidateRequiresMatchingOwnerUIDEvidence(t *testing.T) {
 	c.Paths[pod.ID()][0].OwnerUIDStatus = "matched"
 	if err := checkImpactCandidateCase(ctx, srv.URL, "fixture", version.Version, "tier1", c); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The ordinary fixture has two resources and one edge in prod. Add a
+// disconnected workload so the query paths stay fixed at the 5K/6K shape.
+func seedCandidatePerformanceProjection(t *testing.T, store graph.GraphStore) {
+	t.Helper()
+	ctx := t.Context()
+	const groups = 2499
+	configMap := func(i int) graph.Resource {
+		return graph.Resource{ClusterID: "prod", Namespace: "bench", Kind: "ConfigMap", Name: fmt.Sprintf("cm-%d", i), GroupVersion: "v1"}
+	}
+	for i := range groups {
+		cm := configMap(i)
+		pod := graph.Resource{ClusterID: "prod", Namespace: "bench", Kind: "Pod", Name: fmt.Sprintf("pod-%d", i), GroupVersion: "v1"}
+		for _, resource := range []graph.Resource{cm, pod} {
+			if err := store.UpsertResource(ctx, resource); err != nil {
+				t.Fatal(err)
+			}
+		}
+		refs := 2
+		if i < 1001 {
+			refs++
+		}
+		for j := range refs {
+			if err := store.UpsertEdge(ctx, graph.Edge{From: pod.ID(), To: configMap((i + j) % groups).ID(), Type: graph.EdgeTypeUsesConfigMap}); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }

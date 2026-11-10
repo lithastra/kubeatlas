@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/lithastra/kubeatlas/pkg/impact"
 )
 
 // OpenAPI version + document metadata. Bump apiInfoVersion when the
@@ -206,6 +208,12 @@ func openAPIResponses(r RouteInfo) map[string]any {
 		successCode: successResp,
 	}
 	if r.Pattern == impactPath {
+		successResp["headers"] = map[string]any{
+			impact.ProjectionCountsHeader: map[string]any{
+				"description": "With projection_counts=true, the scoped resource and edge record counts from the same analysis, as two comma-separated decimal integers.",
+				"schema":      map[string]any{"type": "string"},
+			},
+		}
 		for code, description := range map[string]string{
 			"400": "Malformed, unknown, duplicate, or out-of-range query parameter",
 			"401": "Bearer token required", "403": "Cluster access denied", "404": "Resource or authorized cluster not found",

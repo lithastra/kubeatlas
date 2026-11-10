@@ -3463,7 +3463,8 @@ deployed Web and CLI for the release client flows. Capture the
 upgrade, Secret sentinel and destructive restore results from the isolated
 deployment checks. Keep the plan and command output with the candidate evidence.
 See [impact performance preparation](./impact-performance.md) for optional
-sampling in the same probe.
+sampling in the same probe. Each warm-up and measured request verifies its
+scoped input counts from the successful response's projection header.
 
 M4 verifies upgrade from the latest v1.6 patch, frozen supported Kubernetes
 versions, existing API compatibility, Secret sentinel checks, bounded query

@@ -20,6 +20,7 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
 	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
+	"github.com/lithastra/kubeatlas/pkg/impact"
 	"github.com/lithastra/kubeatlas/pkg/store/memory"
 )
 
@@ -104,6 +105,10 @@ func TestImpactOpenAPISchemaAndAlphaIsolation(t *testing.T) {
 	paths := v1["paths"].(map[string]any)
 	op := paths[impactPath].(map[string]any)["get"].(map[string]any)
 	responses := op["responses"].(map[string]any)
+	headers := responses["200"].(map[string]any)["headers"].(map[string]any)
+	if headers[impact.ProjectionCountsHeader] == nil {
+		t.Fatal("projection counts header is undocumented")
+	}
 	for _, code := range []string{"200", "400", "401", "403", "404", "409", "413", "429", "500", "503", "504"} {
 		if responses[code] == nil {
 			t.Fatalf("undocumented status %s", code)
@@ -116,6 +121,9 @@ func TestImpactOpenAPISchemaAndAlphaIsolation(t *testing.T) {
 		}
 	}
 	analysisProps := props["analysis"].(map[string]any)["properties"].(map[string]any)
+	if analysisProps["projectionCounts"] != nil || analysisProps["ProjectionCounts"] != nil {
+		t.Fatal("projection counts leaked into the JSON schema")
+	}
 	for _, key := range []string{"root", "resources", "counts", "referenceEvidence", "authorization", "observation", "availability", "truncated", "truncationReasons"} {
 		if analysisProps[key] == nil {
 			t.Fatalf("undocumented result field %s", key)

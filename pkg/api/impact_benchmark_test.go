@@ -15,6 +15,7 @@ import (
 
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/impact"
 	"github.com/lithastra/kubeatlas/pkg/store/memory"
 )
 
@@ -93,7 +94,12 @@ func benchmarkImpactAPI(b *testing.B, groups int, shared bool, wantTotal int, wa
 	defer httpServer.Close()
 	client := httpServer.Client()
 	client.Timeout = 6 * time.Second
-	query := httpServer.URL + "/api/v1/impact/bench/ConfigMap/cm-0000?relation=dependents&max_depth=5&limit=200"
+	query := httpServer.URL + "/api/v1/impact/bench/ConfigMap/cm-0000?relation=dependents&max_depth=5&limit=200&projection_counts=true"
+	edgesPerGroup := 6
+	if shared {
+		edgesPerGroup = 18
+	}
+	wantProjection := fmt.Sprintf("%d,%d", groups*5, groups*edgesPerGroup)
 	get := func() {
 		response, err := client.Get(query)
 		if err != nil {
@@ -103,6 +109,9 @@ func benchmarkImpactAPI(b *testing.B, groups int, shared bool, wantTotal int, wa
 		closeErr := response.Body.Close()
 		if readErr != nil || closeErr != nil || response.StatusCode != http.StatusOK {
 			b.Fatalf("incomplete response: status=%d read=%v close=%v", response.StatusCode, readErr, closeErr)
+		}
+		if response.Header.Get(impact.ProjectionCountsHeader) != wantProjection {
+			b.Fatal("benchmark response projection does not match the frozen shape")
 		}
 		var capture ImpactResponse
 		if err := json.Unmarshal(body, &capture); err != nil {

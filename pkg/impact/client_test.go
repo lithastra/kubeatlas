@@ -195,12 +195,12 @@ func TestFetchCancellation(t *testing.T) {
 func TestQueryURLSafety(t *testing.T) {
 	q := testQuery()
 	for _, base := range []string{"http://example.com", "http://localhost", "https://user:password@example.com", "https://example.com?token=private", "https://example.com#secret", "file:///tmp/a", "https://example.com/../wrong", "https://example.com/%2e%2e/wrong", "https://%zz"} {
-		if _, err := q.requestURL(base); err == nil || strings.Contains(err.Error(), "password") || strings.Contains(err.Error(), "private") {
+		if _, err := q.requestURL(base, false); err == nil || strings.Contains(err.Error(), "password") || strings.Contains(err.Error(), "private") {
 			t.Errorf("accepted unsafe URL or exposed credentials")
 		}
 	}
 	q.Namespace, q.Kind, q.Name, q.ClusterID = "", "ClusterRole", "system:reader+test", "east"
-	u, err := q.requestURL("https://example.com/atlas/")
+	u, err := q.requestURL("https://example.com/atlas/", false)
 	if err != nil || !strings.Contains(u, "/atlas/api/v1/impact/_/ClusterRole/system:reader+test?") || !strings.Contains(u, "cluster=east") {
 		t.Fatalf("URL=%s err=%v", u, err)
 	}
@@ -260,5 +260,53 @@ func TestFetchRejectsNestedCoverageScope(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestFetchWithProjectionCountsRequiresSameResponseMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		headers []string
+	}{
+		{"valid", []string{"5000,6000"}},
+		{"missing", nil},
+		{"duplicate", []string{"5000,6000", "5000,6000"}},
+		{"merged", []string{"5000,6000,5000,6000"}},
+		{"malformed", []string{"5000,private-canary"}},
+		{"out-of-range", []string{"100001,6000"}},
+		{"leading-zero", []string{"05000,6000"}},
+		{"negative", []string{"5000,-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q := testQuery()
+			response := testResponse(t, q)
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Query().Get("projection_counts") != "true" || r.Header.Get("Authorization") != "Bearer fixture" {
+					t.Error("projection option did not use the same scoped query")
+				}
+				for _, header := range tc.headers {
+					w.Header().Add(ProjectionCountsHeader, header)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(response); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+
+			result, counts, err := FetchWithProjectionCounts(t.Context(), server.URL, "fixture", q)
+			if calls.Load() != 1 {
+				t.Fatal("projection counts used more than one request")
+			}
+			if tc.name == "valid" {
+				if err != nil || result == nil || counts.Resources != 5000 || counts.Edges != 6000 {
+					t.Fatalf("valid projection metadata was lost: %+v %v", counts, err)
+				}
+			} else if err == nil || result != nil || counts != (analysis.ImpactProjectionCounts{}) || strings.Contains(err.Error(), "private-canary") {
+				t.Fatalf("malformed projection metadata yielded a result: %+v %v", counts, err)
+			}
+		})
 	}
 }

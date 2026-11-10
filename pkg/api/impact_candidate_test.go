@@ -256,12 +256,27 @@ func verifyImpactCandidateBuild(ctx context.Context, base, token string, p impac
 }
 
 func checkImpactCandidateCase(ctx context.Context, base, token, version, tier string, c impactCandidateCase) error {
+	return checkImpactCandidateResponse(ctx, base, token, version, tier, c, nil)
+}
+
+func checkImpactCandidateResponse(ctx context.Context, base, token, version, tier string, c impactCandidateCase, expectedProjection *analysis.ImpactProjectionCounts) error {
 	if c.Anonymous {
 		token = ""
 	}
 	ctx, cancel := context.WithTimeout(ctx, candidateTimeout)
 	defer cancel()
-	resp, err := impact.Fetch(ctx, base, token, c.Query)
+	var resp *ImpactResponse
+	var err error
+	if expectedProjection == nil {
+		resp, err = impact.Fetch(ctx, base, token, c.Query)
+	} else {
+		var counts analysis.ImpactProjectionCounts
+		resp, counts, err = impact.FetchWithProjectionCounts(ctx, base, token, c.Query)
+		if err == nil && counts != *expectedProjection {
+			return fmt.Errorf("impact projection size differs from the plan: got %d resources and %d edges, want %d and %d",
+				counts.Resources, counts.Edges, expectedProjection.Resources, expectedProjection.Edges)
+		}
+	}
 	if c.Status != http.StatusOK {
 		var status *impact.HTTPStatusError
 		if !errors.As(err, &status) || status.StatusCode != c.Status {
@@ -432,8 +447,9 @@ func TestImpactFrozenCandidate(t *testing.T) {
 	if m := plan.Performance; m != nil {
 		i := slices.IndexFunc(plan.Cases, func(c impactCandidateCase) bool { return c.Name == m.Case })
 		c := plan.Cases[i]
+		expected := analysis.ImpactProjectionCounts{Resources: m.Resources, Edges: m.Edges}
 		samples, err := sampleImpactCandidate(ctx, func(ctx context.Context) error {
-			return checkImpactCandidateCase(ctx, base, token, plan.Version, plan.Tier, c)
+			return checkImpactCandidateResponse(ctx, base, token, plan.Version, plan.Tier, c, &expected)
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -444,7 +460,7 @@ func TestImpactFrozenCandidate(t *testing.T) {
 			ns[i] = sample.Nanoseconds()
 		}
 		t.Logf("samples-ns=%v", ns)
-		t.Logf("shape=%s declared-resources=%d declared-edges=%d host=%q case=%s depth=%d limit=%d warmups=%d samples=%d p95=%s",
+		t.Logf("shape=%s verified-projection-resources=%d verified-projection-edges=%d host=%q case=%s depth=%d limit=%d warmups=%d samples=%d p95=%s",
 			m.Shape, m.Resources, m.Edges, m.Host, m.Case, c.Query.MaxDepth, c.Query.Limit, candidateWarmups, candidateSamples, p95)
 		if m.Shape == "baseline-5k" && p95 > time.Second {
 			t.Error("5K baseline exceeds the 1 second p95 target")
