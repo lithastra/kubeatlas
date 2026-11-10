@@ -321,3 +321,43 @@ func TestServedRepairRevokedRoundUsesNewSetOnNextScheduledRound(t *testing.T) {
 		t.Fatal("unserved version swept by selected-version list", err)
 	}
 }
+
+func TestServedRepairWithoutClientKeepsRetainedRows(t *testing.T) {
+	for _, cluster := range []string{"east", ""} {
+		t.Run("scope="+cluster, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			store := memory.New()
+			row := servedRepairRow(cluster, "v2", "retained")
+			if err := store.UpsertResource(ctx, row); err != nil {
+				t.Fatal(err)
+			}
+			repair := NewMemberRepair(nil, store, cluster)
+			if cluster == "" {
+				repair = NewStandaloneRepair(nil, store)
+			}
+			syncCalls, versionCalls := 0, 0
+			repair.RunServedVersions(ctx, servedRepairGVR, "Foo", nil, func() bool {
+				syncCalls++
+				return true
+			}, func(graph.Resource) {
+				t.Error("lock-only repair reported a deletion")
+			}, func() ServedRepairVersions {
+				versionCalls++
+				return ServedRepairVersions{Versions: []string{"v2"}}
+			})
+			if syncCalls != 0 || versionCalls != 0 {
+				t.Fatal("lock-only repair started a reconciliation round")
+			}
+			unlock, err := repair.LockResource(ctx, row.ID())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer unlock()
+			got, err := store.GetResource(ctx, row.ID())
+			if err != nil || got.UID != row.UID || got.ResourceVersion != row.ResourceVersion {
+				t.Fatal("lock-only repair lost the retained row", got, err)
+			}
+		})
+	}
+}

@@ -44,6 +44,8 @@ type memberResourceLock struct {
 	refs int
 }
 
+// NewMemberRepair binds reconciliation and callback locking to a member.
+// A nil client leaves only callback locking available.
 func NewMemberRepair(client dynamic.Interface, store graph.GraphStore, cluster string) *MemberRepair {
 	return &MemberRepair{client: client, store: store, cluster: cluster, interval: memberRepairInterval, slot: make(chan struct{}, 1), writes: make(map[string]*memberResourceLock)}
 }
@@ -106,7 +108,7 @@ func (r *MemberRepair) Run(ctx context.Context, gvr schema.GroupVersionResource,
 // selected version. Nil preserves single-endpoint repair. The owner must stop
 // this registration when its CRD identity changes.
 func (r *MemberRepair) RunServedVersions(ctx context.Context, gvr schema.GroupVersionResource, kind string, coverage *operations.CoverageSession, synced cache.InformerSynced, onDelete func(graph.Resource), versions func() ServedRepairVersions) {
-	if r == nil || (r.cluster == "" && !r.standalone) {
+	if r == nil || r.client == nil || (r.cluster == "" && !r.standalone) {
 		return
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), synced) {
