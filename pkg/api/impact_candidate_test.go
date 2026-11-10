@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
 	"github.com/lithastra/kubeatlas/pkg/impact"
 	"github.com/lithastra/kubeatlas/pkg/operations"
 )
@@ -49,14 +50,14 @@ type impactCandidatePlan struct {
 }
 
 type impactCandidateCase struct {
-	Name      string                      `json:"name"`
-	Query     impact.Query                `json:"query"`
-	Status    int                         `json:"status"`
-	Anonymous bool                        `json:"anonymous,omitempty"`
-	Paths     map[string][]graph.EdgeType `json:"paths"`
-	Truncated bool                        `json:"truncated,omitempty"`
-	Coverage  *impactCandidateCoverage    `json:"coverage,omitempty"`
-	History   *impactCandidateHistory     `json:"history,omitempty"`
+	Name      string                           `json:"name"`
+	Query     impact.Query                     `json:"query"`
+	Status    int                              `json:"status"`
+	Anonymous bool                             `json:"anonymous,omitempty"`
+	Paths     map[string][]analysis.ImpactStep `json:"paths"`
+	Truncated bool                             `json:"truncated,omitempty"`
+	Coverage  *impactCandidateCoverage         `json:"coverage,omitempty"`
+	History   *impactCandidateHistory          `json:"history,omitempty"`
 }
 
 type impactCandidateCoverage struct {
@@ -119,10 +120,8 @@ func (p impactCandidatePlan) validate() error {
 			if c.Paths == nil || len(c.Paths) > c.Query.Limit {
 				return fmt.Errorf("case %d requires an explicit path oracle", i+1)
 			}
-			for target, steps := range c.Paths {
-				if target == "" || len(steps) == 0 || len(steps) > c.Query.MaxDepth {
-					return fmt.Errorf("invalid path oracle in case %d", i+1)
-				}
+			if !c.validPaths() {
+				return fmt.Errorf("invalid path oracle in case %d", i+1)
 			}
 			if c.Coverage != nil && (!c.Coverage.valid()) {
 				return fmt.Errorf("invalid coverage oracle in case %d", i+1)
@@ -160,6 +159,46 @@ func (p impactCandidatePlan) validate() error {
 		}
 	}
 	return nil
+}
+
+// validPaths checks the declared paths before a candidate request is made.
+// A step can only start at the root or a declared match and must follow the
+// query direction. Ownership expectations are explicit for OWNS edges.
+func (c impactCandidateCase) validPaths() bool {
+	q := c.Query
+	root := (graph.Resource{ClusterID: q.ClusterID, Namespace: q.Namespace, Kind: q.Kind, Name: q.Name}).ID()
+	for target, steps := range c.Paths {
+		if target == root || !graph.ImpactIDInCluster(target, q.ClusterID) || len(steps) == 0 || len(steps) > q.MaxDepth {
+			return false
+		}
+		last := root
+		visited := map[string]bool{root: true}
+		for _, step := range steps {
+			from, to := step.From, step.To
+			if q.Relation == analysis.ImpactDependents {
+				from, to = to, from
+			}
+			if from != last || step.TraversalFrom != from || step.TraversalTo != to ||
+				visited[to] || !slices.Contains(graph.AllEdgeTypes, step.Type) {
+				return false
+			}
+			if _, ok := c.Paths[to]; !ok {
+				return false
+			}
+			if step.Type == graph.EdgeTypeOwns {
+				if step.OwnerUIDStatus != "matched" && step.OwnerUIDStatus != "unknown" {
+					return false
+				}
+			} else if step.OwnerUIDStatus != "" {
+				return false
+			}
+			last, visited[to] = to, true
+		}
+		if last != target {
+			return false
+		}
+	}
+	return true
 }
 
 func candidateInfoURL(base string) (string, error) {
@@ -237,14 +276,8 @@ func checkImpactCandidateCase(ctx context.Context, base, token, version, tier st
 		return errors.New("response version, truncation or match count differs from the oracle")
 	}
 	for _, match := range a.Resources {
-		steps, ok := c.Paths[match.Resource.ID]
-		if !ok || len(steps) != len(match.Path) {
-			return errors.New("response target or path length differs from the oracle")
-		}
-		for i, step := range match.Path {
-			if step.Type != steps[i] {
-				return errors.New("response path edge type differs from the oracle")
-			}
+		if steps, ok := c.Paths[match.Resource.ID]; !ok || !slices.Equal(steps, match.Path) {
+			return errors.New("response target or exact path differs from the oracle")
 		}
 	}
 	if c.Coverage != nil && !c.Coverage.matches(a.Observation.Ordinary.After) {

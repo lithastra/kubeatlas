@@ -35,12 +35,29 @@ func candidateTestSHA(data []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(data))
 }
 
+func candidateDependentStep(from, to string, edgeType graph.EdgeType) analysis.ImpactStep {
+	return analysis.ImpactStep{From: from, To: to, Type: edgeType, TraversalFrom: to, TraversalTo: from}
+}
+
+func candidateFixturePaths() map[string][]analysis.ImpactStep {
+	pod := "prod:other/Pod/consumer"
+	return map[string][]analysis.ImpactStep{pod: {candidateDependentStep(pod, "prod:demo/ConfigMap/settings", graph.EdgeTypeUsesConfigMap)}}
+}
+
 func TestImpactCandidatePlan(t *testing.T) {
+	const step = `{
+		"from":"prod:other/Pod/consumer",
+		"to":"prod:demo/ConfigMap/settings",
+		"type":"USES_CONFIGMAP",
+		"traversalFrom":"prod:demo/ConfigMap/settings",
+		"traversalTo":"prod:other/Pod/consumer"
+	}`
+	const paths = `"paths":{"prod:other/Pod/consumer":[` + step + `]}`
 	valid := `{
 		"commit":"0123456789abcdef0123456789abcdef01234567","version":"1.7.0-rc.1","tier":"tier1",
 		"cases":[{"name":"allowed","query":{"Namespace":"demo","Kind":"ConfigMap","Name":"settings",
 		"ClusterID":"prod","Relation":"dependents","MaxDepth":5,"Limit":200},"status":200,
-		"paths":{"prod:other/Pod/consumer":["USES_CONFIGMAP"]}}],
+		` + paths + `}],
 		"performance":{"case":"allowed","shape":"baseline-5k","resources":5000,"edges":6000,"host":"recorded host"}
 	}`
 	if _, err := readImpactCandidatePlan(strings.NewReader(valid), candidateTestSHA([]byte(valid))); err != nil {
@@ -48,7 +65,8 @@ func TestImpactCandidatePlan(t *testing.T) {
 	}
 	for _, input := range []string{
 		valid + " null",
-		strings.Replace(valid, `"paths":{"prod:other/Pod/consumer":["USES_CONFIGMAP"]}`, `"paths":null`, 1),
+		strings.Replace(valid, paths, `"paths":null`, 1),
+		strings.Replace(valid, step, `"USES_CONFIGMAP"`, 1),
 		strings.Replace(valid, `"tier":"tier1"`, `"tier":"tier3"`, 1),
 		strings.Replace(valid, candidateTestCommit, "0123456", 1),
 		strings.Replace(valid, "5000", "4999", 1),
@@ -92,9 +110,8 @@ func TestImpactCandidateBuildCheck(t *testing.T) {
 	}
 }
 
-func candidateFixtureHandler(t *testing.T) http.Handler {
-	t.Helper()
-	s := New("", seedImpactAPI(t), aggregator.NewRegistry(),
+func candidateFixtureHandler(store graph.GraphStore) http.Handler {
+	s := New("", store, aggregator.NewRegistry(),
 		WithClusterLister(&impactAPIClusters{clusters: []string{"prod", "hidden"}}),
 		WithClusterRBAC(multicluster.NewRBACScope([]multicluster.RBACRule{{Token: "fixture", Clusters: []string{"prod"}}})),
 		WithImpactEvidence(analysis.ImpactEvidenceProviders{
@@ -111,18 +128,29 @@ func candidateFixtureHandler(t *testing.T) http.Handler {
 }
 
 func TestImpactCandidateCasesAgainstRealHandler(t *testing.T) {
-	srv := httptest.NewServer(candidateFixtureHandler(t))
+	srv := httptest.NewServer(candidateFixtureHandler(seedImpactAPI(t)))
 	defer srv.Close()
 	query := impact.Query{Namespace: "demo", Kind: "ConfigMap", Name: "settings", ClusterID: "prod", ExpectedUID: "root-instance",
 		Relation: analysis.ImpactDependents, MaxDepth: 5, Limit: 200}
-	allowed := impactCandidateCase{Query: query, Status: 200, Paths: map[string][]graph.EdgeType{"prod:other/Pod/consumer": {graph.EdgeTypeUsesConfigMap}}}
+	allowed := impactCandidateCase{Query: query, Status: 200, Paths: candidateFixturePaths()}
 	allowed.History = &impactCandidateHistory{State: operations.HistoryDisabled, RetainedData: "not_queried", Reason: operations.HistoryNotConfigured}
 	denied := impactCandidateCase{Query: query, Status: 403}
 	denied.Query.ClusterID = "hidden"
 	unauthenticated := impactCandidateCase{Query: query, Status: 401, Anonymous: true}
 	conflict := impactCandidateCase{Query: query, Status: 409}
 	conflict.Query.ExpectedUID = "replaced-instance"
-	for _, c := range []impactCandidateCase{allowed, denied, unauthenticated, conflict} {
+	dependency := impactCandidateCase{Status: http.StatusOK,
+		Query: impact.Query{Namespace: "other", Kind: "Pod", Name: "consumer", ClusterID: "prod", ExpectedUID: "pod-instance",
+			Relation: analysis.ImpactDependencies, MaxDepth: 5, Limit: 200},
+		Paths: map[string][]analysis.ImpactStep{"prod:demo/ConfigMap/settings": {{
+			From: "prod:other/Pod/consumer", To: "prod:demo/ConfigMap/settings", Type: graph.EdgeTypeUsesConfigMap,
+			TraversalFrom: "prod:other/Pod/consumer", TraversalTo: "prod:demo/ConfigMap/settings",
+		}}},
+	}
+	if !dependency.validPaths() {
+		t.Fatal("forward dependency path was rejected")
+	}
+	for _, c := range []impactCandidateCase{allowed, dependency, denied, unauthenticated, conflict} {
 		if err := checkImpactCandidateCase(t.Context(), srv.URL, "fixture", version.Version, "tier1", c); err != nil {
 			t.Fatalf("status %d: %v", c.Status, err)
 		}
@@ -130,7 +158,7 @@ func TestImpactCandidateCasesAgainstRealHandler(t *testing.T) {
 	if err := checkImpactCandidateCase(t.Context(), srv.URL, "fixture", version.Version, "tier2", allowed); err == nil {
 		t.Fatal("accepted memory evidence for a Tier 2 plan")
 	}
-	allowed.Paths["prod:other/Pod/consumer"] = []graph.EdgeType{graph.EdgeTypeOwns}
+	allowed.Paths["prod:other/Pod/consumer"][0].Type = graph.EdgeTypeOwns
 	if err := checkImpactCandidateCase(t.Context(), srv.URL, "fixture", version.Version, "tier1", allowed); err == nil {
 		t.Fatal("accepted an incorrect relationship path")
 	}
@@ -196,7 +224,7 @@ func TestImpactCandidateSamplingRetainsOrderAndRejectsAnyFailure(t *testing.T) {
 // Make sure the plan can be generated from its fixture structs.
 func TestImpactCandidateEmptyPathOracle(t *testing.T) {
 	plan := impactCandidatePlan{Commit: candidateTestCommit, Version: "1.7.0", Tier: "tier1",
-		Cases: []impactCandidateCase{{Name: "empty", Status: 200, Paths: map[string][]graph.EdgeType{},
+		Cases: []impactCandidateCase{{Name: "empty", Status: 200, Paths: map[string][]analysis.ImpactStep{},
 			Query: impact.Query{Namespace: "demo", Kind: "ConfigMap", Name: "settings", Relation: analysis.ImpactDependents, MaxDepth: 1, Limit: 1}}}}
 	b, err := json.Marshal(plan)
 	if err != nil {
@@ -244,6 +272,7 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 		{name: "bound", wantInfo: 2, wantQueries: 111},
 		{name: "edited", diagnostic: "candidate plan SHA-256 mismatch"},
 		{name: "missing-digest", diagnostic: "candidate plan requires a lowercase SHA-256 digest"},
+		{name: "invalid-path", diagnostic: "invalid path oracle"},
 		{name: "closing-drift", diagnostic: "closing build check", wantInfo: 2, wantQueries: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -252,11 +281,14 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 					Name: "allowed", Status: http.StatusOK,
 					Query: impact.Query{Namespace: "demo", Kind: "ConfigMap", Name: "settings", ClusterID: "prod",
 						ExpectedUID: "root-instance", Relation: analysis.ImpactDependents, MaxDepth: 5, Limit: 200},
-					Paths: map[string][]graph.EdgeType{"prod:other/Pod/consumer": {graph.EdgeTypeUsesConfigMap}},
+					Paths: candidateFixturePaths(),
 				}},
 			}
 			if tc.name == "bound" {
 				plan.Performance = &impactCandidatePerformance{Case: "allowed", Shape: "dense-5k", Resources: 5000, Edges: 18000, Host: "synthetic fixture"}
+			}
+			if tc.name == "invalid-path" {
+				plan.Cases[0].Paths["prod:other/Pod/consumer"][0].TraversalFrom = "prod:other/Pod/consumer"
 			}
 			data, err := json.Marshal(plan)
 			if err != nil {
@@ -275,7 +307,7 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			handler := candidateFixtureHandler(t)
+			handler := candidateFixtureHandler(seedImpactAPI(t))
 			var infoReads, queryReads atomic.Int64
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer fixture" {
@@ -338,5 +370,97 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 				t.Fatalf("unexpected probe sequence: info=%d queries=%d", infoReads.Load(), queryReads.Load())
 			}
 		})
+	}
+}
+
+func TestImpactCandidateRejectsDifferentIntermediate(t *testing.T) {
+	ctx := t.Context()
+	store := seedImpactAPI(t)
+	root := "prod:demo/ConfigMap/settings"
+	first := "prod:other/Pod/consumer"
+	second := graph.Resource{ClusterID: "prod", Namespace: "other", Kind: "Pod", Name: "second", GroupVersion: "v1"}
+	service := graph.Resource{ClusterID: "prod", Namespace: "other", Kind: "Service", Name: "frontend", GroupVersion: "v1"}
+	for _, resource := range []graph.Resource{second, service} {
+		if err := store.UpsertResource(ctx, resource); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, edge := range []graph.Edge{
+		{From: second.ID(), To: root, Type: graph.EdgeTypeUsesConfigMap},
+		{From: service.ID(), To: second.ID(), Type: graph.EdgeTypeSelects},
+	} {
+		if err := store.UpsertEdge(ctx, edge); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := httptest.NewServer(candidateFixtureHandler(store))
+	defer srv.Close()
+	c := impactCandidateCase{
+		Status: http.StatusOK,
+		Query: impact.Query{Namespace: "demo", Kind: "ConfigMap", Name: "settings", ClusterID: "prod",
+			ExpectedUID: "root-instance", Relation: analysis.ImpactDependents, MaxDepth: 5, Limit: 200},
+		Paths: map[string][]analysis.ImpactStep{
+			first:       {candidateDependentStep(first, root, graph.EdgeTypeUsesConfigMap)},
+			second.ID(): {candidateDependentStep(second.ID(), root, graph.EdgeTypeUsesConfigMap)},
+			service.ID(): {
+				candidateDependentStep(first, root, graph.EdgeTypeUsesConfigMap),
+				candidateDependentStep(service.ID(), first, graph.EdgeTypeSelects),
+			},
+		},
+	}
+	if !c.validPaths() {
+		t.Fatal("test oracle is invalid")
+	}
+	if err := checkImpactCandidateCase(ctx, srv.URL, "fixture", version.Version, "tier1", c); err == nil || !strings.Contains(err.Error(), "exact path") {
+		t.Fatalf("accepted the same types and target through a different intermediate resource: %v", err)
+	}
+	c.Paths[service.ID()] = []analysis.ImpactStep{
+		candidateDependentStep(second.ID(), root, graph.EdgeTypeUsesConfigMap),
+		candidateDependentStep(service.ID(), second.ID(), graph.EdgeTypeSelects),
+	}
+	if err := checkImpactCandidateCase(ctx, srv.URL, "fixture", version.Version, "tier1", c); err != nil {
+		t.Fatalf("rejected the complete path: %v", err)
+	}
+}
+
+func TestImpactCandidateRequiresMatchingOwnerUIDEvidence(t *testing.T) {
+	ctx := t.Context()
+	store := seedImpactAPI(t)
+	owner := graph.Resource{ClusterID: "prod", Namespace: "other", Kind: "Deployment", Name: "backend", UID: "owner-uid", GroupVersion: "apps/v1"}
+	pod, err := store.GetResource(ctx, "prod:other/Pod/consumer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pod.OwnerReferences = []graph.OwnerRef{{Kind: owner.Kind, Name: owner.Name, UID: owner.UID}}
+	for _, resource := range []graph.Resource{owner, pod} {
+		if err := store.UpsertResource(ctx, resource); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.UpsertEdge(ctx, graph.Edge{From: pod.ID(), To: owner.ID(), Type: graph.EdgeTypeOwns}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(candidateFixtureHandler(store))
+	defer srv.Close()
+	step := candidateDependentStep(pod.ID(), owner.ID(), graph.EdgeTypeOwns)
+	c := impactCandidateCase{Status: http.StatusOK,
+		Query: impact.Query{Namespace: owner.Namespace, Kind: owner.Kind, Name: owner.Name, ClusterID: owner.ClusterID,
+			ExpectedUID: string(owner.UID), Relation: analysis.ImpactDependents, MaxDepth: 5, Limit: 200},
+		Paths: map[string][]analysis.ImpactStep{pod.ID(): {step}},
+	}
+	if c.validPaths() {
+		t.Fatal("ownership oracle accepted a missing UID status")
+	}
+	c.Paths[pod.ID()][0].OwnerUIDStatus = "unknown"
+	if !c.validPaths() {
+		t.Fatal("unknown UID is a valid ownership expectation")
+	}
+	if err := checkImpactCandidateCase(ctx, srv.URL, "fixture", version.Version, "tier1", c); err == nil || !strings.Contains(err.Error(), "exact path") {
+		t.Fatalf("probe accepted a different UID status: %v", err)
+	}
+	c.Paths[pod.ID()][0].OwnerUIDStatus = "matched"
+	if err := checkImpactCandidateCase(ctx, srv.URL, "fixture", version.Version, "tier1", c); err != nil {
+		t.Fatal(err)
 	}
 }

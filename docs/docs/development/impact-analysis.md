@@ -3331,7 +3331,17 @@ recorded candidate values.
         "Limit": 200
       },
       "status": 200,
-      "paths": {"east:demo/Pod/consumer": ["USES_CONFIGMAP"]},
+      "paths": {
+        "east:demo/Pod/consumer": [
+          {
+            "from": "east:demo/Pod/consumer",
+            "to": "east:demo/ConfigMap/settings",
+            "type": "USES_CONFIGMAP",
+            "traversalFrom": "east:demo/ConfigMap/settings",
+            "traversalTo": "east:demo/Pod/consumer"
+          }
+        ]
+      },
       "coverage": {
         "Source": "core",
         "Version": "v1",
@@ -3362,8 +3372,12 @@ KUBEATLAS_IMPACT_CANDIDATE_SERVER=http://127.0.0.1:18080 \
 ```
 
 Run a plan for each prepared tier and fault condition. Positive cases require
-the exact ordinary target IDs and path edge sequences. Use an empty `paths`
-object for an expected empty result. Add 401, 403 and 409 cases for anonymous
+the exact ordinary target IDs and every stored and traversed edge endpoint.
+For `OWNS` steps, record `ownerUIDStatus` as `matched` or `unknown`. Use the
+query direction throughout the path and include each intermediate resource as
+a declared match. Use an empty `paths` object for an expected empty result.
+Update older plans that listed edge types alone to use step objects, then
+record the new digest. Add 401, 403 and 409 cases for anonymous
 access, denied member access and replacement of the expected UID. Select the
 collector in a coverage oracle with `core`, `crd` or `gatekeeper` and identify
 its exact served version. Use `Reason` to check the specific list or watch
