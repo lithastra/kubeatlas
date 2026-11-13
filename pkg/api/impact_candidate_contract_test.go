@@ -373,7 +373,10 @@ func TestImpactCandidatePinnedProbe(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			// The child makes 111 graph queries under race and coverage
+			// instrumentation. Allow the complete sequence to finish while
+			// preserving the probe's per-request and p95 limits.
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, executable, "-test.run=^TestImpactFrozenCandidate$", "-test.v")
 			cmd.Env = append(os.Environ(),
