@@ -18,6 +18,7 @@
     "test:history-browser": "playwright test --config playwright.history.config.ts",
     "test:impact-browser": "playwright test --config playwright.impact.config.ts",
     "test:impact-live": "playwright test --config playwright.impact-live.config.ts",
+    "test:impact-deployed": "playwright test --config playwright.impact-deployed.config.ts",
     "test:dependencies:browser": "playwright test --config playwright.dependencies.config.ts"
   },
   "dependencies": {

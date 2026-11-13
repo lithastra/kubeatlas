@@ -136,6 +136,10 @@ collect_failure_diagnostics() {
     kubectl describe pods -n "${NS}" || true
     kubectl logs -n "${NS}" deployment/"${RELEASE}" \
       --all-containers=true --tail=300 || true
+    kubectl logs -n "${NS}" -l "cnpg.io/cluster=${PG_CLUSTER}" \
+      --all-containers --prefix --tail=100 --request-timeout=10s || true
+    kubectl logs -n "${NS}" -l "cnpg.io/cluster=${PG_CLUSTER}" \
+      --all-containers --prefix --tail=100 --request-timeout=10s --previous || true
     kubectl logs -n cnpg-system deployment/cnpg-cloudnative-pg \
       --all-containers=true --tail=300 || true
     anonymous_helm 30 status "${RELEASE}" -n "${NS}" || true

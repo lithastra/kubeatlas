@@ -31,13 +31,16 @@ jobs:
       - name: Scan source paths for CJK characters
         run: |
           set -e
-          # Match any CJK character in the listed source dirs.
-          # docs/<locale>/ is exempt by not being in the search path.
-          if grep -rPnI '[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]' \
-               cmd pkg 2>/dev/null; then
+          # Match the scripts themselves, excluding shared punctuation.
+          if grep -rPnI '[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Hangul}]' cmd pkg; then
             echo "::error::Non-ASCII (CJK) characters found in source paths."
             echo "Source code, comments, and identifiers MUST be English."
             exit 1
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              exit "$status"
+            fi
           fi
           echo "OK: no CJK characters in cmd/ or pkg/."
 

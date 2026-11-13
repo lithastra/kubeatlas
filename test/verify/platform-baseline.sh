@@ -61,6 +61,10 @@ require_text "$tier2_workflow" 'kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a
 require_text "$tier2_workflow" "--version ${EXPECTED_CNPG_CHART}"
 require_text "$tier2_workflow" "expected_operator: ${EXPECTED_CNPG_OPERATOR}"
 require_text "$tier2_workflow" "local-postgres-age:${EXPECTED_POSTGRES_AGE_TAG}"
+require_text "$tier2_workflow" 'POSTGRES_AGE_IMAGE: ghcr.io/lithastra/postgres-age:16.15-age1.6.0-rc0.2@sha256:412ae56754e71aac96e8cb6327f70782c50bd4aeff75ff0ddf32eb4ee7400936'
+require_text "$tier2_workflow" 'psql -h /tmp -v ON_ERROR_STOP=1 -d postgres -c "CREATE EXTENSION age"'
+require_text "$tier2_workflow" 'bash test/verify/impact-deployed.sh kubeatlas-tier1 kubeatlas-tier1 tier1'
+require_text "$tier2_workflow" 'bash test/verify/impact-deployed.sh kubeatlas-fresh kubeatlas-fresh tier2'
 require_text "$tier2_workflow" 'name: PostgreSQL + AGE (linux/${{ matrix.arch }})'
 require_text "$tier2_workflow" '--platform "linux/${TARGET_ARCH}"'
 require_text "$tier2_workflow" "baseline: ['1.5.2', '1.6.0']"
