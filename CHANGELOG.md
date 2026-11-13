@@ -10,6 +10,33 @@ fixes bump the patch.
 Changes merged after the signed v1.6.0 source commit are not included in its
 published artifacts. Documentation corrections do not rebuild those artifacts.
 
+## [v1.7.0] — Explainable impact analysis
+
+### Added
+
+- A read-only `/api/v1/impact` query for observed dependents and dependencies.
+  Results include bounded relationship paths, reference explanations, separate
+  RBAC associations, and warnings about collection gaps and history continuity.
+  Federated queries use one explicitly selected cluster.
+- Impact analysis from Web resource details and topology nodes. Expand API
+  observation details to inspect captured discovery and registration evidence,
+  including advertised endpoints with no captured registration.
+- `kubectl atlas impact` for text, JSON, and self-contained HTML reports. Web
+  JSON and HTML exports capture the same validated result displayed in the UI.
+  Reports can contain sensitive topology information.
+- Member-scoped API inventory, CRD, and Gatekeeper collection. Active endpoints
+  reconcile missed deletes with bounded complete lists and UID/version checks.
+  Retired dynamic-source data is retained when deletion cannot be established.
+  Impact results qualify incomplete or stale source evidence.
+
+### Validation and scope
+
+- Deployment scope is single replica with external authentication. Secret
+  relationships use reference-only nodes.
+- Frozen-candidate verification of Web, API, and CLI flows on both storage
+  tiers, the v1.6 upgrade, bounded query performance, 72-hour observation,
+  and public artifact audits remains pending.
+
 ## [v1.6.0] — Production operability — 2026-09-26
 
 ### Added
