@@ -34,7 +34,8 @@ published artifacts. Documentation corrections do not rebuild those artifacts.
 - Deployment scope is single replica with external authentication. Secret
   relationships use reference-only nodes.
 - Frozen-candidate verification of Web, API, and CLI flows on both storage
-  tiers, the v1.6 upgrade, bounded query performance, 72-hour observation,
+  tiers, the v1.6 upgrade, bounded query performance, a 10-minute local
+  functional acceptance window,
   and public artifact audits remains pending.
 
 ## [v1.6.0] — Production operability — 2026-09-26

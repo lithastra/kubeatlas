@@ -3474,12 +3474,14 @@ freeze hardware, edge density, query depth/limit, and at least 100 samples per
 query before measuring. Dense and 10K cases are reported separately. This is
 new v1.7 acceptance, not a retroactive pass or reopening of v1.6 issue #26.
 
-Only the final frozen candidate receives a complete **72-hour** observation.
-No 168-hour experiment is planned. Freeze workload, warm-up/baseline windows,
-sampling/gap bounds, resource-growth limits, recovery exercises, immutable
-image identities, and an independent verifier before launch. No unexplained
-restart/OOM, normal-load drops, or write failures may pass. Never concatenate
-interrupted attempts or retry silently. Elapsed time alone is not acceptance.
+The release owner revised final observation on November 13, 2026 to a
+**10-minute functional acceptance window on local Docker Desktop**, starting
+after deployment readiness. Record the candidate commit, artifact identities,
+Kubernetes version, storage tiers, exercised functions and complete results.
+Check Web/API/CLI, collection, persistence and health during the window.
+Unexpected restarts, OOMs, normal-load drops and write failures fail the run.
+The earlier 72-hour observation requirement is superseded. Release evidence
+must describe this bounded functional scope and make no endurance claim.
 Workstation launchers and private evidence stay outside this repository.
 
 Headlamp/Backstage/rules/Action retain independent release scope and receive
