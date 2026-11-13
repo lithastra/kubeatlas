@@ -74,6 +74,7 @@ async function fixtureTransport(page: Page, reply?: Reply) {
       expect(entry, 'every successful query must have an explicit shared oracle').toBeDefined();
       return route.fulfill({ contentType: 'application/json', body: wire(entry!.name as keyof typeof captures) });
     }
+    if (url.pathname === '/api/v1/info') return json({ version: '1.7.0-test' });
     if (url.pathname === '/api/v1/federation/clusters') return json({ clusters: ['east', 'west'] });
     if (url.pathname === '/api/v1/federation/graph') {
       const clusterId = url.searchParams.get('cluster');
@@ -105,6 +106,7 @@ test.beforeEach(async ({ page }) => {
 async function openResource(page: Page, namespace = 'demo', kind = 'ConfigMap', name = 'settings') {
   await page.goto(`/resources/${namespace}/${kind}/${name}`);
   await expect(page.getByTestId('resource-detail-header')).toContainText(`${kind}/${name}`);
+  await expect(page.getByTestId('server-version')).toHaveText('1.7.0-test');
   await page.getByRole('button', { name: 'Analyze impact', exact: true }).click();
 }
 
