@@ -11,6 +11,19 @@ const fromBabel = createRequire(require.resolve('babel-plugin-istanbul'));
 const consumerPath = fromBabel.resolve('@istanbuljs/load-nyc-config');
 const fromConsumer = createRequire(consumerPath);
 
+test('every locked minimatch copy is patched and matches the installed tree', async () => {
+  const root = path.resolve(__dirname, '..');
+  const lock = JSON.parse(await readFile(path.join(root, 'package-lock.json'), 'utf8'));
+  const copies = Object.entries(lock.packages).filter(([key]) => key.endsWith('node_modules/minimatch'));
+  assert.ok(copies.length > 0, 'expected actual minimatch consumers');
+  for (const [key, entry] of copies) {
+    assert.doesNotMatch(entry.version, /^(?:[7-9]|10)\.|^11\.0\.0(?:$|-)/,
+      `vulnerable minimatch remains at ${key}`);
+    const installed = JSON.parse(await readFile(path.join(root, key, 'package.json'), 'utf8'));
+    assert.equal(installed.version, entry.version, `minimatch installation differs at ${key}`);
+  }
+});
+
 // Read the packages that the real consumer resolves, not an unrelated hoisted
 // copy. A changed lockfile does not update an existing node_modules tree.
 async function assertLockedParser() {
