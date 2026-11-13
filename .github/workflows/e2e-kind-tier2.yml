@@ -119,16 +119,9 @@ jobs:
           cp bin/kubeatlas .docker-context/linux/amd64/kubeatlas
           docker build -t kubeatlas:tier2-test .docker-context
 
-      - name: Load the released PostgreSQL + AGE dependency by digest
-        run: |
-          docker pull "$POSTGRES_AGE_IMAGE"
-          docker tag "$POSTGRES_AGE_IMAGE" local-postgres-age:16.15-age1.6.0-rc0.2
-
       - name: Load images into kind
         run: |
           kind load docker-image kubeatlas:tier2-test \
-            --name kubeatlas-tier2-${{ matrix.slug }}
-          kind load docker-image local-postgres-age:16.15-age1.6.0-rc0.2 \
             --name kubeatlas-tier2-${{ matrix.slug }}
 
       - name: Verify a fresh Tier 1 install
@@ -155,7 +148,7 @@ jobs:
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
             --set persistence.embedded.retainOnDelete=false \
-            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
+            --set-string "persistence.embedded.image=${POSTGRES_AGE_IMAGE}" \
             --set persistence.embedded.storageSize=1Gi \
             --wait --timeout 8m
           kubectl rollout status deployment/kubeatlas-fresh \
@@ -193,7 +186,7 @@ jobs:
             --namespace kubeatlas \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
-            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
+            --set-string "persistence.embedded.image=${POSTGRES_AGE_IMAGE}" \
             --set persistence.embedded.storageSize=2Gi \
             --set snapshots.enabled=true \
             --set rulePacks.openshift=true \
@@ -215,7 +208,7 @@ jobs:
             --set image.pullPolicy=Never \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
-            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
+            --set-string "persistence.embedded.image=${POSTGRES_AGE_IMAGE}" \
             --set persistence.embedded.storageSize=2Gi \
             --set snapshots.enabled=true \
             --set rulePacks.openshift=true \
@@ -451,16 +444,9 @@ jobs:
           cp bin/kubeatlas .docker-context/linux/amd64/kubeatlas
           docker build -t kubeatlas:upgrade-recovery .docker-context
 
-      - name: Load the released PostgreSQL + AGE dependency by digest
-        run: |
-          docker pull "$POSTGRES_AGE_IMAGE"
-          docker tag "$POSTGRES_AGE_IMAGE" local-postgres-age:16.15-age1.6.0-rc0.2
-
       - name: Load only the unreleased candidate images into kind
         run: |
           kind load docker-image kubeatlas:upgrade-recovery \
-            --name kubeatlas-upgrade-recovery
-          kind load docker-image local-postgres-age:16.15-age1.6.0-rc0.2 \
             --name kubeatlas-upgrade-recovery
 
       - name: Prove public release upgrade and destructive embedded restore
@@ -469,7 +455,7 @@ jobs:
           KUBEATLAS_NAMESPACE: kubeatlas-upgrade-recovery
           KUBEATLAS_RELEASE: kubeatlas-recovery
           KUBEATLAS_CANDIDATE_IMAGE: kubeatlas:upgrade-recovery
-          KUBEATLAS_CANDIDATE_PG_IMAGE: local-postgres-age:16.15-age1.6.0-rc0.2
+          KUBEATLAS_CANDIDATE_PG_IMAGE: ${{ env.POSTGRES_AGE_IMAGE }}
         run: bash test/verify/v160-upgrade-recovery.sh
 
       - name: Show sanitized cluster state on failure
@@ -494,21 +480,21 @@ jobs:
 
   postgres-age-architectures:
     name: PostgreSQL + AGE (linux/${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
+            runner: ubuntu-latest
             uname: x86_64
           - arch: arm64
+            runner: ubuntu-24.04-arm
             uname: aarch64
 
     steps:
       - uses: actions/checkout@v7
-
-      - uses: docker/setup-qemu-action@v4
 
       - name: Pull the published architecture-specific image
         env:
@@ -526,6 +512,7 @@ jobs:
             --platform "linux/${TARGET_ARCH}" \
             --entrypoint uname \
             "${image}" -m)"
+          printf "Image architecture %s, expected %s\n" "$actual_uname" "$EXPECTED_UNAME"
           test "${actual_uname}" = "${EXPECTED_UNAME}"
 
           test "$(docker image inspect "${image}" \
