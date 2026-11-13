@@ -87,6 +87,8 @@ test('deployed standalone impact resolves and exports the observed ConfigMap ref
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.goto(`${origin}/resources/${resourcePath}`);
+  const serverInfo = await (await request.get(`${origin}/api/v1/info`)).json() as { version: string };
+  await expect(page.getByTestId('server-version')).toHaveText(serverInfo.version);
   await expect(page.getByTestId('resource-detail-header')).toContainText(`ConfigMap/${configMap}`);
   const capture = await observeImpactResponse(page, { origin, pathname: impactPath, relation, depth, cluster: '' });
   await page.getByRole('button', { name: 'Analyze impact', exact: true }).click();

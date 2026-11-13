@@ -76,7 +76,7 @@ export function impactErrorMessage(error: unknown): string {
       case 403: return 'Access to this cluster is not authorized.';
       case 404: return 'Resource, cluster, or impact API not found. No local estimate is substituted.';
       case 409: return 'Resource identity changed or cannot be verified. Re-select the resource before analyzing again.';
-      case 413: return 'Analysis exceeds the server size limit. Choose a smaller depth.';
+      case 413: return 'Analysis exceeds a server size limit. The limit can apply to the entire selected cluster, even for a shallow query.';
       case 429: return 'Analysis capacity is busy. Try again after the current requests finish.';
       case 503: return 'Impact evidence is unavailable.';
       case 504: return 'Impact analysis exceeded its deadline. Try a smaller depth.';

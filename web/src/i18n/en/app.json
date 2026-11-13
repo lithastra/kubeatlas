@@ -1,6 +1,7 @@
 {
   "name": "KubeAtlas",
-  "version": "v1.3.0-{{build}}",
+  "version": "{{version}}",
+  "versionUnavailable": "Version unavailable",
   "tagline": "Kubernetes resource dependency graph",
   "docs": {
     "url": "https://docs.kubeatlas.lithastra.com",
