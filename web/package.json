@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:e2e": "tsc -p tsconfig.e2e.json --noEmit",
     "lint": "eslint .",
-    "pretest": "node --test test-stubs/ts-jest-transformer.check.cjs test-stubs/upstream-dependencies.check.cjs && node --test ../vendor/deepmerge/security.test.cjs",
+    "pretest": "node --test test-stubs/ts-jest-transformer.check.cjs test-stubs/upstream-dependencies.check.cjs && node --test ../third_party/deepmerge/security.test.cjs",
     "test": "jest",
     "test:e2e": "playwright test",
     "test:history-browser": "playwright test --config playwright.history.config.ts",
@@ -64,7 +64,7 @@
     "ts-jest": "^29.4.14",
     "typescript": "^6.0.3",
     "vite": "^8.3.2",
-    "deepmerge": "file:../vendor/deepmerge"
+    "deepmerge": "file:../third_party/deepmerge"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -77,7 +77,12 @@
       "katex": "0.18.2"
     },
     "deepmerge": "$deepmerge",
-    "glob@>=9.0.0 <=14.0.1": "14.0.2",
-    "minimatch@>=7.0.0 <=11.0.0": "11.0.1"
+    "glob": "14.0.2",
+    "test-exclude": {
+      "minimatch": "11.0.1"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    }
   }
 }

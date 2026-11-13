@@ -11,4 +11,4 @@ the original tarball and source hashes. The local version suffix identifies
 this maintained patch. npm audit does not assess this local source, so the
 regression tests run independently alongside the normal dependency audit.
 
-Run `node --test vendor/deepmerge/security.test.cjs` from the repository root.
+Run `node --test third_party/deepmerge/security.test.cjs` from the repository root.
