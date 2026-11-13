@@ -93,8 +93,7 @@ func impactAPIPresence(e *operations.APIInventoryEvidence, required impactObserv
 			other = true
 			continue
 		}
-		wantNamespaced := required.kind != "ClusterPolicy" && required.kind != "ClusterPolicyReport"
-		if r.Kind != required.kind || !r.List || !r.Watch || r.Namespaced != wantNamespaced {
+		if !matchesBuiltinDescriptor(r, required) || !r.List || !r.Watch {
 			return ImpactAPIUnsupported
 		}
 		return ImpactAPIAdvertised
@@ -138,22 +137,7 @@ func attachImpactInventory(out *ImpactCoverageFacet, before, after operations.Co
 			if !r.List || !r.Watch || (r.Group == "" && r.Resource == "secrets") {
 				continue
 			}
-			registered := false
-			for _, row := range after.Resources {
-				if row.Group == r.Group && row.Version == r.Version && row.Resource == r.Resource && row.ContinuityRevision != 0 && !slices.Contains(row.Reasons, operations.CoverageCollectorStopped) {
-					registered = true
-					break
-				}
-			}
-			for _, source := range after.Sources {
-				for _, row := range source.Resources {
-					if row.Group == r.Group && row.Version == r.Version && row.Resource == r.Resource && !slices.Contains(row.Reasons, operations.CoverageCollectorStopped) {
-						registered = true
-						break
-					}
-				}
-			}
-			if !registered {
+			if !hasImpactRegistration(r, after) {
 				out.UnobservedAPIs = append(out.UnobservedAPIs, r)
 			}
 		}
@@ -161,4 +145,49 @@ func attachImpactInventory(out *ImpactCoverageFacet, before, after operations.Co
 			out.Reasons = append(out.Reasons, "advertised_resource_types_unobserved")
 		}
 	}
+}
+
+func matchesBuiltinDescriptor(r operations.APIResourceDescriptor, required impactObservedType) bool {
+	namespaced := true
+	switch required.kind {
+	case "Namespace", "ClusterRole", "ClusterRoleBinding", "ClusterPolicy", "ClusterPolicyReport":
+		namespaced = false
+	}
+	return r.GVR() == required.gvr && r.Kind == required.kind && r.Namespaced == namespaced
+}
+
+func hasImpactRegistration(r operations.APIResourceDescriptor, captured operations.CoverageSnapshot) bool {
+	gvr := r.GVR()
+	active := func(row operations.ResourceCoverage) bool {
+		return row.Group == r.Group && row.Version == r.Version && row.Resource == r.Resource &&
+			row.ContinuityRevision != 0 && !slices.Contains(row.Reasons, operations.CoverageCollectorStopped)
+	}
+	for _, required := range impactObservedTypes {
+		if matchesBuiltinDescriptor(r, required) && slices.ContainsFunc(captured.Resources, active) {
+			return true
+		}
+	}
+	for _, source := range captured.Sources {
+		if !slices.ContainsFunc(source.Resources, active) {
+			continue
+		}
+		// The two metadata informers have fixed schemas and no owner receipt.
+		switch source.Source {
+		case operations.CoverageSourceCRD:
+			if gvr == (schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}) && r.Kind == "CustomResourceDefinition" && !r.Namespaced {
+				return true
+			}
+		case operations.CoverageSourceGatekeeper:
+			if gvr == (schema.GroupVersionResource{Group: "templates.gatekeeper.sh", Version: "v1", Resource: "constrainttemplates"}) && r.Kind == "ConstraintTemplate" && !r.Namespaced {
+				return true
+			}
+		}
+		for _, registration := range captured.Origins {
+			o := registration.Origin
+			if registration.Active && o.Source == string(source.Source) && o.GVR() == gvr && o.Kind == r.Kind && o.Namespaced == r.Namespaced {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -17,6 +17,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -64,6 +65,10 @@ type Discovery struct {
 	logger          *slog.Logger
 	factory         dynamicinformer.DynamicSharedInformerFactory
 	pollEvery       time.Duration
+	clusterID       string
+	memberRepair    *discovery.MemberRepair
+	resourceHistory *discovery.ResourceHistory
+	repairs         sync.WaitGroup
 	coverage        *operations.CoverageTracker
 	coverageSession *operations.CoverageSession
 	metaCoverage    *operations.CoverageSession
@@ -72,10 +77,26 @@ type Discovery struct {
 // Option configures Discovery.
 type Option func(*Discovery)
 
-// WithCoverage records this standalone extraction pipeline separately from CRD
+// WithCoverage records this extraction pipeline separately from CRD
 // discovery, even where they happen to observe the same Kubernetes objects.
 func WithCoverage(tracker *operations.CoverageTracker) Option {
 	return func(d *Discovery) { d.coverage = tracker }
+}
+
+// WithClusterID binds constraint identities and source evidence to one member.
+func WithClusterID(cluster string) Option {
+	return func(d *Discovery) { d.clusterID = cluster }
+}
+
+// WithMemberRepair supplies the owning scope's bounded repair coordinator.
+func WithMemberRepair(repair *discovery.MemberRepair) Option {
+	return func(d *Discovery) { d.memberRepair = repair }
+}
+
+// WithResourceHistory supplies the member's shared history receipts and sink.
+// All participating collectors must use the same MemberRepair resource lock.
+func WithResourceHistory(history *discovery.ResourceHistory) Option {
+	return func(d *Discovery) { d.resourceHistory = history }
 }
 
 // WithLogger swaps the structured logger.
@@ -130,7 +151,7 @@ func (d *Discovery) Start(ctx context.Context) error {
 	defer cancel()
 	if d.coverage != nil {
 		var err error
-		d.coverageSession, err = d.coverage.BeginSource("", operations.CoverageSourceGatekeeper, time.Now())
+		d.coverageSession, err = d.coverage.BeginSource(d.clusterID, operations.CoverageSourceGatekeeper, time.Now())
 		if err != nil {
 			return err
 		}
@@ -148,7 +169,7 @@ func (d *Discovery) Start(ctx context.Context) error {
 	managerDone := make(chan struct{})
 	var managerErr error
 	go func() { managerErr = d.dynMgr.Start(ctx); close(managerDone) }()
-	defer func() { cancel(); <-managerDone }()
+	defer func() { cancel(); <-managerDone; d.repairs.Wait() }()
 	for !d.dynMgr.Started() {
 		select {
 		case <-managerDone:
@@ -180,6 +201,7 @@ func (d *Discovery) Start(ctx context.Context) error {
 		return err
 	}
 
+	defer func() { cancel(); d.factory.Shutdown() }()
 	d.factory.Start(ctx.Done())
 	if d.metaCoverage != nil {
 		go func() {
@@ -264,9 +286,22 @@ func (d *Discovery) onTemplate(ctx context.Context, obj any) {
 		}
 	}
 
-	if err := d.dynMgr.AddObserved(gvr, d.coverageSession, func(child context.Context, coverage *operations.CoverageSession) cache.ResourceEventHandler {
+	owner := graph.ResourceOrigin{ClusterID: d.clusterID, Source: "gatekeeper", Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource, Kind: kind}
+	if u, ok := toUnstructured(obj); ok {
+		owner.OwnerName, owner.OwnerUID = u.GetName(), string(u.GetUID())
+	}
+	if err := d.dynMgr.AddObservedOwned(gvr, d.coverageSession, owner, func(child context.Context, coverage *operations.CoverageSession) cache.ResourceEventHandler {
 		if d.coverageSession != nil && coverage == nil {
 			d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
+		}
+		if d.memberRepair != nil {
+			d.repairs.Add(1)
+			go func() {
+				defer d.repairs.Done()
+				// Wait for the dynamic manager to publish this registration;
+				// build runs under its lock before the informer is installed.
+				d.memberRepair.Run(child, gvr, kind, coverage, func() bool { return d.dynMgr.HasSynced(gvr) }, d.resourceHistory.RecordDelete)
+			}()
 		}
 		return d.constraintHandler(child, kind, coverage)
 	}); err != nil {
@@ -280,15 +315,24 @@ func (d *Discovery) onTemplate(ctx context.Context, obj any) {
 
 // onTemplateDelete stops the Constraint informer the template owned.
 func (d *Discovery) onTemplateDelete(obj any) {
-	if t, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+	switch t := obj.(type) {
+	case cache.DeletedFinalStateUnknown:
 		obj = t.Obj
+	case *cache.DeletedFinalStateUnknown:
+		if t != nil {
+			obj = t.Obj
+		}
+	}
+	if u, ok := toUnstructured(obj); ok && u.GetName() != "" && u.GetUID() != "" {
+		d.dynMgr.RemoveOwner(graph.ResourceOrigin{ClusterID: d.clusterID, Source: "gatekeeper", OwnerName: u.GetName(), OwnerUID: string(u.GetUID())})
+		return
 	}
 	gvr, kind, ok := constraintGVRFromTemplate(obj)
 	if !ok {
 		d.metaCoverage.RecordGap(constraintTemplateGVR, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
-	d.dynMgr.Remove(gvr)
+	d.dynMgr.RemoveUnowned(gvr)
 	d.logger.Info("gatekeeper: stopped tracking constraint kind", "kind", kind, "gvr", gvr.String())
 }
 
@@ -297,13 +341,17 @@ func (d *Discovery) onTemplateDelete(obj any) {
 // pipeline (which emits the ENFORCES edges); deletes cascade.
 func (d *Discovery) constraintHandler(ctx context.Context, kind string, coverage *operations.CoverageSession) cache.ResourceEventHandler {
 	return cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj any) { d.handleConstraint(ctx, kind, obj, coverage) },
-		UpdateFunc: func(_, obj any) { d.handleConstraint(ctx, kind, obj, coverage) },
+		AddFunc:    func(obj any) { d.handleConstraintEvent(ctx, kind, obj, coverage, graph.EventTypeAdd) },
+		UpdateFunc: func(_, obj any) { d.handleConstraintEvent(ctx, kind, obj, coverage, graph.EventTypeUpdate) },
 		DeleteFunc: func(obj any) { d.handleConstraintDelete(ctx, kind, obj, coverage) },
 	}
 }
 
 func (d *Discovery) handleConstraint(ctx context.Context, kind string, obj any, coverage *operations.CoverageSession) {
+	d.handleConstraintEvent(ctx, kind, obj, coverage, graph.EventTypeAdd)
+}
+
+func (d *Discovery) handleConstraintEvent(ctx context.Context, kind string, obj any, coverage *operations.CoverageSession, eventType graph.EventType) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -314,19 +362,64 @@ func (d *Discovery) handleConstraint(ctx context.Context, kind string, obj any, 
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
-	if err := d.store.UpsertResource(ctx, r); err != nil {
+	r.ClusterID = d.clusterID
+	r = coverage.StampOrigin(r)
+	if d.memberRepair != nil {
+		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	var writeErr error
+	if d.resourceHistory != nil {
+		_, writeErr = d.resourceHistory.Upsert(ctx, r, eventType)
+	} else {
+		_, writeErr = discovery.UpsertObservedResource(ctx, d.store, r)
+	}
+	if err := writeErr; err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: upsert constraint", "id", r.ID(), "err", err)
 		return
 	}
-	edges, err := d.extractor.ExtractAll(ctx, r, d.store)
+	// A dependency already in flight may commit despite cancellation. Do not
+	// start extraction or another edge write for that retired registration.
+	if ctx.Err() != nil {
+		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+	}
+	edges, err := d.extractor.ExtractAll(ctx, r, discovery.NewScopedResourceLister(d.store, d.clusterID))
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
 		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
 		d.logger.Warn("gatekeeper: extract constraint edges", "id", r.ID(), "err", err)
+	}
+	// Keep usable partial extraction, but validate its entire edge batch before
+	// any write. An extraction error must not bypass the collector scope guard.
+	edges, scopeErr := discovery.ScopeCollectorEdges(edges, d.clusterID)
+	if scopeErr != nil {
+		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
+		d.logger.Warn("gatekeeper: constraint edge scope rejected", "id", r.ID(), "err", scopeErr)
 		return
 	}
 	for _, e := range edges {
+		if ctx.Err() != nil {
+			return
+		}
 		if err := d.store.UpsertEdge(ctx, e); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 			d.logger.Warn("gatekeeper: upsert enforce edge",
 				"from", e.From, "to", e.To, "err", err)
@@ -339,8 +432,13 @@ func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj
 		return
 	}
 	gvr := schema.GroupVersionResource{Group: constraintGroup, Version: constraintVersion, Resource: strings.ToLower(kind)}
-	if t, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+	switch t := obj.(type) {
+	case cache.DeletedFinalStateUnknown:
 		obj = t.Obj
+	case *cache.DeletedFinalStateUnknown:
+		if t != nil {
+			obj = t.Obj
+		}
 	}
 	u, ok := toUnstructured(obj)
 	if !ok {
@@ -348,7 +446,33 @@ func (d *Discovery) handleConstraintDelete(ctx context.Context, kind string, obj
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
-	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
+	r.ClusterID = d.clusterID
+	if d.memberRepair != nil {
+		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	var deleteErr error
+	if d.resourceHistory != nil {
+		_, deleteErr = d.resourceHistory.Delete(ctx, r)
+	} else {
+		_, deleteErr = discovery.DeleteObservedResource(ctx, d.store, r)
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+	}
+	if err := deleteErr; err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		coverage.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		d.logger.Warn("gatekeeper: delete constraint", "id", r.ID(), "err", err)
 	}

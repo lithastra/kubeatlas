@@ -61,7 +61,7 @@ func (q Query) rootID() string {
 	return (graph.Resource{Namespace: q.Namespace, Kind: q.Kind, Name: q.Name, ClusterID: q.ClusterID}).ID()
 }
 
-func (q Query) requestURL(base string) (string, error) {
+func (q Query) requestURL(base string, projectionCounts bool) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" ||
 		(u.Scheme != "https" && u.Scheme != "http") {
@@ -93,6 +93,9 @@ func (q Query) requestURL(base string) (string, error) {
 	if q.ExpectedUID != "" {
 		v.Set("expected_uid", q.ExpectedUID)
 	}
+	if projectionCounts {
+		v.Set("projection_counts", "true")
+	}
 	u.RawQuery = v.Encode()
 	return u.String(), nil
 }
@@ -101,10 +104,25 @@ func (q Query) requestURL(base string) (string, error) {
 // or a report. Redirects (even same-origin) are not followed. Use context to
 // bound server discovery and this read together; the read also has a 30s cap.
 func Fetch(ctx context.Context, base, token string, q Query) (*Response, error) {
+	return fetch(ctx, base, token, q, nil)
+}
+
+// ProjectionCountsHeader carries the resource and edge record counts for
+// the authorized projection used by that successful response.
+const ProjectionCountsHeader = "KubeAtlas-Impact-Projection"
+
+// FetchWithProjectionCounts requires the projection counts from the same GET.
+func FetchWithProjectionCounts(ctx context.Context, base, token string, q Query) (*Response, analysis.ImpactProjectionCounts, error) {
+	var counts analysis.ImpactProjectionCounts
+	resp, err := fetch(ctx, base, token, q, &counts)
+	return resp, counts, err
+}
+
+func fetch(ctx context.Context, base, token string, q Query, counts *analysis.ImpactProjectionCounts) (*Response, error) {
 	if err := q.Validate(); err != nil {
 		return nil, err
 	}
-	dst, err := q.requestURL(base)
+	dst, err := q.requestURL(base, counts != nil)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +175,38 @@ func Fetch(ctx context.Context, base, token string, q Query) (*Response, error) 
 	if err := validateResponse(&result, q); err != nil {
 		return nil, err
 	}
+	if counts != nil {
+		parsed, ok := parseProjectionCounts(resp.Header.Values(ProjectionCountsHeader))
+		if !ok {
+			return nil, errors.New("impact response projection counts are missing or invalid")
+		}
+		*counts = parsed
+	}
 	return &result, nil
+}
+
+func parseProjectionCounts(values []string) (analysis.ImpactProjectionCounts, bool) {
+	if len(values) != 1 {
+		return analysis.ImpactProjectionCounts{}, false
+	}
+	resources, edges, ok := strings.Cut(values[0], ",")
+	r, rErr := strconv.Atoi(resources)
+	e, eErr := strconv.Atoi(edges)
+	if !ok || rErr != nil || eErr != nil || r < 1 || r > graph.MaxImpactResources || e < 0 || e > graph.MaxImpactEdges ||
+		strconv.Itoa(r) != resources || strconv.Itoa(e) != edges {
+		return analysis.ImpactProjectionCounts{}, false
+	}
+	return analysis.ImpactProjectionCounts{Resources: r, Edges: e}, true
+}
+
+// HTTPStatusError carries the status of a rejected impact query.
+type HTTPStatusError struct {
+	StatusCode int
+	message    string
+}
+
+func (e *HTTPStatusError) Error() string {
+	return fmt.Sprintf("impact HTTP %d: %s", e.StatusCode, e.message)
 }
 
 func statusError(status int) error {
@@ -170,7 +219,7 @@ func statusError(status int) error {
 	if message == "" {
 		message = "unexpected server response (redirects are not followed)"
 	}
-	return fmt.Errorf("impact HTTP %d: %s", status, message)
+	return &HTTPStatusError{StatusCode: status, message: message}
 }
 
 func validateResponse(r *Response, q Query) error {

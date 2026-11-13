@@ -41,7 +41,7 @@
     "snapshots": {
       "title": "Snapshots",
       "subtitle": "What changed in the cluster across a time window — added, removed, or modified resources from the append-only event stream.",
-      "notEnabled": "Snapshots are not enabled on this server. They require Tier 2 (PostgreSQL) with snapshots.enabled=true in the Helm chart.",
+      "notEnabled": "History is unavailable on this server. It requires Tier 2 with history enabled and support for scoped history reads.",
       "windowLabel": "Window",
       "namespaceLabel": "Namespace",
       "namespacePlaceholder": "(any)",
@@ -50,7 +50,7 @@
       "diffLoading": "Loading diff…",
       "timelineHeader": "Recent full-sync snapshots",
       "timelineLoading": "Loading snapshot timeline…",
-      "timelineEmpty": "No snapshot markers yet — the first one lands at the configured fullSyncSchedule.",
+      "timelineEmpty": "No snapshot markers were returned for this scope.",
       "emptySection": "No matches.",
       "eventHeader": {
         "add": "Added ({{count}})",

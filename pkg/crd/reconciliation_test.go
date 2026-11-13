@@ -5,6 +5,7 @@ package crd
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"sync"
@@ -255,6 +256,17 @@ func (s *reconciliationBlockingStore) DeleteResource(ctx context.Context, id str
 		s.once.Do(func() { close(s.entered); <-s.release })
 	}
 	return s.GraphStore.DeleteResource(ctx, id)
+}
+
+func (s *reconciliationBlockingStore) DeleteResourceVersion(ctx context.Context, r graph.Resource) (bool, error) {
+	if s.delete {
+		s.once.Do(func() { close(s.entered); <-s.release })
+	}
+	deleter, ok := s.GraphStore.(graph.ResourceVersionDeleter)
+	if !ok {
+		return false, errors.New("missing conditional deletion capability")
+	}
+	return deleter.DeleteResourceVersion(ctx, r)
 }
 
 func TestCRDReconciliationOrdersInflightWritesAndDeletes(t *testing.T) {

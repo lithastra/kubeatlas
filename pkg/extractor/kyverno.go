@@ -5,6 +5,8 @@ package extractor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
@@ -22,7 +24,8 @@ const kyvernoGroupPrefix = "kyverno.io/"
 // ENFORCES relationship. KubeAtlas reads the PolicyReport results the
 // Kyverno controller writes; it never evaluates a policy. When the
 // PolicyReport feature is off the edges still appear, just without a
-// result attribute (degraded gracefully).
+// result attribute (degraded gracefully). Store read failures return an
+// error alongside usable edges so collectors retain extraction-gap evidence.
 type KyvernoExtractor struct{}
 
 // Type reports the edge type this extractor produces.
@@ -43,7 +46,10 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 		return nil, nil
 	}
 
-	reports := buildKyvernoReportIndex(ctx, q)
+	reports, reportErr := buildKyvernoReportIndex(ctx, q)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	from := r.ID()
 	seen := make(map[string]struct{})
 	var edges []graph.Edge
@@ -55,7 +61,8 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 			// mutate/generate.
 			continue
 		}
-		for _, desc := range kyvernoMatchDescriptors(rule) {
+		descriptors, selectorErr := kyvernoMatchDescriptors(rule)
+		for _, desc := range descriptors {
 			namespaces := desc.namespaces
 			if r.Kind == "Policy" {
 				// A namespaced Policy only ever applies in its own
@@ -67,14 +74,20 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 			}
 			for _, kind := range desc.kinds {
 				for _, ns := range namespaces {
+					if err := ctx.Err(); err != nil {
+						return nil, err
+					}
 					matched, err := q.ListResources(ctx, graph.Filter{
 						Kind:      kind,
 						Namespace: ns,
 						Labels:    desc.labels,
 						ClusterID: r.ClusterID,
 					})
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
 					if err != nil {
-						return nil, err
+						return edges, errors.Join(reportErr, selectorErr, err)
 					}
 					for _, m := range matched {
 						to := m.ID()
@@ -91,8 +104,11 @@ func (KyvernoExtractor) Extract(ctx context.Context, r graph.Resource, q graph.R
 				}
 			}
 		}
+		if selectorErr != nil {
+			return edges, errors.Join(reportErr, selectorErr)
+		}
 	}
-	return edges, nil
+	return edges, reportErr
 }
 
 // kyvernoDescriptor is one resource selector from a rule's match block.
@@ -105,8 +121,9 @@ type kyvernoDescriptor struct {
 // kyvernoMatchDescriptors flattens rule.match.any[] and rule.match.all[]
 // into selectors. any/all differ in admission semantics, but for the
 // graph's "which resources does this policy touch" view the union is
-// the right over-approximation.
-func kyvernoMatchDescriptors(rule map[string]any) []kyvernoDescriptor {
+// the right over-approximation. A malformed label selector stops at its
+// descriptor, retaining the validated prefix without dropping conditions.
+func kyvernoMatchDescriptors(rule map[string]any) ([]kyvernoDescriptor, error) {
 	var out []kyvernoDescriptor
 	for _, group := range []string{"any", "all"} {
 		for _, entryAny := range nestedSlice(rule, "match", group) {
@@ -115,14 +132,22 @@ func kyvernoMatchDescriptors(rule map[string]any) []kyvernoDescriptor {
 			if len(kinds) == 0 {
 				continue
 			}
+			labels, err := selectorStringMap(entry, "resources", "selector", "matchLabels")
+			if err != nil {
+				return out, fmt.Errorf("KyvernoExtractor: %w", err)
+			}
+			namespaces, err := selectorNamespaces(nestedMap(entry, "resources")["namespaces"])
+			if err != nil {
+				return out, fmt.Errorf("KyvernoExtractor: %w", err)
+			}
 			out = append(out, kyvernoDescriptor{
 				kinds:      kinds,
-				namespaces: stringSlice(nestedSlice(entry, "resources", "namespaces")),
-				labels:     nestedStringMap(entry, "resources", "selector", "matchLabels"),
+				namespaces: namespaces,
+				labels:     labels,
 			})
 		}
 	}
-	return out
+	return out, nil
 }
 
 // normalizeKinds reduces Kyverno kind entries (which may be a bare Kind
@@ -144,24 +169,26 @@ func normalizeKinds(vals []any) []string {
 	return out
 }
 
-func stringSlice(vals []any) []string {
-	out := make([]string, 0, len(vals))
-	for _, v := range vals {
-		if s, ok := v.(string); ok && s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // buildKyvernoReportIndex reads every PolicyReport / ClusterPolicyReport
 // in the store into a (policy, resource) -> result lookup. Missing
-// reports yield an empty index — the edges then carry no result.
-func buildKyvernoReportIndex(ctx context.Context, q graph.ResourceLister) map[string]string {
+// reports yield an empty index without an error. A failed lookup contributes
+// no rows, preserves the first error, and still permits the other report kind
+// to contribute evidence. Cancellation stops further queries immediately.
+func buildKyvernoReportIndex(ctx context.Context, q graph.ResourceLister) (map[string]string, error) {
 	idx := make(map[string]string)
+	var firstErr error
 	for _, kind := range []string{"PolicyReport", "ClusterPolicyReport"} {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		reports, err := q.ListResources(ctx, graph.Filter{Kind: kind})
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("list Kyverno %s: %w", kind, err)
+			}
 			continue
 		}
 		for _, rep := range reports {
@@ -179,7 +206,7 @@ func buildKyvernoReportIndex(ctx context.Context, q graph.ResourceLister) map[st
 			}
 		}
 	}
-	return idx
+	return idx, firstErr
 }
 
 func reportKey(policy, kind, namespace, name string) string {

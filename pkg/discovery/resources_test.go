@@ -3,6 +3,7 @@ package discovery_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,9 +28,19 @@ func (f *fakeDiscovery) ServerResourcesForGroupVersion(gv string) (*metav1.APIRe
 		return nil, apierrors.NewNotFound(schema.GroupResource{Group: gv, Resource: "groupversions"}, gv)
 	}
 	resources := &metav1.APIResourceList{GroupVersion: gv}
+	kinds := map[string]string{
+		"namespaces": "Namespace", "pods": "Pod", "services": "Service", "configmaps": "ConfigMap",
+		"persistentvolumeclaims": "PersistentVolumeClaim", "serviceaccounts": "ServiceAccount",
+		"deployments": "Deployment", "replicasets": "ReplicaSet", "statefulsets": "StatefulSet", "daemonsets": "DaemonSet",
+		"jobs": "Job", "cronjobs": "CronJob", "horizontalpodautoscalers": "HorizontalPodAutoscaler",
+		"ingresses": "Ingress", "networkpolicies": "NetworkPolicy", "gateways": "Gateway", "httproutes": "HTTPRoute",
+		"roles": "Role", "rolebindings": "RoleBinding", "clusterroles": "ClusterRole", "clusterrolebindings": "ClusterRoleBinding",
+		"clusterpolicies": "ClusterPolicy", "policies": "Policy", "policyreports": "PolicyReport", "clusterpolicyreports": "ClusterPolicyReport",
+	}
 	for _, gvr := range kdiscovery.CoreGVRs {
 		if gvr.GroupVersion().String() == gv {
-			resources.APIResources = append(resources.APIResources, metav1.APIResource{Name: gvr.Resource, Kind: "Test", Verbs: metav1.Verbs{"list", "watch"}})
+			namespaced := !slices.Contains([]string{"namespaces", "clusterroles", "clusterrolebindings", "clusterpolicies", "clusterpolicyreports"}, gvr.Resource)
+			resources.APIResources = append(resources.APIResources, metav1.APIResource{Name: gvr.Resource, Kind: kinds[gvr.Resource], Namespaced: namespaced, Verbs: metav1.Verbs{"list", "watch"}})
 		}
 	}
 	return resources, nil

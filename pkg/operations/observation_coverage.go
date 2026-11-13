@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lithastra/kubeatlas/pkg/graph"
+
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -75,13 +77,14 @@ type ResourceCoverage struct {
 // requesting no types is unknown, never a vacuous complete observation.
 type CoverageSnapshot struct {
 	// Process-local session identity; not a durable restart/history token.
-	Generation   uint64                   `json:"generation"`
-	ClusterID    string                   `json:"clusterId"`
-	CapturedAt   time.Time                `json:"capturedAt"`
-	State        CoverageState            `json:"state"`
-	Resources    []ResourceCoverage       `json:"resources"`
-	Sources      []CoverageSourceSnapshot `json:"sources,omitempty"`
-	APIInventory *APIInventoryEvidence    `json:"apiInventory,omitempty"`
+	Generation   uint64                     `json:"generation"`
+	ClusterID    string                     `json:"clusterId"`
+	CapturedAt   time.Time                  `json:"capturedAt"`
+	State        CoverageState              `json:"state"`
+	Resources    []ResourceCoverage         `json:"resources"`
+	Sources      []CoverageSourceSnapshot   `json:"sources,omitempty"`
+	APIInventory *APIInventoryEvidence      `json:"apiInventory,omitempty"`
+	Origins      []graph.SourceRegistration `json:"-"`
 }
 
 // CoverageTracker is process-local, bounded by clusters/types, never objects.
@@ -102,6 +105,7 @@ type coverageResource struct {
 	watchReason CoverageReason
 	watchEpoch  uint64
 	stopped     bool
+	origin      graph.ResourceOrigin
 }
 
 // Sessions isolate reattachments: callbacks from a stopped/replaced collector
@@ -354,8 +358,16 @@ func (t *CoverageTracker) snapshot(ctx context.Context, cluster string, required
 				return CoverageSnapshot{}, err
 			}
 			out.Sources = append(out.Sources, capture)
+			for _, row := range s.resources {
+				if row.origin.Valid() {
+					out.Origins = append(out.Origins, graph.SourceRegistration{Origin: row.origin, Active: !s.stopped && !row.stopped})
+				}
+			}
 		}
 	}
+	slices.SortFunc(out.Origins, func(a, b graph.SourceRegistration) int {
+		return strings.Compare(a.Origin.Source+"/"+a.Origin.GVR().String(), b.Origin.Source+"/"+b.Origin.GVR().String())
+	})
 	seen := make(map[schema.GroupVersionResource]bool)
 	for _, gvr := range required {
 		if err := ctx.Err(); err != nil {

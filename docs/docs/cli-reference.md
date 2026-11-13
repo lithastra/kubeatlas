@@ -8,9 +8,45 @@ title: CLI reference
 The `kubeatlas` binary is the same in every install — server, one-shot
 modes, and stand-alone subcommands all live in a single executable.
 Run it without arguments to start the API server; pass a subcommand
-to invoke an offline tool.
+to invoke a specific operation.
 
 ## Subcommands
+
+### `kubeatlas snapshot trigger` (v1.7 development)
+
+Records one stored-graph observation marker through an existing internal operator
+endpoint. It does not access Kubernetes or PostgreSQL directly. Federation
+requires one explicit `--cluster`; standalone omits it. Member visibility is an
+additional check, not permission to access this internal write endpoint.
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--server` | `KUBEATLAS_URL`, else `http://127.0.0.1:8080` | HTTPS; HTTP only on literal loopback or exact Kubernetes Service DNS. No URL credentials, query or fragment. |
+| `--cluster` | omitted | Exactly one attached visible member; no inference or fan-out. |
+| `--trigger` | `manual` | `manual` or `periodic`. |
+| `--timeout` | `30s` | Overall client cap, range 1s..30s; server work still has its own five-second budget. |
+
+All flags may occur once. `KUBEATLAS_TOKEN` is the only bearer-credential input;
+there is no token argument, login, discovery or persistence. No redirects,
+environment proxy, API fallback or automatic retry is used. A 200 response must
+contain a validated, scope-matching receipt within 4 KiB before typed metadata
+is printed. Exit 0 means a validated receipt was written; exit 2 means non-200;
+exit 1 covers usage, transport, receipt and stdout failure. The latter failures
+may occur after a marker commit, so repeating the command is a separate write.
+
+```bash
+# Use an already available internal operator endpoint; supply token separately.
+kubeatlas snapshot trigger --server http://127.0.0.1:8080 --cluster prod
+```
+
+The Service-DNS HTTP exception supports the existing in-cluster CronJob path;
+its syntax cannot establish DNS or network trust. Keep the internal operator
+boundary and trust that path before sending a bearer credential. Other remote
+URLs require HTTPS with normal TLS verification; explicit localhost HTTP URLs
+must be changed to a literal loopback address. See
+[internal member markers](./installation/multicluster.md#internal-member-markers-v17-development)
+for Secret references, scheduling and remaining runtime qualification.
+
 
 ### `kubeatlas export`
 

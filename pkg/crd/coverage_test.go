@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/operations"
 	"github.com/lithastra/kubeatlas/pkg/store/memory"
@@ -42,7 +43,7 @@ func coverageObjects(t *testing.T) (*unstructured.Unstructured, *unstructured.Un
 	meta.SetKind("CustomResourceDefinition")
 	meta.SetUID("synthetic-crd-uid")
 	foo := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "example.com/v1", "kind": "Foo", "metadata": map[string]any{"name": "demo", "namespace": "default", "resourceVersion": "1"},
+		"apiVersion": "example.com/v1", "kind": "Foo", "metadata": map[string]any{"name": "demo", "namespace": "default", "uid": "synthetic-foo-uid", "resourceVersion": "1"},
 		"spec": map[string]any{"value": "synthetic-payload-canary"},
 	}}
 	return meta, foo
@@ -200,6 +201,17 @@ func (s *coverageFailStore) DeleteResource(ctx context.Context, id string) error
 	}
 	return s.GraphStore.DeleteResource(ctx, id)
 }
+
+func (s *coverageFailStore) DeleteResourceVersion(ctx context.Context, r graph.Resource) (bool, error) {
+	if s.fail.Load() {
+		return false, errors.New("delete-canary")
+	}
+	deleter, ok := s.GraphStore.(graph.ResourceVersionDeleter)
+	if !ok {
+		return false, errors.New("missing conditional deletion capability")
+	}
+	return deleter.DeleteResourceVersion(ctx, r)
+}
 func (s *coverageFailStore) UpsertEdge(ctx context.Context, e graph.Edge) error {
 	if s.fail.Load() {
 		return errors.New("synthetic-edge-canary")
@@ -272,6 +284,9 @@ func TestCRDCoverageProcessingExtractionAndDeleteGaps(t *testing.T) {
 				})
 				d.handleUpsert(context.Background(), coverageFooGVR, "Foo", obj, token)
 			case "delete":
+				if err := store.GraphStore.UpsertResource(context.Background(), discovery.UnstructuredToResource(obj, "Foo")); err != nil {
+					t.Fatal(err)
+				}
 				store.fail.Store(true)
 				d.handleDelete(context.Background(), coverageFooGVR, cache.DeletedFinalStateUnknown{Obj: obj}, "Foo", token)
 			}
@@ -319,7 +334,7 @@ func TestCRDCoverageNeverRegistersCoreOrSecret(t *testing.T) {
 		{coverageFooGVR, "Secret"},
 	} {
 		identity := registrationIdentity{name: tc.gvr.Resource + "." + tc.gvr.Group, uid: "synthetic-crd-uid", gvr: tc.gvr, kind: tc.kind, scope: "Namespaced"}
-		if err := d.reconcileCRD(context.Background(), identity, true); err == nil {
+		if err := d.reconcileCRD(context.Background(), identity, true, []string{tc.gvr.Version}); err == nil {
 			t.Fatal("accepted Secret collector")
 		}
 	}

@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"context"
+	"errors"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
@@ -9,9 +10,11 @@ import (
 // RoutesExtractor emits ROUTES_TO edges from Ingress, HTTPRoute, and
 // OpenShift Route resources to the backend Services they target.
 //
-//   - Ingress: spec.rules[].http.paths[].backend.service.name
+//   - Ingress: spec.defaultBackend.service.name and
+//     spec.rules[].http.paths[].backend.service.name
 //   - HTTPRoute: spec.rules[].backendRefs[].name (kind defaults to
-//     Service; backendRefs[].namespace overrides the route's ns).
+//     Service; Service targets require the core group; namespace overrides
+//     the route's ns). Other backend kinds retain their legacy model.
 //   - Route (route.openshift.io/v1): spec.to.{kind,name} and
 //     spec.alternateBackends[].{kind,name}. OpenShift Route was
 //     handled by the openshift rule pack through v1.1; from v1.3
@@ -27,7 +30,7 @@ func (RoutesExtractor) Extract(_ context.Context, r graph.Resource, _ graph.Reso
 	case "Ingress":
 		return ingressEdges(r), nil
 	case "HTTPRoute":
-		return httpRouteBackendEdges(r), nil
+		return httpRouteBackendEdges(r)
 	case "Route":
 		return openshiftRouteEdges(r), nil
 	}
@@ -39,20 +42,23 @@ func ingressEdges(r graph.Resource) []graph.Edge {
 	ns := r.Namespace
 	var edges []graph.Edge
 	seen := make(map[string]struct{})
+	emit := func(name string) {
+		if name == "" {
+			return
+		}
+		to := graph.Resource{Kind: "Service", Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
+		if _, ok := seen[to]; ok {
+			return
+		}
+		seen[to] = struct{}{}
+		edges = append(edges, graph.Edge{From: from, To: to, Type: graph.EdgeTypeRoutesTo})
+	}
+	emit(nestedString(r.Raw, "spec", "defaultBackend", "service", "name"))
 	for _, rule := range nestedSlice(r.Raw, "spec", "rules") {
 		rmap, _ := rule.(map[string]any)
 		for _, p := range nestedSlice(rmap, "http", "paths") {
 			pmap, _ := p.(map[string]any)
-			name := nestedString(pmap, "backend", "service", "name")
-			if name == "" {
-				continue
-			}
-			to := graph.Resource{Kind: "Service", Name: name, Namespace: ns, ClusterID: r.ClusterID}.ID()
-			if _, ok := seen[to]; ok {
-				continue
-			}
-			seen[to] = struct{}{}
-			edges = append(edges, graph.Edge{From: from, To: to, Type: graph.EdgeTypeRoutesTo})
+			emit(nestedString(pmap, "backend", "service", "name"))
 		}
 	}
 	return edges
@@ -97,7 +103,7 @@ func openshiftRouteEdges(r graph.Resource) []graph.Edge {
 	return edges
 }
 
-func httpRouteBackendEdges(r graph.Resource) []graph.Edge {
+func httpRouteBackendEdges(r graph.Resource) ([]graph.Edge, error) {
 	from := r.ID()
 	defaultNS := r.Namespace
 	var edges []graph.Edge
@@ -114,6 +120,17 @@ func httpRouteBackendEdges(r graph.Resource) []graph.Edge {
 			if kind == "" {
 				kind = "Service"
 			}
+			if kind == "Service" {
+				if value, present := bmap["group"]; present {
+					group, ok := value.(string)
+					if !ok {
+						return edges, errors.New("RoutesExtractor: Service backend group must be a string")
+					}
+					if group != "" {
+						continue
+					}
+				}
+			}
 			ns := nestedString(bmap, "namespace")
 			if ns == "" {
 				ns = defaultNS
@@ -126,5 +143,5 @@ func httpRouteBackendEdges(r graph.Resource) []graph.Edge {
 			edges = append(edges, graph.Edge{From: from, To: to, Type: graph.EdgeTypeRoutesTo})
 		}
 	}
-	return edges
+	return edges, nil
 }

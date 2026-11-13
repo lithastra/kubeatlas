@@ -16,8 +16,8 @@ import (
 // GET /api/v1/federation/clusters (P3-T22). Empty Clusters with
 // Mode="single" tells the UI to hide the cluster switcher entirely.
 type federationClustersResponse struct {
-	// Mode is "federated" when a multicluster.Manager is wired and at
-	// least one cluster is attached, "single" otherwise. The UI uses
+	// Mode is "federated" when a multicluster.Manager is wired,
+	// even when no clusters are attached, "single" otherwise. The UI uses
 	// this to decide whether to render the cluster switcher.
 	Mode string `json:"mode"`
 
@@ -44,9 +44,12 @@ func (s *Server) handleFederationClusters(w http.ResponseWriter, r *http.Request
 		if allow != nil {
 			clusters = filterAllowedClusters(clusters, allow)
 		}
-		if len(clusters) > 0 {
-			resp.Mode = "federated"
-			resp.Clusters = clusters
+		// Configuration, not attachment count, decides whether unlabelled
+		// standalone reads are safe. An empty federation still requires a member.
+		resp.Mode = "federated"
+		resp.Clusters = clusters
+		if resp.Clusters == nil {
+			resp.Clusters = []string{}
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")

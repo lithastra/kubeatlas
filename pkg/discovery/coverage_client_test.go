@@ -319,6 +319,10 @@ func (s *coverageDeleteFailure) DeleteResource(context.Context, string) error {
 	return errors.New("synthetic delete failure")
 }
 
+func (s *coverageDeleteFailure) DeleteResourceVersion(context.Context, graph.Resource) (bool, error) {
+	return false, errors.New("synthetic conditional delete failure")
+}
+
 func TestInformerCoverageProcessingAndPersistenceGaps(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -358,6 +362,9 @@ func TestInformerCoverageProcessingAndPersistenceGaps(t *testing.T) {
 			case "convert":
 				mgr.handleUpsert(context.Background(), configMapGVR, "malformed", graph.EventTypeAdd)
 			case "delete":
+				if err := store.UpsertResource(context.Background(), UnstructuredToResource(object, "ConfigMap")); err != nil {
+					t.Fatal(err)
+				}
 				mgr.handleDelete(context.Background(), configMapGVR, object)
 			default:
 				mgr.handleUpsert(context.Background(), configMapGVR, object, graph.EventTypeAdd)
@@ -376,5 +383,44 @@ func TestInformerCoverageProcessingAndPersistenceGaps(t *testing.T) {
 				t.Fatal("one successful event or relist erased an unproven data gap")
 			}
 		})
+	}
+}
+
+func TestMemberCoreShutdownJoinsBlockedGraphCallback(t *testing.T) {
+	object := resyncObject("ConfigMap", "blocked-member", "uid", "1")
+	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{configMapGVR: "ConfigMapList"}, object)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once atomic.Bool
+	store := &coverageBlockingStore{GraphStore: memory.New(), before: func() {
+		if once.CompareAndSwap(false, true) {
+			close(entered)
+			<-release
+		}
+	}}
+	manager := NewInformerManager(client, store, WithClusterID("east"), WithGVRs([]schema.GroupVersionResource{configMapGVR}))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- manager.Start(ctx) }()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("core callback missing")
+	}
+	cancel()
+	select {
+	case <-done:
+		close(release)
+		t.Fatal("member core returned before callback stopped")
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("cancelled core returned success")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("core callback did not join")
 	}
 }

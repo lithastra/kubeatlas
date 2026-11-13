@@ -25,7 +25,8 @@ func (s sliceLister) ListResources(_ context.Context, f graph.Filter) ([]graph.R
 		}
 		match := true
 		for k, v := range f.Labels {
-			if r.Labels[k] != v {
+			actual, exists := r.Labels[k]
+			if !exists || actual != v {
 				match = false
 				break
 			}

@@ -16,9 +16,11 @@ import "time"
 // support only; the /api/v1/snapshots endpoints return 503 on
 // Tier 1. Nothing here is a "lightweight Tier 1 snapshot".
 
-// EventType classifies a resource_events row. The three values map
-// 1:1 to the K8s informer's Add / Update / Delete callbacks and to
-// the CHECK constraint in migrate/005_snapshots.sql.
+// EventType classifies an observed resource change in resource_events. The
+// values match the CHECK constraint in migrate/005_snapshots.sql. Unchanged
+// informer replay can be suppressed; member collectors reconcile callback
+// types with stored UID/version receipts, and committed repairs emit deletes.
+// These events are observations, not Kubernetes audit records.
 type EventType string
 
 const (

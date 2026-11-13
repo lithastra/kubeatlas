@@ -81,6 +81,9 @@ func analyzeStoredImpact(ctx context.Context, store graph.GraphStore, rootID str
 	}
 	if observed {
 		attachImpactObservation(result, before, after, providers.Coverage != nil)
+		if err := attachImpactRetention(ctx, result, projection, before, after); err != nil {
+			return nil, err
+		}
 		availability, err := readImpactAvailability(ctx, providers.Availability, opts.ClusterID)
 		if err != nil {
 			return nil, err

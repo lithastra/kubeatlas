@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -41,6 +42,8 @@ var crdGVR = schema.GroupVersionResource{
 const defaultResyncPeriod = 5 * time.Minute
 
 // RegoEvaluator is the slice of *rego.Engine that pkg/crd needs.
+// Usable edges may accompany an active evaluation error; the collector records
+// a gap and validates the whole returned batch before persisting those edges.
 // Defining it here as an interface keeps the package independent of
 // extractor/rego (no import cycle) and lets tests inject a mock that
 // records calls without spinning up a real OPA evaluator.
@@ -58,6 +61,10 @@ type Discovery struct {
 	store           graph.GraphStore
 	rego            RegoEvaluator
 	logger          *slog.Logger
+	clusterID       string
+	memberRepair    *discovery.MemberRepair
+	resourceHistory *discovery.ResourceHistory
+	runs            sync.WaitGroup
 	coverage        *operations.CoverageTracker
 	coverageSession *operations.CoverageSession
 	metaCoverage    *operations.CoverageSession
@@ -87,20 +94,33 @@ type callbackFamily struct {
 }
 
 type informerEntry struct {
-	identity registrationIdentity
-	stop     context.CancelFunc
-	synced   cache.InformerSynced
-	coverage *operations.CoverageSession
+	identity     registrationIdentity
+	stop         context.CancelFunc
+	synced       cache.InformerSynced
+	coverage     *operations.CoverageSession
+	versions     []string // served repair endpoints; protected by Discovery.mu
+	versionCtx   context.Context
+	stopVersions context.CancelFunc
 }
 
 // Option configures Discovery at construction. Same functional-
 // option pattern as pkg/discovery.InformerManager.
 type Option func(*Discovery)
 
-// WithCoverage supplies standalone CRD-source evidence, independent of core
-// informers. Federation does not run this collector or infer member coverage.
+// WithCoverage supplies CRD-source evidence independently of core informers.
 func WithCoverage(tracker *operations.CoverageTracker) Option {
 	return func(d *Discovery) { d.coverage = tracker }
+}
+
+// WithClusterID binds resources, rule edges and source evidence to one member.
+// The empty default preserves standalone IDs and coverage.
+func WithClusterID(cluster string) Option {
+	return func(d *Discovery) { d.clusterID = cluster }
+}
+
+// WithMemberRepair repairs retained rows only while their endpoint is active.
+func WithMemberRepair(repair *discovery.MemberRepair) Option {
+	return func(d *Discovery) { d.memberRepair = repair }
 }
 
 // WithRegoEvaluator wires an evaluator. Without it, CRD events still
@@ -108,6 +128,12 @@ func WithCoverage(tracker *operations.CoverageTracker) Option {
 // supplies the real *rego.Engine.
 func WithRegoEvaluator(r RegoEvaluator) Option {
 	return func(d *Discovery) { d.rego = r }
+}
+
+// WithResourceHistory supplies the member's shared history receipts and sink.
+// All participating collectors must use the same MemberRepair resource lock.
+func WithResourceHistory(history *discovery.ResourceHistory) Option {
+	return func(d *Discovery) { d.resourceHistory = history }
 }
 
 // WithLogger swaps the structured logger.
@@ -160,15 +186,23 @@ func (d *Discovery) Start(ctx context.Context) error {
 		return errors.New("crd.Discovery.Start: nil store")
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer func() {
+		cancel()
+		if d.factory != nil {
+			d.factory.Shutdown()
+		}
+		d.shutdown()
+		d.coverageSession.Stop(time.Now())
+	}()
 	if d.coverage != nil {
 		var err error
-		d.coverageSession, err = d.coverage.BeginSource("", operations.CoverageSourceCRD, time.Now())
+		d.coverageSession, err = d.coverage.BeginSource(d.clusterID, operations.CoverageSourceCRD, time.Now())
 		if err != nil {
 			return err
 		}
 		d.metaCoverage = d.beginCoverageType(crdGVR)
 	}
-	defer func() { d.shutdown(); d.coverageSession.Stop(time.Now()) }()
 	d.factory = dynamicinformer.NewDynamicSharedInformerFactory(discovery.ObserveCoverageClient(d.dyn, d.metaCoverage), defaultResyncPeriod)
 
 	metaInformer := d.factory.ForResource(crdGVR).Informer()
@@ -214,10 +248,11 @@ func (d *Discovery) beginCoverageType(gvr schema.GroupVersionResource) *operatio
 // driven by the parent ctx and will exit on its own.
 func (d *Discovery) shutdown() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	for name := range d.informers {
 		d.stopLocked(name)
 	}
+	d.mu.Unlock()
+	d.runs.Wait()
 }
 
 // onCRDAdd reconciles the selection from the ordered metadata informer stream.
@@ -231,7 +266,14 @@ func (d *Discovery) onCRDAdd(ctx context.Context, obj any) {
 	}
 	gvr, kind, served := pickServedGVR(crd)
 	identity := registrationIdentity{name: crd.Name, uid: crd.UID, gvr: gvr, kind: kind, scope: crd.Spec.Scope}
-	if err := d.reconcileCRD(ctx, identity, served); err != nil {
+	versions := make([]string, 0, len(crd.Spec.Versions))
+	for _, version := range crd.Spec.Versions {
+		if version.Served {
+			versions = append(versions, version.Name)
+		}
+	}
+	slices.Sort(versions)
+	if err := d.reconcileCRD(ctx, identity, served, versions); err != nil {
 		d.metaCoverage.RecordGap(crdGVR, operations.CoverageProcessingFailed, time.Now())
 		d.logger.Warn("crd register failed",
 			"crd_name", crd.Name, "err", err)
@@ -258,7 +300,7 @@ func (d *Discovery) onCRDDelete(_ context.Context, obj any) {
 // reconcileCRD is atomic with respect to metadata updates/deletes, but never
 // waits for a blocked graph callback. A CRD with no served version stops its
 // stored selection even though the incoming object has no selected GVR.
-func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdentity, served bool) error {
+func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdentity, served bool, versions []string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -266,6 +308,13 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 	}
 	old := d.informers[identity.name]
 	if served && old != nil && old.identity == identity {
+		// Served-version changes update the next repair round without resetting
+		// a healthy selected watch or its continuity token.
+		if !slices.Equal(old.versions, versions) {
+			old.stopVersions()
+			old.versionCtx, old.stopVersions = context.WithCancel(ctx)
+			old.versions = slices.Clone(versions)
+		}
 		return nil
 	}
 	// A malformed replacement must not leave an obsolete registration healthy.
@@ -284,6 +333,7 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 	}
 	informerCtx, cancel := context.WithCancel(ctx)
 	coverage := d.beginCoverageType(gvr)
+	coverage.BindOrigin(graph.ResourceOrigin{OwnerName: identity.name, OwnerUID: string(identity.uid), Group: gvr.Group, Version: gvr.Version, Resource: gvr.Resource, Kind: kind, Namespaced: identity.scope == apiextensionsv1.NamespaceScoped})
 	// Shared factories cache stopped informers, which cannot be restarted.
 	// Every registration owns a fresh informer and its own coverage token.
 	factory := dynamicinformer.NewDynamicSharedInformerFactory(discovery.ObserveCoverageClient(d.dyn, coverage), defaultResyncPeriod)
@@ -292,14 +342,14 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 	if family == nil {
 		family = &callbackFamily{}
 	}
-	upsert := func(obj any) {
+	upsert := func(obj any, eventType graph.EventType) {
 		family.mu.Lock()
 		defer family.mu.Unlock()
-		d.handleUpsert(informerCtx, gvr, kind, obj, coverage)
+		d.handleUpsertEvent(informerCtx, gvr, kind, obj, coverage, eventType)
 	}
 	registration, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    upsert,
-		UpdateFunc: func(_, obj any) { upsert(obj) },
+		AddFunc:    func(obj any) { upsert(obj, graph.EventTypeAdd) },
+		UpdateFunc: func(_, obj any) { upsert(obj, graph.EventTypeUpdate) },
 		DeleteFunc: func(obj any) {
 			family.mu.Lock()
 			defer family.mu.Unlock()
@@ -315,7 +365,34 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 
 	d.families[identity.name] = family
 	family.refs++
+	versionCtx, stopVersions := context.WithCancel(informerCtx)
+	entry := &informerEntry{
+		identity:     identity,
+		stop:         cancel,
+		synced:       registration.HasSynced,
+		coverage:     coverage,
+		versions:     slices.Clone(versions),
+		versionCtx:   versionCtx,
+		stopVersions: stopVersions,
+	}
+	if d.memberRepair != nil {
+		d.runs.Add(1)
+		go func() {
+			defer d.runs.Done()
+			d.memberRepair.RunServedVersions(informerCtx, gvr, kind, coverage, registration.HasSynced, d.resourceHistory.RecordDelete, func() discovery.ServedRepairVersions {
+				d.mu.Lock()
+				defer d.mu.Unlock()
+				if d.informers[identity.name] != entry {
+					return discovery.ServedRepairVersions{} // Cannot reuse a successor's set.
+				}
+				namespaced := identity.scope == apiextensionsv1.NamespaceScoped
+				return discovery.ServedRepairVersions{Versions: slices.Clone(entry.versions), Context: entry.versionCtx, Namespaced: &namespaced}
+			})
+		}()
+	}
+	d.runs.Add(1)
 	go func() {
+		defer d.runs.Done()
 		// Run waits for the handler processor, including in-flight callbacks.
 		informer.Run(informerCtx.Done())
 		d.mu.Lock()
@@ -326,19 +403,16 @@ func (d *Discovery) reconcileCRD(ctx context.Context, identity registrationIdent
 		}
 	}()
 	if coverage != nil {
+		d.runs.Add(1)
 		go func() {
+			defer d.runs.Done()
 			if cache.WaitForCacheSync(informerCtx.Done(), registration.HasSynced) {
 				coverage.InitialDeliveryComplete(gvr)
 			}
 		}()
 	}
 
-	d.informers[identity.name] = &informerEntry{
-		identity: identity,
-		stop:     cancel,
-		synced:   registration.HasSynced,
-		coverage: coverage,
-	}
+	d.informers[identity.name] = entry
 
 	d.logger.Info("Discovered CRD, registered informer",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource),
@@ -363,6 +437,7 @@ func (d *Discovery) stopLocked(name string) {
 		return
 	}
 	delete(d.informers, name)
+	e.stopVersions()
 	e.stop()
 	e.coverage.Stop(time.Now())
 	d.logger.Info("Deregistered CRD informer",
@@ -375,6 +450,10 @@ func (d *Discovery) stopLocked(name string) {
 // handleUpsert; we duplicate intentionally because the two pipelines
 // have different add-on hooks (built-in extractors vs Rego only).
 func (d *Discovery) handleUpsert(ctx context.Context, gvr schema.GroupVersionResource, kind string, obj any, coverage *operations.CoverageSession) {
+	d.handleUpsertEvent(ctx, gvr, kind, obj, coverage, graph.EventTypeAdd)
+}
+
+func (d *Discovery) handleUpsertEvent(ctx context.Context, gvr schema.GroupVersionResource, kind string, obj any, coverage *operations.CoverageSession, eventType graph.EventType) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -386,7 +465,22 @@ func (d *Discovery) handleUpsert(ctx context.Context, gvr schema.GroupVersionRes
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
-	if err := d.store.UpsertResource(ctx, r); err != nil {
+	r.ClusterID = d.clusterID
+	r = coverage.StampOrigin(r)
+	if d.memberRepair != nil {
+		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
+	var writeErr error
+	if d.resourceHistory != nil {
+		_, writeErr = d.resourceHistory.Upsert(ctx, r, eventType)
+	} else {
+		_, writeErr = discovery.UpsertObservedResource(ctx, d.store, r)
+	}
+	if err := writeErr; err != nil {
 		if ctx.Err() != nil {
 			return
 		}
@@ -396,17 +490,29 @@ func (d *Discovery) handleUpsert(ctx context.Context, gvr schema.GroupVersionRes
 		return
 	}
 
-	if ctx.Err() != nil || d.rego == nil {
+	if ctx.Err() != nil {
+		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+	}
+	if d.rego == nil {
 		return
 	}
 	edges, err := d.rego.EvaluateForResource(ctx, r)
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
-		if ctx.Err() != nil {
-			return
-		}
 		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
-		d.logger.Warn("rego eval failed; resource still stored, skipping rego-derived edges",
+		d.logger.Warn("rego eval failed; retaining usable completed module edges",
 			"id", r.ID(), "err", err)
+	}
+	// An active extraction failure does not bypass the whole-batch scope guard.
+	edges, scopeErr := discovery.ScopeCollectorEdges(edges, d.clusterID)
+	if scopeErr != nil {
+		coverage.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
+		d.logger.Warn("rego edge scope rejected", "id", r.ID(), "err", scopeErr)
 		return
 	}
 	for _, e := range edges {
@@ -439,7 +545,27 @@ func (d *Discovery) handleDelete(ctx context.Context, gvr schema.GroupVersionRes
 		return
 	}
 	r := discovery.UnstructuredToResource(u, kind)
-	if err := d.store.DeleteResource(ctx, r.ID()); err != nil {
+	r.ClusterID = d.clusterID
+	if d.memberRepair != nil {
+		unlock, err := d.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
+	var deleteErr error
+	if d.resourceHistory != nil {
+		_, deleteErr = d.resourceHistory.Delete(ctx, r)
+	} else {
+		_, deleteErr = discovery.DeleteObservedResource(ctx, d.store, r)
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		coverage.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+	}
+	if err := deleteErr; err != nil {
 		if ctx.Err() != nil {
 			return
 		}

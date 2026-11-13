@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"context"
+	"errors"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
 )
@@ -23,15 +24,36 @@ func (ServiceAccountExtractor) Extract(_ context.Context, r graph.Resource, _ gr
 	if spec == nil {
 		return nil, nil
 	}
-	name := nestedString(spec, "serviceAccountName")
+	name, err := accountNameField(spec, "serviceAccountName")
+	if err != nil {
+		return nil, err
+	}
 	if name == "" {
 		// Some manifests use the legacy "serviceAccount" field; honour
 		// it so we don't miss obvious SA links.
-		name = nestedString(spec, "serviceAccount")
+		name, err = accountNameField(spec, "serviceAccount")
+		if err != nil {
+			return nil, err
+		}
 	}
 	if name == "" {
 		name = "default"
 	}
 	to := graph.Resource{Kind: "ServiceAccount", Name: name, Namespace: r.Namespace, ClusterID: r.ClusterID}.ID()
 	return []graph.Edge{{From: r.ID(), To: to, Type: graph.EdgeTypeUsesServiceAccount}}, nil
+}
+
+// accountNameField preserves omitted/null/empty fields, but a malformed selected
+// field cannot authorize fallback to another account. Unused legacy fields are
+// not inspected when serviceAccountName already supplies a name.
+func accountNameField(spec map[string]any, field string) (string, error) {
+	value := spec[field]
+	if value == nil {
+		return "", nil
+	}
+	name, ok := value.(string)
+	if !ok {
+		return "", errors.New("ServiceAccountExtractor: account name must be a string")
+	}
+	return name, nil
 }

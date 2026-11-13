@@ -1,5 +1,15 @@
 {{- if .Values.snapshots.enabled }}
-# F-111 periodic full-sync snapshot (P3-T4).
+{{- $trigger := .Values.snapshots.trigger }}
+{{- if and $trigger.cluster (not .Values.multicluster.enabled) }}
+{{- fail "snapshots.trigger.cluster requires multicluster.enabled" }}
+{{- end }}
+{{- if ne (empty $trigger.tokenSecretRef.name) (empty $trigger.tokenSecretRef.key) }}
+{{- fail "snapshots.trigger.tokenSecretRef requires both name and key" }}
+{{- end }}
+{{- if and $trigger.cluster .Values.multicluster.rbac.rules (empty $trigger.tokenSecretRef.name) }}
+{{- fail "member triggers with visibility rules require snapshots.trigger.tokenSecretRef" }}
+{{- end }}
+# F-111 periodic stored-graph observation marker.
 #
 # Every fullSyncSchedule tick this CronJob runs `kubeatlas snapshot
 # trigger`, which POSTs the running server's internal endpoint so a
@@ -26,8 +36,9 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      # One attempt per tick; the next schedule tick is the retry.
-      backoffLimit: 1
+      # No Job retry after an unknown write outcome. A later schedule tick is
+      # a separate observation, not a retry or an exactly-once guarantee.
+      backoffLimit: 0
       activeDeadlineSeconds: 120
       template:
         metadata:
@@ -58,6 +69,18 @@ spec:
                 - trigger
                 - -trigger=periodic
                 - -server=http://{{ include "kubeatlas.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+                {{- if $trigger.cluster }}
+                - {{ printf "--cluster=%s" $trigger.cluster | quote }}
+                {{- end }}
+              {{- if $trigger.tokenSecretRef.name }}
+              env:
+                - name: KUBEATLAS_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $trigger.tokenSecretRef.name | quote }}
+                      key: {{ $trigger.tokenSecretRef.key | quote }}
+                      optional: false
+              {{- end }}
               securityContext:
                 {{- toYaml .Values.securityContext | nindent 16 }}
               resources:

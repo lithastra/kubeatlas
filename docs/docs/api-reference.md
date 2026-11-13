@@ -369,7 +369,10 @@ for the design.
 
 ### `GET /api/v1/snapshots`
 
-Lists the recorded full-sync snapshot markers, most-recent first.
+Lists the recorded snapshot markers, most-recent first. In v1.7 development,
+use `?cluster=prod` to select one attached member in federation mode; omit
+`cluster` in standalone mode to select only unlabelled records. Named-member
+counts exclude unlabelled aggregate markers. The response schema is unchanged.
 
 ```json
 {
@@ -395,21 +398,63 @@ exceed the configured retention.
 `400` if `from` is missing or unparseable, if `from` is not before
 `to`, or if the window is wider than retention.
 
+For v1.7 development, both history reads additionally require exactly one
+`cluster` in federation mode (`?cluster=prod`); repeated, empty or comma-separated
+values return 400. Member visibility is checked before attachment/storage reads:
+401/403 for missing/denied authorization, 404 for an authorized unattached member.
+Standalone mode omits the selector and reads only unlabelled rows. The v1alpha1
+schemas remain frozen and its unscoped aliases reject federation/restricted
+reads rather than bypassing authorization.
+
+Reads are capped at 1000 retained rows, 2 MiB and five seconds. An oversized or
+truncated read returns 413 without partial results; missing explicit scoped-store
+capabilities return 503, shared analysis admission saturation returns 429, and
+request expiry returns 504. Provider failures return closed 500 errors. These
+are retained-observation summaries, not complete audit or recovery claims. See
+[scoped history reads](./installation/multicluster.md#scoped-history-reads-v17-development)
+for compatibility, client and marker-creation limits.
+
 ```bash
 curl -s 'http://localhost:8080/api/v1/snapshots/diff?from=1h&to=now' | jq .
 ```
 
 ### `POST /api/_internal/snapshot/trigger`
 
-Writes one `snapshot_meta` marker anchoring the diff endpoint to a
-known full-sync point. **Internal** — served only on the ClusterIP
-Service, never exposed through Ingress. The periodic full-sync
-`CronJob` is the intended caller; `kubeatlas snapshot trigger`
-reaches it from the CLI.
+Writes one `snapshot_meta` observation marker when snapshots are enabled.
+In v1.7 development, resource and edge counts and append share one atomic
+stored-graph observation for the selected member. Edges with missing endpoints
+or endpoints in different members do not count. This does not perform a Kubernetes
+full sync, drain the history writer, or verify a backup or recovery point.
+
+**Internal operator access is required.** Keep this path behind the deployment's
+internal access boundary. Member read visibility is an additional restriction,
+not a grant of write or administrator permission.
 
 | Query param | Required | Meaning |
 |---|---|---|
-| `trigger` | no | Marker kind: `periodic` or `manual` (default `manual`) |
+| `cluster` | in federation | Exactly one attached, visible member; omit in standalone mode to select only unlabelled rows |
+| `trigger` | no | Marker kind: `periodic` or `manual` (default `manual`); repeated values are rejected |
+
+A successful response contains `trigger`, `resourceCount`, `edgeCount` and
+`durationMs`; named-member responses additionally echo `clusterId`. The v1
+OpenAPI documents this development contract without changing the frozen alpha
+specification. Missing explicit scoped-recorder capability or disabled snapshots
+returns 503; invalid selection returns 400; authorization returns 401/403; an
+authorized absent member returns 404. Shared two-request analysis capacity
+returns 429. Recording has a cooperative five-second store deadline, plus a
+PostgreSQL statement timeout; expiry returns 504, and other provider errors
+return closed 500 errors. An error or timeout can leave an unknown write outcome.
+There is no automatic retry; another operator POST may create another marker.
+
+The v1.7 `snapshot trigger` CLI sends one selected `--cluster` and optional
+`KUBEATLAS_TOKEN`, rejects redirects/retries and validates a bounded metadata
+receipt before printing. Its thirty-second client ceiling does not extend the
+server's five-second store budget. The Helm CronJob can pass one
+`snapshots.trigger.cluster` and an existing `tokenSecretRef`, with Job retries
+disabled. Unscoped federation requests still fail closed. The chart's default
+v1.6.0 image is unchanged: member support requires a matching development image.
+See [internal member markers](./installation/multicluster.md#internal-member-markers-v17-development)
+for transport trust, unknown outcomes and pending deployment qualification.
 
 ## Search
 

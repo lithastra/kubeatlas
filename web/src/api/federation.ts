@@ -12,6 +12,7 @@ import { ApiError, fetchJSON } from './client';
 import type { View, ViewEdge, ViewNode } from './types';
 
 export interface FederationClustersResponse {
+  mode?: 'single' | 'federated';
   clusters: string[];
 }
 

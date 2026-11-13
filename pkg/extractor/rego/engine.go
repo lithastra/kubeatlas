@@ -198,7 +198,12 @@ func (e *Engine) Evaluate(ctx context.Context, name string, input any) (rego.Res
 	if !ok {
 		return nil, fmt.Errorf("rego.Evaluate: module %q not loaded", name)
 	}
+	return e.evaluateCompiled(ctx, m, input)
+}
 
+// evaluateCompiled executes the exact query captured by the caller. A reload
+// replaces the map entry without changing this immutable compiled module.
+func (e *Engine) evaluateCompiled(ctx context.Context, m *compiledModule, input any) (rego.ResultSet, error) {
 	rs, err := evaluateWithGuards(ctx, m.query, input, e.defaultTimeout)
 	switch {
 	case err == nil:
@@ -208,7 +213,7 @@ func (e *Engine) Evaluate(ctx context.Context, name string, input any) (rego.Res
 			e.metrics.IncEvalTimeout()
 		}
 		e.logger.Warn("rego evaluation timeout",
-			"module", name,
+			"module", m.meta.Name,
 			"rule_hash", m.meta.RuleHash[:12],
 			"budget", e.defaultTimeout)
 		return nil, err
@@ -217,13 +222,13 @@ func (e *Engine) Evaluate(ctx context.Context, name string, input any) (rego.Res
 			e.metrics.IncEvalPanic()
 		}
 		e.logger.Error("rego evaluation panic",
-			"module", name,
+			"module", m.meta.Name,
 			"rule_hash", m.meta.RuleHash[:12],
 			"err", err)
 		return nil, err
 	default:
 		e.logger.Warn("rego evaluation error",
-			"module", name,
+			"module", m.meta.Name,
 			"rule_hash", m.meta.RuleHash[:12],
 			"err", err)
 		return nil, err
@@ -260,15 +265,21 @@ func (e *Engine) ModuleCount() int {
 //     match covers this resource. O(1).
 //  2. For each matched module, look up the engine-side compiled
 //     module to recover the rule hash + meta.
-//  3. cache.GetOrEvaluate keyed on (UID, ResourceVersion, RuleHash);
-//     miss runs Evaluate under the timeout + recover guards.
+//  3. cache.GetOrEvaluate keyed on member, API version, UID, ResourceVersion,
+//     RuleHash and Entrypoint; a miss executes that captured compiled query under
+//     the timeout + recover guards, including across a concurrent reload.
+//     Observations without valid version identity evaluate without caching.
 //  4. Decode the result-set rows into graph.Edge values.
 //
-// Per-rule failures are wrapped and returned, NOT silently dropped;
-// callers (the informer wire-in landing in P2-T11) decide whether
-// to warn-and-continue or treat one bad rule as fatal. The default
-// is warn-skip so a single broken pack cannot halt the informer.
+// Per-rule failures are wrapped and returned with completed earlier modules.
+// Evaluation stops at the first failure; malformed output from that module
+// contributes no edges. Cancellation discards this call's output instead of
+// exposing a partial batch. Callers decide how to report the gap and persist
+// usable results without halting the informer.
 func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]graph.Edge, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if e.router == nil {
 		return nil, errors.New("rego.EvaluateForResource: no router; call New(WithRouter(...))")
 	}
@@ -288,9 +299,15 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 		"uid", r.UID, "kind", r.Kind, "group", gvk.Group, "rules", len(matches))
 
 	input := buildEvalInput(r)
+	// An incomplete observation cannot prove cache equivalence, even to a
+	// previous delivery of the same object. Keep extraction, but bypass reuse.
+	cacheable := graph.ValidResourceVersion(r)
 	var allEdges []graph.Edge
 
 	for _, m := range matches {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		e.mu.RLock()
 		cm, ok := e.modules[m.Name]
 		e.mu.RUnlock()
@@ -298,33 +315,48 @@ func (e *Engine) EvaluateForResource(ctx context.Context, r graph.Resource) ([]g
 			// Router knows about a module the engine never loaded.
 			// This is a programming error in the bootstrap path —
 			// surface loud rather than silently skipping.
-			return nil, fmt.Errorf(
+			return allEdges, fmt.Errorf(
 				"eval rule %s on %s: module not loaded into engine",
 				m.Name, r.ID(),
 			)
 		}
 
 		key := CacheKey{
+			ClusterID:       r.ClusterID,
+			GroupVersion:    r.GroupVersion,
 			UID:             string(r.UID),
 			ResourceVersion: r.ResourceVersion,
 			RuleHash:        cm.meta.RuleHash,
+			Entrypoint:      cm.meta.Entrypoint,
 		}
-		v, err := e.cache.GetOrEvaluate(ctx, key,
-			func(ctx context.Context) (CacheValue, error) {
-				rs, err := e.Evaluate(ctx, m.Name, input)
-				if err != nil {
-					return CacheValue{}, err
-				}
-				edges, err := decodeEdges(rs)
-				if err != nil {
-					return CacheValue{}, err
-				}
-				return CacheValue{Edges: edges}, nil
-			})
+		evaluate := func(ctx context.Context) (CacheValue, error) {
+			rs, err := e.evaluateCompiled(ctx, cm, input)
+			if err != nil {
+				return CacheValue{}, err
+			}
+			edges, err := decodeEdges(rs)
+			if err != nil {
+				return CacheValue{}, err
+			}
+			return CacheValue{Edges: edges}, nil
+		}
+		var v CacheValue
+		var err error
+		if cacheable {
+			v, err = e.cache.GetOrEvaluate(ctx, key, evaluate)
+		} else {
+			v, err = evaluate(ctx)
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if err != nil {
-			return nil, fmt.Errorf("eval rule %s on %s: %w", m.Name, r.ID(), err)
+			return allEdges, fmt.Errorf("eval rule %s on %s: %w", m.Name, r.ID(), err)
 		}
 		allEdges = append(allEdges, v.Edges...)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return allEdges, nil
 }

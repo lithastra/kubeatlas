@@ -339,3 +339,32 @@ func TestDecodeEdges_BadShape(t *testing.T) {
 		})
 	}
 }
+
+func TestEvaluateForResource_CacheSeparatesMemberClusters(t *testing.T) {
+	e, metrics := newWiredEngine(t)
+	first := fooResource(1, "1")
+	first.ClusterID = "east"
+	second := first
+	second.ClusterID = "west"
+	second.Name = "different-member-object"
+	a, err := e.EvaluateForResource(context.Background(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.EvaluateForResource(context.Background(), second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a) != 1 || len(b) != 1 || a[0].From == b[0].From {
+		t.Fatal("same UID/resourceVersion reused another member's result")
+	}
+	if metrics.Snapshot().CacheMisses != 2 {
+		t.Fatal("member identity missing from evaluation cache key")
+	}
+	if _, err = e.EvaluateForResource(context.Background(), first); err != nil {
+		t.Fatal(err)
+	}
+	if metrics.Snapshot().CacheHits != 1 {
+		t.Fatal("member-local cache no longer hits")
+	}
+}

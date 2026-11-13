@@ -28,12 +28,15 @@ func SecretReferenceResource(namespace, name, clusterID string) Resource {
 }
 
 // SanitizeResource applies the storage and evaluation boundary for Kubernetes
-// Secrets. Non-Secret resources are returned unchanged: KubeAtlas intentionally
-// preserves their Raw payloads, including ConfigMap values. Secret resources
+// Secrets. Non-Secret payloads are preserved, including ConfigMap values;
+// invalid private origin receipts are discarded. Secret resources
 // are reduced to reference-only nodes before they can reach a store, extractor,
 // API, diagnostic, export, or telemetry path.
 func SanitizeResource(r Resource) Resource {
 	if r.Kind != "Secret" {
+		if !r.Origin.Matches(r) {
+			r.Origin = ResourceOrigin{}
+		}
 		return r
 	}
 	return SecretReferenceResource(r.Namespace, r.Name, r.ClusterID)

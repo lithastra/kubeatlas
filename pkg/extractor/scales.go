@@ -2,8 +2,10 @@ package extractor
 
 import (
 	"context"
+	"errors"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // ScalesExtractor emits SCALES edges from a HorizontalPodAutoscaler
@@ -22,6 +24,9 @@ import (
 // Direction is autoscaler → target. The reading "X SCALES Y" matches
 // the field name and falls in line with the rest of the extractor
 // family (X carries a reference to Y).
+// Provided spec/reference objects and required identity fields are checked;
+// optional apiVersion values use the Kubernetes controller's GroupVersion parser.
+// Parsing does not resolve API groups, versions, targets or scale support.
 type ScalesExtractor struct{}
 
 func (ScalesExtractor) Type() graph.EdgeType { return graph.EdgeTypeScales }
@@ -30,15 +35,38 @@ func (ScalesExtractor) Extract(_ context.Context, r graph.Resource, _ graph.Reso
 	if r.Kind != "HorizontalPodAutoscaler" {
 		return nil, nil
 	}
-	name := nestedString(r.Raw, "spec", "scaleTargetRef", "name")
-	if name == "" {
+	value := r.Raw["spec"]
+	if value == nil {
 		return nil, nil
 	}
-	kind := nestedString(r.Raw, "spec", "scaleTargetRef", "kind")
-	if kind == "" {
-		// The /scale subresource is the contract; without a kind we
-		// can't materialise a real target id. Skip rather than guess.
+	spec, ok := value.(map[string]any)
+	if !ok {
+		return nil, errors.New("ScalesExtractor: spec must be an object")
+	}
+	value = spec["scaleTargetRef"]
+	if value == nil {
 		return nil, nil
+	}
+	ref, ok := value.(map[string]any)
+	if !ok {
+		return nil, errors.New("ScalesExtractor: scaleTargetRef must be an object")
+	}
+	if ref == nil {
+		return nil, nil
+	}
+	name, _ := ref["name"].(string)
+	kind, _ := ref["kind"].(string)
+	if name == "" || kind == "" {
+		return nil, errors.New("ScalesExtractor: target kind and name must be nonempty strings")
+	}
+	if value := ref["apiVersion"]; value != nil {
+		version, ok := value.(string)
+		if !ok {
+			return nil, errors.New("ScalesExtractor: target apiVersion must be a string")
+		}
+		if _, err := schema.ParseGroupVersion(version); err != nil {
+			return nil, errors.New("ScalesExtractor: malformed target apiVersion")
+		}
 	}
 	to := graph.Resource{Kind: kind, Name: name, Namespace: r.Namespace, ClusterID: r.ClusterID}.ID()
 	return []graph.Edge{{From: r.ID(), To: to, Type: graph.EdgeTypeScales}}, nil

@@ -24,6 +24,68 @@ func retainedAvailabilityEvidence(cluster string) operations.AnalysisAvailabilit
 	return e
 }
 
+func retainedMemberEvidence(cluster string) operations.AnalysisAvailability {
+	e := retainedAvailabilityEvidence(cluster)
+	e.History.State = operations.HistoryUnsupported
+	e.History.Reasons = []operations.HistoryAvailabilityReason{operations.HistoryScopeUnknown}
+	e.History.ObservationStartedAt = time.Time{}
+	return e
+}
+
+func TestImpactMemberRetentionRequiresExactScopeWithoutWriterQualification(t *testing.T) {
+	g := authorizationFixture()
+	g.Resources, g.Edges = g.Resources[:1], nil
+	g.Resources[0].ClusterID = "prod"
+	probe := &impactSnapshotProbe{read: func(context.Context, graph.ImpactSnapshotOptions) (*graph.Graph, error) { return g, nil }}
+	for name, mutate := range map[string]func(*operations.AnalysisAvailability){
+		"valid scoped metadata": func(*operations.AnalysisAvailability) {},
+		"standalone metadata":   func(e *operations.AnalysisAvailability) { e.History.RetentionEvidence.Bounds.ClusterID = "" },
+		"hidden member":         func(e *operations.AnalysisAvailability) { e.History.RetentionEvidence.Bounds.ClusterID = "hidden" },
+		"recording with unqualified scope": func(e *operations.AnalysisAvailability) {
+			e.History.State = operations.HistoryRecording
+			e.History.ObservationStartedAt = e.CapturedAt.Add(-time.Minute)
+		},
+		"borrowed observation start": func(e *operations.AnalysisAvailability) {
+			e.History.ObservationStartedAt = e.CapturedAt.Add(-time.Minute)
+		},
+		"complete history claim": func(e *operations.AnalysisAvailability) { e.History.Coverage = operations.CoverageObserved },
+		"memory metadata":        func(e *operations.AnalysisAvailability) { e.Storage.Durable = false },
+		"unknown durability": func(e *operations.AnalysisAvailability) {
+			e.Storage = operations.StorageAvailability{State: operations.StorageUnknown}
+		},
+		"wrong retention window": func(e *operations.AnalysisAvailability) {
+			e.History.RetentionEvidence.Bounds.From = e.CapturedAt.Add(-2 * time.Hour)
+		},
+		"unsupported without metadata": func(e *operations.AnalysisAvailability) {
+			e.History.RetentionEvidence = nil
+			e.History.RetainedData = "not_queried"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var original operations.AnalysisAvailability
+			provider := impactAvailabilityFunc(func(_ context.Context, cluster string) (operations.AnalysisAvailability, error) {
+				original = retainedMemberEvidence(cluster)
+				mutate(&original)
+				return original, nil
+			})
+			out, err := analysis.AnalyzeImpactWithEvidence(context.Background(), probe, g.Resources[0].ID(), analysis.ImpactOptions{ClusterID: "prod"}, graph.ImpactSnapshotOptions{ClusterID: "prod"}, analysis.ImpactEvidenceProviders{Availability: provider})
+			if name != "valid scoped metadata" {
+				if !errors.Is(err, analysis.ErrImpactAvailability) || out != nil {
+					t.Fatalf("invalid member evidence accepted: %+v %v", out, err)
+				}
+				return
+			}
+			if err != nil || out.Availability.Evidence.History.State != operations.HistoryUnsupported || out.Availability.Evidence.History.Coverage != operations.CoverageUnknown || out.Observation.Ordinary.TypeScopeClosed {
+				t.Fatalf("retained metadata qualified complete history: %+v %v", out, err)
+			}
+			out.Availability.Evidence.History.RetentionEvidence.Bounds.ClusterID = "changed"
+			if original.History.RetentionEvidence.Bounds.ClusterID != "prod" {
+				t.Fatal("member response aliases provider storage")
+			}
+		})
+	}
+}
+
 func TestImpactRetentionEvidenceScopeValidationAndOwnership(t *testing.T) {
 	g := authorizationFixture()
 	probe := &impactSnapshotProbe{read: func(context.Context, graph.ImpactSnapshotOptions) (*graph.Graph, error) { return g, nil }}

@@ -38,11 +38,12 @@ var (
 // bounds are rejected, not clamped. ClusterID selects exactly one cluster;
 // empty selects standalone resources, never every cluster.
 type ImpactOptions struct {
-	ClusterID   string
-	Relation    ImpactRelation
-	MaxDepth    int
-	Limit       int
-	ExpectedUID string
+	ClusterID               string
+	Relation                ImpactRelation
+	MaxDepth                int
+	Limit                   int
+	ExpectedUID             string
+	IncludeProjectionCounts bool
 }
 
 // ImpactIdentity is an allowlisted identity. It contains no object payload,
@@ -117,12 +118,20 @@ type ImpactNotice struct {
 	Count  int                `json:"count"`
 }
 
+// ImpactProjectionCounts describes the scoped input to a single analysis,
+// including disconnected resources and same-scope dangling edge records.
+type ImpactProjectionCounts struct {
+	Resources int
+	Edges     int
+}
+
 // ImpactResult is the shared analysis DTO embedded by the v1 API envelope.
 // ModeledTraversalComplete describes only this supplied graph. The pure core
 // leaves observation coverage unknown; the evidence wrapper qualifies it.
 // An empty/complete traversal alone cannot establish informer health, resource
 // visibility, snapshot consistency, or safe deletion.
 type ImpactResult struct {
+	ProjectionCounts         *ImpactProjectionCounts   `json:"-"`
 	Root                     ImpactIdentity            `json:"root"`
 	Relation                 ImpactRelation            `json:"relation"`
 	MaxDepth                 int                       `json:"maxDepth"`
@@ -200,9 +209,13 @@ func AnalyzeImpact(ctx context.Context, projection *graph.Graph, rootID string, 
 	adjacency := make(map[string]*impactArcHeap)
 	notices := make(map[string]map[ImpactNoticeReason]int)
 	seenEdges := make(map[impactEdgeKey]bool)
+	projectionEdges := 0
 	for _, edge := range projection.Edges {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if opts.IncludeProjectionCounts && graph.ImpactIDInCluster(edge.From, opts.ClusterID) && graph.ImpactIDInCluster(edge.To, opts.ClusterID) {
+			projectionEdges++
 		}
 		from, to := edge.From, edge.To
 		if opts.Relation == ImpactDependents {
@@ -254,6 +267,9 @@ func AnalyzeImpact(ctx context.Context, projection *graph.Graph, rootID string, 
 		Resources: []ImpactMatch{}, TruncationReasons: []string{}, Notices: []ImpactNotice{},
 		ObservationCoverage: "unknown",
 		ReferenceEvidence:   []ImpactReferenceEvidence{},
+	}
+	if opts.IncludeProjectionCounts {
+		result.ProjectionCounts = &ImpactProjectionCounts{Resources: len(resources), Edges: projectionEdges}
 	}
 	referenceReader := newImpactReferenceReader()
 	// Queue paths are at most MaxImpactDepth long; the root is visited up front

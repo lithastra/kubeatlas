@@ -3,6 +3,8 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -259,47 +261,134 @@ func TestWatchHub_SlowSubscriberDoesNotBlockBroadcast(t *testing.T) {
 	}
 }
 
-func TestWatchHub_ConcurrentSubscribers(t *testing.T) {
-	// 1000 concurrent subscribers + one broadcast; verify the goroutine
-	// count returns to baseline (±20) after everyone disconnects.
-	hub, url, stop := startHubServer(t)
-	defer stop()
+// watchPipeListener supplies net.Pipe connections to the real HTTP server.
+// Repeated fan-out tests can open thousands of WebSockets without consuming
+// host TCP ephemeral ports. The other watch tests cover the loopback route.
+type watchPipeListener struct {
+	connections chan net.Conn
+	done        chan struct{}
+	closeOnce   sync.Once
+}
 
-	const n = 1000
-	baseline := runtime.NumGoroutine()
-
-	conns := make([]*websocket.Conn, n)
-	var wg sync.WaitGroup
-	wg.Add(n)
-	for i := 0; i < n; i++ {
-		go func(i int) {
-			defer wg.Done()
-			conn := dial(t, url)
-			conns[i] = conn
-			subscribe(t, conn, api.SubscriptionFilter{Level: aggregator.LevelCluster})
-		}(i)
+func (l *watchPipeListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-l.connections:
+		return conn, nil
+	case <-l.done:
+		return nil, net.ErrClosed
 	}
-	wg.Wait()
+}
 
-	waitForSubscriberCount(t, hub, n)
+func (l *watchPipeListener) Close() error {
+	l.closeOnce.Do(func() { close(l.done) })
+	return nil
+}
 
-	// Single broadcast — every subscriber should be able to read at
-	// least once. Read with a generous timeout per connection.
-	hub.Broadcast(api.GraphUpdate{Level: aggregator.LevelCluster, Revision: 1})
+func (*watchPipeListener) Addr() net.Addr {
+	return &net.UnixAddr{Name: "watch-pipe", Net: "pipe"}
+}
+
+func (l *watchPipeListener) dial(ctx context.Context, _, _ string) (net.Conn, error) {
+	client, server := net.Pipe()
+	var err error
+	select {
+	case l.connections <- server:
+		return client, nil
+	case <-l.done:
+		err = net.ErrClosed
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+	_ = client.Close()
+	_ = server.Close()
+	return nil, err
+}
+
+func startWatchPipeServer(t *testing.T) (*api.WatchHub, *http.Client) {
+	t.Helper()
+	hub := api.NewWatchHub()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /watch", hub.Handle)
+	listener := &watchPipeListener{connections: make(chan net.Conn), done: make(chan struct{})}
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 2 * time.Second}
+	client := &http.Client{Transport: &http.Transport{DialContext: listener.dial}}
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		client.CloseIdleConnections()
+		if err := server.Close(); err != nil {
+			t.Error(err)
+		}
+		if err := <-served; !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("watch pipe server: %v", err)
+		}
+	})
+	return hub, client
+}
+
+func TestWatchHub_ConcurrentSubscribers(t *testing.T) {
+	hub, client := startWatchPipeServer(t)
+
+	const (
+		subscribers = 1000
+		revision    = 1
+	)
+	baseline := runtime.NumGoroutine()
+	ctx := t.Context()
+	conns := make([]*websocket.Conn, subscribers)
+	closeConnections := func() {
+		for i, conn := range conns {
+			if conn != nil {
+				_ = conn.CloseNow()
+				conns[i] = nil
+			}
+		}
+	}
+	defer closeConnections()
+
+	connect := func() (*websocket.Conn, error) {
+		dialCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		conn, _, err := websocket.Dial(dialCtx, "ws://watch.test/watch", &websocket.DialOptions{HTTPClient: client})
+		cancel()
+		if err != nil {
+			return nil, fmt.Errorf("dial: %w", err)
+		}
+		subscribeCtx, stopSubscribe := context.WithTimeout(ctx, 2*time.Second)
+		defer stopSubscribe()
+		if err := wsjson.Write(subscribeCtx, conn, api.Envelope{Type: api.MsgTypeSubscribe, Level: aggregator.LevelCluster}); err != nil {
+			return conn, fmt.Errorf("subscribe: %w", err)
+		}
+		return conn, nil
+	}
+
+	setupErrors := make([]error, subscribers)
+	var setup sync.WaitGroup
+	for i := range conns {
+		setup.Go(func() {
+			conns[i], setupErrors[i] = connect()
+		})
+	}
+	setup.Wait()
+	for i, err := range setupErrors {
+		if err != nil {
+			t.Fatalf("subscriber %d setup: %v", i+1, err)
+		}
+	}
+	waitForSubscriberCount(t, hub, subscribers)
+
 	var receiveWG sync.WaitGroup
-	receiveWG.Add(n)
-	received := make([]bool, n)
-	for i, c := range conns {
-		go func(i int, c *websocket.Conn) {
-			defer receiveWG.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	received := make([]bool, subscribers)
+	for i, conn := range conns {
+		receiveWG.Go(func() {
+			readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			var env api.Envelope
-			if err := wsjson.Read(ctx, c, &env); err == nil && env.Type == api.MsgTypeGraphUpdate {
+			if err := wsjson.Read(readCtx, conn, &env); err == nil && env.Type == api.MsgTypeGraphUpdate && env.Revision == revision {
 				received[i] = true
 			}
-		}(i, c)
+		})
 	}
+	hub.Broadcast(api.GraphUpdate{Level: aggregator.LevelCluster, Revision: revision})
 	receiveWG.Wait()
 
 	got := 0
@@ -308,26 +397,23 @@ func TestWatchHub_ConcurrentSubscribers(t *testing.T) {
 			got++
 		}
 	}
-	if got < n {
-		t.Errorf("only %d/%d subscribers received the broadcast", got, n)
+	if got != subscribers {
+		t.Errorf("only %d/%d subscribers received revision %d", got, subscribers, revision)
 	}
 
-	for _, c := range conns {
-		_ = c.CloseNow()
-	}
+	closeConnections()
 
-	// Allow goroutines to wind down.
+	// Unregistration and handler shutdown can settle at different times.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if hub.SubscriberCount() == 0 {
+		if hub.SubscriberCount() == 0 && runtime.NumGoroutine()-baseline <= 50 {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if hub.SubscriberCount() != 0 {
-		t.Errorf("after disconnects, %d subscriptions still registered", hub.SubscriberCount())
+	if remaining := hub.SubscriberCount(); remaining != 0 {
+		t.Errorf("after disconnects, %d subscriptions still registered", remaining)
 	}
-	// Goroutine count is fuzzy under -race; allow ±50 from baseline.
 	if delta := runtime.NumGoroutine() - baseline; delta > 50 {
 		t.Errorf("goroutine count grew by %d (baseline %d) — possible leak", delta, baseline)
 	}

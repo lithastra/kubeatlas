@@ -5,6 +5,7 @@ package extractor
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
@@ -32,7 +33,8 @@ type GatekeeperExtractor struct{}
 func (GatekeeperExtractor) Type() graph.EdgeType { return graph.EdgeTypeEnforces }
 
 // Extract returns one ENFORCES edge per resource the Constraint
-// matches. Non-Constraint resources yield nothing.
+// matches. Non-Constraint resources yield nothing. A failed target query
+// returns earlier matches alongside its error; its own partial rows are ignored.
 func (GatekeeperExtractor) Extract(ctx context.Context, r graph.Resource, q graph.ResourceLister) ([]graph.Edge, error) {
 	if !strings.HasPrefix(r.GroupVersion, gatekeeperConstraintGroupPrefix) {
 		return nil, nil
@@ -42,8 +44,14 @@ func (GatekeeperExtractor) Extract(ctx context.Context, r graph.Resource, q grap
 	if len(kinds) == 0 {
 		return nil, nil
 	}
-	namespaces := constraintMatchNamespaces(r)
-	labels := nestedStringMap(r.Raw, "spec", "match", "labelSelector", "matchLabels")
+	namespaces, err := constraintMatchNamespaces(r)
+	if err != nil {
+		return nil, fmt.Errorf("GatekeeperExtractor: %w", err)
+	}
+	labels, err := selectorStringMap(r.Raw, "spec", "match", "labelSelector", "matchLabels")
+	if err != nil {
+		return nil, fmt.Errorf("GatekeeperExtractor: %w", err)
+	}
 	violations := constraintViolations(r)
 
 	// An empty namespace list means "every namespace" — the store's
@@ -59,14 +67,20 @@ func (GatekeeperExtractor) Extract(ctx context.Context, r graph.Resource, q grap
 
 	for _, kind := range kinds {
 		for _, ns := range nsScopes {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			matched, err := q.ListResources(ctx, graph.Filter{
 				Kind:      kind,
 				Namespace: ns,
 				Labels:    labels,
 				ClusterID: r.ClusterID,
 			})
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			if err != nil {
-				return nil, err
+				return edges, err
 			}
 			for _, m := range matched {
 				to := m.ID()
@@ -107,14 +121,8 @@ func constraintMatchKinds(r graph.Resource) []string {
 }
 
 // constraintMatchNamespaces reads spec.match.namespaces.
-func constraintMatchNamespaces(r graph.Resource) []string {
-	var out []string
-	for _, n := range nestedSlice(r.Raw, "spec", "match", "namespaces") {
-		if s, ok := n.(string); ok && s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
+func constraintMatchNamespaces(r graph.Resource) ([]string, error) {
+	return selectorNamespaces(nestedMap(r.Raw, "spec", "match")["namespaces"])
 }
 
 // constraintViolations indexes status.violations by kind/namespace/name

@@ -12,8 +12,7 @@
  * ============================================================ */
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 
-import { ApiError } from '../api/client';
-import { useSnapshotDiff } from '../api/snapshots';
+import { useHistoryScope, useSnapshotDiff } from '../api/snapshots';
 import type { DiffEntry } from '../api/types';
 import { Panel } from '../design';
 
@@ -23,9 +22,11 @@ interface DiffChangeLogProps {
 }
 
 export function DiffChangeLog({ anchor, namespace = '' }: DiffChangeLogProps) {
-  const { data, isLoading, isError, error } = useSnapshotDiff(anchor, 'now', namespace);
+  const scope = useHistoryScope();
+  const { data, isLoading, isFetching, isError, error } = useSnapshotDiff(anchor, 'now', namespace, scope.clusterId);
+  if (scope.clusterId === null) return <Typography variant="caption">{scope.message}</Typography>;
 
-  if (isLoading) {
+  if (isLoading || isFetching) {
     return (
       <Stack direction="row" alignItems="center" spacing={1}>
         <CircularProgress size={14} />
@@ -35,15 +36,6 @@ export function DiffChangeLog({ anchor, namespace = '' }: DiffChangeLogProps) {
   }
 
   if (isError) {
-    const status = error instanceof ApiError ? error.status : 0;
-    if (status === 503) {
-      return (
-        <Typography variant="caption" sx={{ color: 'var(--atlas-text-3)' }}>
-          Snapshots aren&apos;t enabled on this install. Diff requires the Tier 2
-          PostgreSQL store.
-        </Typography>
-      );
-    }
     return (
       <Typography variant="caption" sx={{ color: 'var(--atlas-error)' }}>
         Diff failed: {(error as Error)?.message ?? 'unknown error'}
@@ -73,7 +65,7 @@ export function DiffChangeLog({ anchor, namespace = '' }: DiffChangeLogProps) {
             color: 'var(--atlas-text-1)',
           }}
         >
-          Changes since {anchor} ago
+          Changes observed in {scope.clusterId || 'standalone'} since {anchor} ago
         </Typography>
         <Typography
           component="div"

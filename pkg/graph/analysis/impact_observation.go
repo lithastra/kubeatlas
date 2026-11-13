@@ -132,6 +132,9 @@ func readImpactCoverage(ctx context.Context, provider ImpactCoverageProvider, cl
 	if err := validateImpactSources(&snapshot); err != nil {
 		return operations.CoverageSnapshot{}, err
 	}
+	if err := validateImpactOrigins(&snapshot); err != nil {
+		return operations.CoverageSnapshot{}, err
+	}
 	if err := validateImpactInventory(&snapshot); err != nil {
 		return operations.CoverageSnapshot{}, err
 	}

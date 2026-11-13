@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"context"
 	"sort"
 	"testing"
 
@@ -89,9 +90,10 @@ func TestBindsSubjectExtractor_ClusterRoleBindingNoNamespaceDefault(t *testing.T
 	}
 }
 
-func TestBindsSubjectExtractor_SkipsMalformedSubjects(t *testing.T) {
+func TestBindsSubjectExtractor_RejectsMalformedSubjects(t *testing.T) {
 	rb := rbHelper("demo", "broken",
 		[]map[string]any{
+			{"kind": "User", "name": "prefix"},
 			{"kind": "", "name": "no-kind"},
 			{"kind": "User"}, // no name
 			{"name": "no-kind"},
@@ -99,9 +101,9 @@ func TestBindsSubjectExtractor_SkipsMalformedSubjects(t *testing.T) {
 		},
 		map[string]any{"kind": "Role", "name": "x"},
 	)
-	got := extractEdges(t, BindsSubjectExtractor{}, rb, nil)
-	if len(got) != 1 || got[0].To != "/User/alice" {
-		t.Errorf("edges = %+v, want one edge to /User/alice", got)
+	got, err := (BindsSubjectExtractor{}).Extract(context.Background(), rb, nil)
+	if err == nil || len(got) != 1 || got[0].To != "/User/prefix" {
+		t.Errorf("edges = %+v, err = %v, want an error and only /User/prefix", got, err)
 	}
 }
 
@@ -153,7 +155,7 @@ func TestBindsRoleExtractor_ClusterRoleBinding(t *testing.T) {
 	}
 }
 
-func TestBindsRoleExtractor_MalformedRoleRefSkipped(t *testing.T) {
+func TestBindsRoleExtractor_MalformedRoleRefRejected(t *testing.T) {
 	cases := []struct {
 		name    string
 		roleRef map[string]any
@@ -166,9 +168,9 @@ func TestBindsRoleExtractor_MalformedRoleRefSkipped(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			rb := rbHelper("demo", "x", nil, c.roleRef)
-			got := extractEdges(t, BindsRoleExtractor{}, rb, nil)
-			if len(got) != 0 {
-				t.Errorf("malformed roleRef %v produced %d edges, want 0", c.roleRef, len(got))
+			got, err := (BindsRoleExtractor{}).Extract(context.Background(), rb, nil)
+			if err == nil || len(got) != 0 {
+				t.Errorf("malformed roleRef %v produced %d edges, err = %v, want error and no edges", c.roleRef, len(got), err)
 			}
 		})
 	}

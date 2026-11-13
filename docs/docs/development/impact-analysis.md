@@ -62,6 +62,7 @@ indirect means more than one. The root is never included in result counts.
 | `SELECTS`, `ROUTES_TO`, `ATTACHED_TO` | Selector, backend, or parent reference | Declared routing/selection relationship, not an active endpoint or a verified traffic path. |
 | `USES_SERVICEACCOUNT` | Workload/Pod service-account reference | Declared identity use, not proof that an operation was performed or authorized. |
 | `BINDS_ROLE`, `BINDS_SUBJECT` | Binding roleRef and subjects | Authorization association; report separately from ordinary dependent counts. |
+| `SCALES` | HPA scaleTargetRef declaration | Currently unmodeled in impact traversal; no proof of target scale support or scaling activity. |
 | Other rule/policy/platform edges | Stored edge and available provenance | Show as unmodeled relationships, not automatic outage propagation. OTel overlay edges do not enter this traversal. |
 
 RBAC is a branching relation: `binding -> role` and `binding -> subject`.
@@ -241,6 +242,103 @@ a diamond/cycle graph, an independent shortest-distance relaxation oracle,
 exact-limit and dense-graph cases, UID replacement, synthetic Secret canaries,
 and cancellation checks. These exercise the pure core only, not all IA checks.
 
+The builtin Ingress routing extractor now also emits `ROUTES_TO` for
+`spec.defaultBackend.service.name`, alongside rule-path Service backends. Both
+paths use one target-ID deduplication set, including when ports differ. Targets
+remain in the Ingress namespace and cluster. A resource-only default backend is
+not guessed to be a Service; missing or unusable Service names emit no target.
+This adds a declaration to the graph without looking up backend objects,
+probing traffic or adding a watch, edge type or public response field.
+
+Same-UID/version informer replay still re-extracts edges, so an Ingress stored
+before this support can acquire its missing default-backend relationship without
+another resource write/history event. A failed edge write records the existing
+sticky persistence gap; later replay can restore the edge without clearing that
+gap or sending a false update for the failed write. Missing Services remain
+dangling relationships with unresolved/lower-bound impact qualification until
+the target is observed. Portable extractor and real-registry callback tests
+cover member/standalone scope, both history modes, deduplication, failed writes,
+retained receipts and forward/reverse memory-backed impact paths. Controller
+acceptance, actual traffic and real-cluster behavior remain unverified.
+
+HPA target extraction now distinguishes malformed declarations from absent
+fields. Non-null `spec` and `scaleTargetRef` values must be objects; a provided
+reference requires nonempty string `kind` and `name`. A non-null `apiVersion`
+must be a string accepted by the pinned Kubernetes `schema.ParseGroupVersion`,
+matching the parser used by the
+[HPA controller](https://github.com/kubernetes/kubernetes/blob/master/pkg/controller/podautoscaler/horizontal.go).
+Failures return static extraction errors with no target edge or supplied input
+values, while independent owner-reference extraction continues. Omitted/null
+spec/reference fields retain compatibility, as do omitted/null/empty version
+fields and custom target kinds. The GroupVersion parser is not full version
+syntax validation: it also accepts strings such as `/` and `apps/`. Parsing
+does not establish served group/version equivalence, target existence, scale
+subresource support or controller activity. General group-qualified identity
+resolution remains outside this change; legacy group-less target IDs persist.
+
+Portable regressions pin the parser behavior, required-field shapes, scope and
+independent owner edges without target reads. Core callbacks cover core/apps/
+custom target kinds, member/standalone scope and both history modes, with
+committed source receipts, unchanged history deduplication, distinct sticky
+extraction/persistence gaps, valid-version recovery and failed-write replay.
+Unobserved targets remain dangling instead of being synthesized or filled from
+foreign members. SCALES stays unmodeled in impact traversal: forward/reverse
+queries retain its exclusion notice, ordinary counts cover only modeled paths,
+and the independent UID-matched owner path remains available. Complete modeled
+traversal does not qualify observation continuity or scaling behavior. Old
+relationships remain retained; native Kubernetes/PostgreSQL and M4 acceptance
+remain separate gates.
+
+Builtin ConfigMap, Secret, PVC and ServiceAccount reference collection now
+selects the Pod spec by source kind. Pod uses `/spec`; CronJob uses
+`/spec/jobTemplate/spec/template/spec`; Deployment, ReplicaSet, StatefulSet,
+DaemonSet and Job use `/spec/template/spec`. Container and volume helpers share
+that selection instead of falling through empty fields to other paths.
+Unrelated Pod-like objects at another path cannot replace the selected spec or
+fill its empty, null or omitted lists. Missing/null/non-object canonical template
+specs likewise do not fall back. Default ServiceAccount inference still applies
+to a present selected Pod spec with no account name; it is not inferred from a
+Pod-like object at another path. This does not add complete schema validation.
+
+Portable regressions cover all seven builtin consumers and both scopes,
+including regular/init/ephemeral containers, direct/projected volume sources,
+image-pull references, PVCs and account defaults. Core callbacks cover both
+history modes, valid version updates, unchanged replay, failed edge writes and
+unobserved targets. Unrelated fields do not materialize Secret placeholders;
+canonical Secret references retain only reference identity, including after
+an edge failure. Source history stays deduplicated while reference-only Secret
+receipts may be written each delivery. Missing ConfigMap/PVC targets remain
+unresolved despite foreign same-name resources, then recover when observed.
+Scoped forward/reverse counts and stored/traversal directions remain exact;
+ConfigMap/PVC explanations bind canonical field paths to the source UID/version.
+Known gaps and previously stored edges/placeholders remain retained. No target
+reads, watches, public fields or cleanup are introduced; native Kubernetes/
+PostgreSQL and M4 acceptance remain separate gates.
+
+Service SELECTS and NetworkPolicy SELECTS_NP/ALLOWS_FROM/ALLOWS_TO now also locate
+workload template metadata by target kind. CronJob uses
+`/spec/jobTemplate/spec/template/metadata`; the other five builtin controllers
+use `/spec/template/metadata`. Missing/null/non-object template metadata does
+not fall back to controller metadata or an alternate template path. Raw Pod
+selection continues to use its normalized resource labels. Existing label
+conjunction/key-presence behavior and empty selectors are preserved: Service
+empty selectors match nothing; NetworkPolicy empty Pod selectors still match
+every Pod-like resource within the existing query scope. Controller matches are
+template associations, not observed Pod endpoints or verified traffic.
+
+Portable metadata-path regressions cover all seven Pod-like kinds and all four
+extractors, including empty, missing, null and malformed metadata. Core callbacks
+exercise all three path layouts in named/standalone scopes and both history
+modes, with matching foreign-member/namespace candidates. A canonical candidate
+metadata update is visible on unchanged source replay without another source
+write/history event. Independent ownership, failed-write recovery and existing
+sticky gaps remain intact. Forward/reverse Service paths keep exact directions
+and scope; NetworkPolicy relationships remain excluded from modeled impact with
+unmodeled notices. Old selection edges are retained rather than reconciled or
+deleted. No new target query, watch or public schema is added; complete label
+schema validation, actual endpoints/CNI behavior and native Kubernetes/
+PostgreSQL or M4 acceptance remain separate.
+
 The second M1 slice adds the optional `graph.ImpactSnapshotter` capability and
 `analysis.AnalyzeStoredImpact`. It does not change GraphStore v2's method set or
 the legacy `Snapshot`/`SnapshotMetadata` methods. Both built-in stores now supply
@@ -355,10 +453,251 @@ nested payloads, large ignored environment values, and oversized allowed names.
 Local graph tests cover projection idempotence, immutable schema accessors,
 legacy serialization, escape expansion, and cancellation during field copying.
 
-Existing extractor coverage is unchanged: support in the interpreter does not
-add missing edges.
+Interpreter support alone does not add missing edges. ConfigMap collection now
+also walks environment references in init and ephemeral containers and
+`volumes[].projected.sources[].configMap.name`, alongside its existing regular
+container and direct-volume references. All locations share the same target-ID
+deduplication set and retain the consumer namespace/cluster. Other projected
+source types and unusable names produce no ConfigMap edge. No target object or
+configuration content is read to extract these declarations.
+
+Unchanged UID/version delivery still re-extracts these edges, allowing existing
+stored consumers to acquire previously missing relationships without a resource
+rewrite or duplicate history. Failed edge writes retain persistence-gap evidence
+and do not send false update notifications; later replay can recover the edges
+without clearing known gaps. Missing targets remain unresolved and are never
+synthesized or substituted from another member. Portable tests cover all seven
+supported consumer kinds, both scopes/history modes, mixed-source deduplication,
+failure recovery and real-registry callbacks through memory-backed forward and
+reverse impact analysis. The existing reference interpreter supplies separate
+field/mount paths, optional flags and refresh classifications for each use of a
+deduplicated edge. Keys, literal environment values and ConfigMap contents stay
+outside results. These tests do not qualify native Kubernetes or PostgreSQL/M4
+acceptance; collection adds no watches, public fields or projection changes.
+
 Image-pull, Ingress, ServiceAccount, and Gateway Secret-reference details,
 volumeDevices, and custom resource schemas are not interpreted by this slice.
+
+HTTPRoute `parentRefs` produce ATTACHED_TO only for the modeled Gateway kind in
+`gateway.networking.k8s.io`. As specified by the
+[Gateway API ParentReference contract](https://gateway-api.sigs.k8s.io/reference/api-spec/main/spec/#parentreference),
+an omitted group defaults to that group; an explicitly empty string refers to
+the core group. Core and other explicit groups are skipped rather than linked to
+a same-name Gateway. Explicit and defaulted supported references share the same
+target-ID deduplication set, preserving route namespace fallback, explicit parent
+namespace and member scope. This adds no target reads or new parent kinds.
+
+A present group of the wrong type, including null, returns an extraction error
+with no input values in its message. Earlier confirmed parents survive, later
+parents stop, and independent builtin backend extraction still runs under an
+active parent. Local callbacks cover both scope/history modes, committed source
+receipts, unchanged replay, valid-version recovery, failed edge writes, missing
+targets and forward/reverse impact. A missing Gateway remains unresolved; a
+foreign member's same-name resource cannot fill it, and no target is synthesized.
+Recovery preserves known gaps and does not duplicate unchanged resource history.
+
+These are declared parent references, not proof of AllowedRoutes, controller
+acceptance, effective cross-namespace permission or traffic. The guard is not
+complete ParentReference schema validation and does not change group-less stored
+resource identities. Earlier stored edges remain retained pending separate
+ownership-backed repair. Native Kubernetes/PostgreSQL and M4 acceptance remain
+separate gates.
+
+For HTTPRoute Service `backendRefs`, omitted or empty group identifies the core
+API group, as defined by the
+[Gateway API BackendObjectReference type](https://github.com/kubernetes-sigs/gateway-api/blob/main/apis/v1/object_reference_types.go).
+Unlike parent Gateway references, an explicitly nonempty group cannot produce a
+core Service ROUTES_TO edge, including when kind defaults to Service. The string
+`core` is a group name, not an alias for the empty group. Defaulted and explicit
+core Service references still deduplicate by target ID across rules, preserving
+local/explicit namespace and member scope without target reads.
+
+A wrong-typed Service backend group, including null, returns the confirmed
+backend prefix with an extraction error, stops later backends/rules, and leaves
+independent parent extraction active. Local member/standalone callback tests
+cover both history modes, committed receipts, valid-version and unchanged replay,
+write-failure recovery, missing target qualification and forward/reverse paths.
+No Service target is synthesized and a foreign same-name target cannot conceal
+an unresolved reference. Recovery does not duplicate unchanged history or clear
+prior gaps. These are declarations, not ReferenceGrant/controller acceptance or
+effective routing evidence.
+
+This correction is limited to core Service targets. Existing custom-kind backend
+modeling retains its legacy behavior without new group resolution or watches;
+group-qualified resource IDs and complete BackendObjectReference schema validation
+remain outside this slice. Old stored edges remain retained pending separate
+ownership-backed repair. Native Kubernetes/PostgreSQL and M4 acceptance remain
+separate gates.
+
+Gateway listener TLS `certificateRefs` now require omitted or empty group for
+core Secret references, following the
+[Gateway API SecretObjectReference definition](https://github.com/kubernetes-sigs/gateway-api/blob/main/apis/v1/object_reference_types.go).
+The literal group name `core` and other nonempty groups cannot emit a core Secret
+edge or cause the callback to create a local placeholder. Supported defaulted
+and explicit references share target-ID deduplication across listeners, retaining
+local/explicit namespace and member scope. Non-Secret kinds remain outside this
+collector's certificate model.
+
+A wrong-typed group, including null, returns the earlier confirmed certificate
+prefix with an extraction error and stops later certificates/listeners.
+Independent builtin extraction continues under an active parent. The group
+error contains no input values. Local callbacks cover both history modes and
+member/standalone scopes, qualified source receipts, new-version recovery and
+unchanged replay. Confirmed placeholder writes can remain after an edge-write
+failure; recovery retains those writes and prior gaps without duplicate source
+history or compensating cleanup.
+
+Secret targets are always reference-only: no Raw, labels, UID, resource version,
+API version or owner metadata is copied from a Secret object. Tests assert exact
+placeholder shape, no Secret history events, scoped forward/reverse paths and
+no ignored certificate values in serialized impact results. This adds no Secret
+reads/list/watch and proves neither Secret existence nor ReferenceGrant,
+controller acceptance, TLS validity or working traffic. Gateway reference-field
+explanations and complete schema validation are not added. Old edges and
+placeholders remain retained; native Kubernetes/PostgreSQL and M4 acceptance
+remain separate gates.
+
+Service and NetworkPolicy label equality requires a key to be present. For
+example, `flag: ""` matches a Pod or workload template carrying an empty `flag`
+label, but not one with no `flag` key. The same rule applies to NetworkPolicy
+Namespace selection and to every pair in a multi-label selector. This is distinct
+from an empty selector: selectorless Services still select nothing, while empty
+NetworkPolicy matchLabels and empty store label filters retain their existing
+match-all behavior within the modeled query scope. Effective CNI enforcement
+remains outside this correction.
+
+Selector decoding also rejects malformed non-null object shapes or non-string
+label values as a whole, before reading target candidates. For example, a
+Service selector containing `app: web` and an invalid numeric condition cannot
+silently become an `app: web` query. NetworkPolicy pod/namespace selectors cannot
+turn wrong-typed objects or label maps into a match-all query. Omitted/null
+fields keep their previous empty-field behavior; this is a shape guard for the
+modeled equality fields, not complete Kubernetes schema validation. Error
+messages contain no label keys or values.
+
+NetworkPolicy pod and namespace selectors now also evaluate `matchExpressions`
+with `In`, `NotIn`, `Exists` and `DoesNotExist`, using the pinned Kubernetes
+LabelSelector evaluator. All expressions and `matchLabels` are ANDed together.
+`NotIn` can match a missing key; `In` requires a present key, including when its
+allowed value is empty. Empty/null expression lists retain equality-only
+behavior. Expression-only selectors no longer become unconstrained matches.
+Malformed expression containers, entries, key/operator/value types, unsupported
+operators, invalid expression label syntax or incompatible value cardinalities
+reject that entire selector before candidate reads. Errors omit input data.
+The existing equality shape/empty-field behavior is unchanged; this does not
+add complete policy schema validation.
+
+Evaluation uses existing scoped store queries and the kind-selected Pod/template
+labels; namespace-only peers still produce Namespace targets, and combined
+selectors still enumerate only matching namespaces. There are no new watches,
+Kubernetes API reads or GraphStore filter operators. Service selectors and
+Gatekeeper/Kyverno selectors retain their existing equality-only behavior.
+Portable tests compare expression matching with the pinned evaluator and cover
+all seven Pod-like kinds, namespace-only/combined peers, invalid later
+requirements, read failures, cancellation, source-history deduplication, target
+updates and failed-write replay across member/standalone and history modes.
+Existing edges are retained without deletion ownership. `SELECTS_NP`,
+`ALLOWS_FROM` and `ALLOWS_TO` remain excluded from ordinary modeled impact with
+unmodeled relationship notices; expression support proves neither CNI traffic,
+native Kubernetes/PostgreSQL behavior nor M4 acceptance.
+
+A malformed later NetworkPolicy peer stops further peer reads while retaining
+the earlier confirmed prefix. Other builtin extractors still run under an
+active parent, so independent valid relationships remain available alongside an
+extraction gap. The stored source receipt/history is preserved, unchanged invalid
+replay does not duplicate that history, and a later valid source version followed
+by same-version replay can recover edges. Recovery does not clear prior gaps or
+delete retained relationships. Local real-registry callback and impact tests
+cover both member/standalone scopes and history modes; these are not native
+Kubernetes or PostgreSQL acceptance evidence.
+
+Gatekeeper `spec.match.labelSelector.matchLabels` and Kyverno resource
+`selector.matchLabels` use the same atomic shape guard. Malformed non-null
+selectors or non-string conditions cannot trigger target enumeration with dropped
+conditions. Kyverno keeps its existing two report lookups, then processes only
+the validated descriptor prefix in the existing any/all and rule order. The
+first malformed descriptor stops subsequent descriptors and rules; confirmed
+earlier matches and their report attributes survive alongside the selector error.
+Report/target read failures remain joined, and parent cancellation still discards
+the cancelled batch. This does not change the existing any/all approximation,
+add selector expressions, or evaluate admission decisions.
+
+Portable Gatekeeper and core Kyverno callback tests retain committed source
+receipts/history during malformed replay. Gatekeeper also retains its bound
+template/registration origin and observed violation attributes. A later valid
+source version recovers only scoped matching targets, including present-key
+equality for empty values, without duplicating history on unchanged replay or
+clearing earlier gaps. Omitted/null fields preserve their previous behavior and
+old edges are not cleaned. ENFORCES stays excluded from ordinary impact paths
+with an explicit notice. These local checks do not qualify deployed policy
+coverage, native PostgreSQL behavior or M4 acceptance.
+
+Gatekeeper `spec.match.namespaces` and Kyverno resource `namespaces` now require
+a list of nonempty strings when present and non-null. Scalars, objects, null or
+non-string list entries, and empty-string entries reject the whole constraint
+or descriptor before its target reads. In particular, an invalid list cannot
+silently become the empty store namespace filter, which means all namespaces.
+Kyverno retains the earlier validated descriptor/rule prefix and joined errors,
+and stops at the malformed descriptor just as for malformed label selectors.
+
+Omitted fields, null fields and empty lists keep their existing no-namespace-
+restriction behavior; a namespaced Kyverno Policy still uses only its own
+namespace. Strings retain their existing literal matching behavior without new
+wildcard interpretation, normalization or DNS/schema validation. Portable tests
+cover both policy kinds, any/all ordering, mixed lists, report/target failures,
+cancellation and member/standalone callbacks with history enabled or disabled.
+Valid new versions recover scoped matches while preserving origin receipts and
+loss evidence, and unchanged replay does not duplicate history. Stored edges
+remain retained and ENFORCES remains separate from ordinary impact traversal.
+
+Memory-backed resource lists, kind/edge counts and namespace subgraphs now
+require the same key presence as the existing PostgreSQL JSONB containment
+queries; edge filtering requires both endpoints to match. The shared store
+contract pins this distinction without changing SQL or GraphStore v2. Portable
+regressions compare equality with the pinned Kubernetes label matcher and cover
+member/standalone callbacks, same-version replay, both history modes, read-failure
+recovery with retained gap evidence, and forward/reverse impact paths. Native
+PostgreSQL and Kubernetes acceptance still require their separate gates.
+
+This corrects new extraction decisions and current label-filtered views. It does
+not remove relationships already stored from earlier observations: the callback
+upserts derived edges and does not prove which retained edges it owns for
+deletion. Existing data remains retained pending a separate ownership-backed
+repair; an unfiltered impact path can therefore still contain an old false edge.
+
+Reference interpretation also rejects conflicting volume alternatives already
+visible in that allowlist. A volume with more than one of `configMap`, `secret`,
+`persistentVolumeClaim` and `projected`, a single projected-source entry with
+both `configMap` and `secret`, or a mount with both nonempty `subPath` and
+`subPathExpr` cannot justify definitive use or refresh semantics. As with other
+malformed reference fields, every explanation from that captured consumer is
+`unknown` with `malformed_reference_fields` and no uses. Stored edges, traversal
+paths and counts remain intact; interpretation never repairs retained data or
+adds a relationship. A later valid source version restores version-bound
+explanation without an additional target or Kubernetes read.
+
+Different entries in `projected.sources` may still provide different sources,
+and one nonempty mount alternative (or both empty) retains the existing mount
+classification. Unmodeled alternatives are not copied or validated; this is not
+a complete Kubernetes schema validator. Projection shapes, Secret reference-only
+handling, field/byte budgets and the public response schema remain unchanged.
+Portable regressions cover all seven supported consumers, member/standalone
+scope, both query directions, pure/memory-projected result parity, retained data
+and subsequent-version recovery. The shared store contract includes the three
+conflict classes for both backends; native PostgreSQL and real-cluster acceptance
+remain separate from the local short-mode results.
+
+Environment reference interpretation applies the same atomic qualification to
+an `envFrom` entry containing both `configMapRef` and `secretRef`, or a
+`valueFrom` entry containing both `configMapKeyRef` and `secretKeyRef`.
+Definitive uses from that consumer stay unavailable until a valid source version
+is captured. Separate entries keep their own required/optional flags and the
+existing container-restart classification. Checks cover the existing ordinary,
+init and ephemeral container arrays without copying literal environment values,
+reference keys, prefixes or unmodeled sources. Projection shapes, budgets and
+Secret handling remain unchanged. Pure/memory parity, both directions/scopes,
+retained relationships and subsequent-version recovery share the volume
+ambiguity oracle; both conflict classes also enter the shared store contract.
 
 The fifth M1 slice adds the independent `authorization` facet to the same pure
 result. It reuses the single impact projection, without another store query or
@@ -386,6 +725,142 @@ binding's namespace, even if its ServiceAccount subject is in another
 namespace. A workload/account edge must remain within their shared namespace.
 A ClusterRoleBinding can reference only a ClusterRole. These rules follow the
 [Kubernetes RBAC binding contract](https://kubernetes.io/docs/reference/access-authn-authz/rbac/).
+
+Builtin workload ServiceAccount extraction now distinguishes wrong-typed account
+names from empty fields. A non-null, non-string `serviceAccountName` returns an
+extraction error rather than falling through to `serviceAccount` or `default`.
+The legacy field has the same check when it is actually selected. A valid modern
+name still takes precedence without inspecting an unused legacy field. Omitted,
+null and empty fields preserve the existing fallback order. This is type checking
+for the modeled name fields, not complete Pod schema/name validation.
+
+The source receipt/history and other builtin relationships remain usable with
+an extraction gap. Unchanged invalid replay does not duplicate source history;
+a valid new version followed by same-version replay recovers the selected account
+without clearing prior gaps or deleting retained edges. Portable regressions
+cover Pod and all six builtin controller kinds, member/standalone scope and both
+history modes. Existing default/legacy-account bindings cannot fill a missing
+workload association, and valid recovery follows only the selected scoped
+account, binding and role. Independent ordinary counts and exact authorization
+step direction/binding metadata remain pinned by the tests. Disabling token
+automount in the fixture does not turn these stored associations into evidence
+of credential use or permissions. No new target reads, watches, API fields or
+node synthesis is introduced; native Kubernetes/PostgreSQL and M4 acceptance
+remain separate gates.
+
+RoleBinding and ClusterRoleBinding role extraction now checks an explicit
+`roleRef.apiGroup` before creating BINDS_ROLE. Omitted and empty strings retain
+[Kubernetes RBAC defaulting](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/v1/defaults.go)
+to `rbac.authorization.k8s.io`; an explicit different group or non-string value,
+including null, returns an extraction error without a role edge. This mirrors
+the supported group in the
+[Kubernetes binding validation](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/validation/validation.go)
+after defaulting. Error messages contain no supplied group/key values. Existing
+subject extraction remains independent, so the authorization facet can expose
+the binding's missing-role notice instead of joining a same-name stored role.
+
+Portable callbacks cover RoleBinding-to-Role, RoleBinding-to-ClusterRole and
+ClusterRoleBinding-to-ClusterRole in member/standalone and both history modes.
+Invalid replay retains source/subject receipts and one source history event;
+write failure has separate gap evidence. Recovery tests use a fresh valid
+same-name UID replacement, respecting Kubernetes roleRef immutability, or an
+unchanged replay after write recovery. Exact account/binding/role paths retain
+binding namespace/scope and original/traversal direction, independently of the
+ordinary result direction and counts. Known gaps and old edges are not cleared.
+This adds no role/rule reads, watches, schema fields, permission evaluation or
+complete RBAC schema validation. Native Kubernetes/PostgreSQL and M4 acceptance
+remain separate gates.
+
+Subject extraction likewise checks `subjects[].apiGroup` for ServiceAccount,
+User and Group before creating BINDS_SUBJECT. Omitted/empty strings retain
+[Kubernetes subject defaulting](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/v1/defaults.go):
+ServiceAccount uses the empty core group; User/Group default to
+`rbac.authorization.k8s.io`. An explicit nonempty group must be the RBAC group
+for User/Group and is invalid for ServiceAccount, including the literal `core`.
+An unsupported group or non-string value, including null, preserves only the
+earlier valid subject prefix and returns a static extraction error before later
+subjects. It does not suppress independent BINDS_ROLE extraction or query any
+target objects. Error messages contain no supplied group/key values.
+
+Portable regressions cover all three subject kinds, namespace defaulting,
+member/standalone scope and registry error propagation. Core callback tests cover
+all three binding/role combinations and both history modes: invalid replay
+retains the prefix, role, source receipt and one history event while preventing
+a same-name core ServiceAccount from joining the binding. A valid new source
+version can update subjects without changing the binding UID or immutable
+roleRef; unchanged replay also recovers failed edge writes. Exact authorization
+paths stay scoped and do not traverse sibling subjects or foreign members.
+Extraction, persistence and older processing gaps remain distinct and sticky.
+Ordinary counts stay separate, and stored associations still do not establish
+effective permissions. Old edges are retained; this does not validate subject
+names or namespace syntax, introduce new watches or qualify native
+Kubernetes/PostgreSQL and M4 acceptance.
+
+ServiceAccount subject namespace handling now distinguishes wrong types from
+omitted/null/empty values. A non-null, non-string namespace returns a static
+extraction error with only the earlier valid subject prefix; it cannot fall back
+to the RoleBinding namespace. Omitted/null/empty values retain the existing
+[same-namespace RoleBinding resolution](https://github.com/kubernetes/kubernetes/blob/master/pkg/registry/rbac/validation/rule.go).
+The resolved namespace must be nonempty: ClusterRoleBinding subjects therefore
+report a missing-namespace error instead of emitting a namespace-less account
+edge, matching the
+[Kubernetes required-namespace check](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/validation/validation.go).
+Explicit string namespaces remain literal, including cross-namespace subjects;
+this does not validate namespace syntax or prove namespace/account existence.
+User/Group namespace handling is unchanged.
+
+Portable namespace regressions cover both binding kinds and member/standalone
+scope. Shared core callback tests retain source receipts, history deduplication,
+confirmed earlier subjects and independent roles, with distinct sticky
+extraction/persistence gaps. Same-name accounts in the binding namespace cannot
+fill malformed references. Valid subject updates retain binding UID/roleRef,
+while unchanged replay recovers failed writes. Exact authorization paths remain
+scoped, exclude sibling/foreign accounts and stay separate from ordinary counts.
+Old relationships are not deleted, and these local checks do not establish
+effective permissions, native Kubernetes/PostgreSQL or M4 acceptance.
+
+RBAC declaration shape checks now distinguish a non-null wrong container from
+an absent field. `subjects` must be an array, and each entry must be an object.
+A malformed entry, including null, returns the earlier valid subject prefix
+with an extraction error and stops before later entries. A non-null `roleRef`
+must be an object; strings, arrays and other scalar values return an extraction
+error instead of silently producing no role. Independent subject/role extraction
+continues, and errors include no input values or keys. Omitted/null top-level
+fields and empty subjects arrays keep their existing compatibility behavior.
+These checks do not constitute complete RBAC schema validation.
+
+Portable regressions cover both binding kinds, member/standalone scope, prefix
+retention and registry error propagation without target reads. Shared core
+callbacks verify committed source receipts/history, independent valid edges,
+distinct sticky gaps, unchanged replay and exact scoped authorization recovery.
+Subject recovery uses a valid new source version; immutable roleRef recovery
+uses a fresh same-name binding UID. Existing same-name accounts/roles do not fill
+the malformed associations. Ordinary counts remain separate, and old stored
+relationships are retained. Native Kubernetes/PostgreSQL, effective permissions
+and M4 acceptance remain unqualified by these local tests.
+
+Provided RBAC identity objects now require nonempty string `kind` and `name`.
+Missing, null, empty or wrong-typed identity fields return a static extraction
+error rather than silently skipping the entry; an empty roleRef object is
+therefore invalid. Subjects support only ServiceAccount, User and Group.
+RoleBinding roleRef supports Role and ClusterRole; ClusterRoleBinding supports
+only ClusterRole, following the
+[Kubernetes kind restrictions](https://github.com/kubernetes/kubernetes/blob/master/pkg/apis/rbac/validation/validation.go).
+Subject errors retain only the earlier confirmed prefix and stop later entries;
+independent role/subject extraction still runs. Group defaulting and valid
+namespace handling remain unchanged. Names are retained literally, without
+syntax validation or target existence/rule reads; this is not a complete RBAC
+schema validator or effective-permission evaluation.
+
+Portable identity regressions cover kind restrictions and required-field types,
+both binding kinds, member/standalone scope and both history modes. Core callback
+tests show that an unsupported Secret subject cannot materialize a Secret
+reference-only placeholder. Invalid replay retains committed receipts, history
+deduplication, independent edges and distinct sticky gaps. Valid subject updates
+and fresh same-name binding replacements for immutable roleRef recover exact
+scoped authorization paths, with ordinary counts kept separate. No Secret
+payload read or new watch is added. Previously stored edges/placeholders remain
+retained, and native Kubernetes/PostgreSQL and M4 acceptance are still separate.
 
 The facet reports `stored_edge_association`, `sourceVersionEvidence: unknown`,
 `effectivePermissions: not_evaluated`, and `observationCoverage: unknown`.
@@ -936,9 +1411,9 @@ stability. The built-in authorization facet keeps its independent requirements.
 Provider inventory identity, times, vocabulary, shape, bounds, uniqueness, and
 ownership are validated before graph reads and disclosure. The response uses
 the existing authorized cluster scope, five-second request budget, and combined
-2 MiB cap. The production wiring currently supplies standalone inventory only;
-federated members keep unavailable inventory instead of using the default
-cluster's APIs. Injected clients lacking contextual discovery stay unknown.
+2 MiB cap. This initial slice supplied standalone inventory only; the member
+worker follow-up below adds production federation wiring. Injected clients
+lacking contextual discovery stay unknown.
 
 Portable tests exercise the real client-go HTTP discovery path, cancellation,
 aggregated failures, the core/v1 404 fallback, malformed metadata, all served
@@ -1008,7 +1483,9 @@ The standalone Tier 2 profile with history enabled now samples retained event
 and snapshot-marker metadata at startup and every five minutes. Each read has
 a five-second context budget. Impact requests load the fixed-size cache; they
 do not issue event/marker queries or refresh expired checks. Disabled history,
-Tier 1, and federation do not start this worker. An observer owns one configured
+Tier 1, and federation do not start this worker in the original standalone
+slice; the member-retention follow-up below adds scoped federation workers.
+An observer owns one configured
 cluster and retention duration, starts once, and marks its cache stopped when
 its context ends.
 
@@ -1062,8 +1539,9 @@ inconsistent timestamps, stale claims, unknown states, and failed checks that
 carry old success data. Provider-owned records are copied before returning.
 Authorization still precedes all evidence access, and the response retains its
 five-second total deadline and 2 MiB cap. Named members cannot inherit this
-standalone cache; member-specific writer/retention integration and visibility
-of the existing legacy history routes remain pending.
+standalone cache. Member retention is added in the follow-up below;
+member-specific writer lifecycle qualification and visibility of the existing
+legacy history routes remain pending.
 
 Portable tests cover cache-only request reads, blocked queries, cancellation,
 shutdown, expiry, failed/invalid evidence, writer-gap independence, and API
@@ -1073,6 +1551,1458 @@ Secret exclusion, pruning, and returned ownership. Disposable PostgreSQL tests
 run the aggregate under a role allowed to read only timestamps, scope, and kind,
 with no payload/identity/count access. These checks establish retained-metadata
 behavior, not real-cluster continuity, recovery, performance, or release acceptance.
+
+### M2 API inventory completed-prefix retention follow-up
+
+Sequential API inventory now retains this round's validated descriptors from
+earlier successful version requests when a later request returns a non-404 error.
+If at least one descriptor was confirmed, the round is `partial`; without any
+confirmed descriptor, the existing `permission_denied` or `failed` classification
+remains. The partial state does not encode the failing request's specific error
+category. Rows accompanying an error are excluded. Discovery stops at that error
+without retry, fallback or another version request. Existing 404 handling and
+malformed metadata/limit qualification remain unchanged.
+
+Cancellation is checked immediately after group and version discovery returns,
+before handling a success or error. A cancelled or expired context returns a
+failed empty round, even when the dependency returns rows or a permission error.
+The worker's existing lifetime check still prevents publication after member
+removal/shutdown. Aggregated stale/failure metadata follows the separate retention
+rules below and can never qualify a complete round.
+
+Recording a new round replaces prior evidence. Only completed descriptors from
+the current round can survive its later failure; old successful rounds are not
+merged into fresh partial evidence. A subsequent complete round replaces the
+prefix normally. Partial descriptors remain available in the captured before/
+after inventory, but optional API assessments stay `unknown`, no unobserved-API
+list is inferred, and absence or complete collector coverage is not established.
+Raw errors and failed-response rows never enter the evidence or analysis response.
+Member scope, ownership and the existing freshness/stopped/limited checks remain.
+
+The five-minute interval, ten-second round deadline, 64-version and 256-descriptor
+limits are unchanged. This adds no worker, Kubernetes object read, graph query,
+public field or GraphStore method. Portable regressions cover each failure
+position, permission/transport errors, failed rows, cancellation during discovery,
+old-round replacement, member/standalone recording, real analysis capture and
+complete-round recovery. A loopback client-go HTTP test confirms retained metadata
+after a later 403 without extra requests or object reads. These local checks do
+not qualify real-cluster discovery reliability or M4 acceptance.
+
+### M2 aggregated API inventory partial retention follow-up
+
+When contextual aggregated discovery returns a failure set alongside resource
+metadata, inventory now retains valid descriptors already returned for advertised
+versions outside that set. It uses the same descriptor validation, scope handling,
+subresource exclusion and 256-descriptor cap as sequential discovery. Failure-set
+membership rejects a version even if its error value is nil or a resource list is
+also present. Missing/nil lists, mismatched versions, malformed rows and map entries
+outside the advertised version list do not become retained endpoint evidence.
+The round remains `partial` even if some returned versions are usable.
+
+This path makes no per-version request, fallback or retry. It only consumes the
+bounded metadata already returned by the discovery call. Cancelled calls and
+top-level discovery errors expose no resource descriptors. For mixed legacy/
+aggregated responses, client-go may return a nil resource table; that stays partial
+and empty without fetching replacements. A nil group list likewise supplies no
+advertisement proof. The complete/no-failure discovery path keeps its existing
+sequential resource requests.
+
+The pinned client-go v0.37.1 parser removes stale versions from advertised version
+lists, sometimes leaving empty groups. Such empty groups are skipped only when
+the validated failure set accounts for their group; unexplained empty groups and
+malformed/duplicate advertisements remain invalid. Core/v1, failed versions and
+healthy advertised versions share the existing 64-version round budget. Failure
+keys are validated and bounded before traversal, and cancellation is checked
+during metadata handling. Exceeding the version budget returns limited partial
+evidence without expanding work. The ten-second round deadline and five-minute
+schedule remain unchanged.
+
+Recorded partial descriptors remain visible in before/after analysis capture.
+They do not qualify optional API presence/absence, unobserved endpoint lists or
+complete collector coverage. Member scope, copied evidence, raw-error exclusion
+and old-round replacement remain in place. There is no new public field, worker,
+Kubernetes object read or GraphStore method.
+
+Portable tests cover healthy/stale overlap, stale-only groups, nil/missing and
+malformed metadata, failure-key validation, combined failure/healthy version caps,
+descriptor limits, cancellation, member/standalone recording and real analysis
+capture. Local client-go HTTP tests exercise aggregated v2, stale core versions
+and mixed legacy/aggregated responses, asserting only `/api` and `/apis` requests.
+These checks do not establish real-cluster discovery reliability or M4 acceptance.
+
+### M2 startup endpoint shape validation follow-up
+
+Startup selection now requires every canonical core endpoint to advertise the
+expected Kind and namespace scope as well as its exact resource name and existing
+list/watch verbs. Namespace, ClusterRole/ClusterRoleBinding, ClusterPolicy and
+ClusterPolicyReport endpoints are cluster scoped; the other canonical endpoints
+are namespaced. Unsupported optional endpoints are skipped, while unsupported
+required endpoints stop selection. This affects the existing standalone server
+and local-UI CLI startup filter; it does not add or broaden any watched endpoint.
+
+All requested targets, including custom GVRs, also require valid descriptor
+identity. Explicit row group/version fields must match the requested endpoint;
+omitted fields retain their existing discovery meaning. Missing/invalid Kind or
+duplicate target rows are errors, including identical duplicates and a duplicate
+after an initially supported row. These failures return no partial startup set,
+even if an earlier required endpoint passed. Unrelated rows and subresources do
+not expand the requested scope or invalidate a different target. Custom endpoints
+outside the canonical set keep shape compatibility without inferring a Kind or
+scope from the plural resource name.
+
+The existing group-version response cache still performs at most one discovery
+request per requested version, with the same 256-input cap, five-second per-query
+context and synchronous legacy-client compatibility. Cancellation is checked
+during target scanning. No retry, fallback, worker, Kubernetes object read, graph
+write, public field or GraphStore method is added. Passing this metadata filter
+does not establish effective authorization, successful list/watch delivery,
+complete collector coverage or optional API installation.
+
+Portable regressions independently specify all 25 canonical Kind/scope pairs,
+cover required/optional failure policy, malformed and duplicate metadata,
+same-version cache reuse, atomic selection failure and custom scope compatibility.
+Local client-go HTTP tests confirm exact metadata paths and one request per check
+without object reads. Existing injected discovery fixtures now carry realistic
+Kind/scope metadata instead of placeholder Kind values. These tests do not qualify
+real-cluster startup behavior, watch reliability or M4 acceptance.
+
+### M2 Gatekeeper template discovery identity follow-up
+
+The separate Gatekeeper ConstraintTemplate discovery gate now validates the
+entire returned target set before accepting an advertised API. It requires one
+`constrainttemplates` descriptor with the supported `ConstraintTemplate` Kind,
+cluster scope and list/watch verbs. Explicit row group/version fields must match
+`templates.gatekeeper.sh/v1`; omitted fields remain compatible. Duplicate targets
+are rejected even when identical, contradictory only in verbs/scope, or placed
+after an initially supported descriptor. Unrelated rows and subresources do not
+broaden the target or invalidate a supported descriptor.
+
+Ambiguous/inconsistent metadata returns the existing `failed` discovery state,
+not `advertised` or `not_advertised`. With a discovery client configured, the
+existing wait loop therefore does not start the ConstraintTemplate informer or
+its generated constraint collectors until a later supported response. The loop
+keeps its existing polling interval; each check still uses one contextual
+discovery request and the existing five-second deadline. Target scanning now
+also rechecks that context. Synchronous legacy clients retain their existing
+compatibility path without an abandoned goroutine. The no-client path remains
+unconditional observation with unknown API evidence, rather than advertisement
+proof.
+
+Each result retains its member/standalone source identity and sanitized evidence.
+A later valid check advances that discovery revision without clearing earlier
+list/watch, processing or persistence gaps. Failed checks do not clean retained
+graph data. No impact-query probe, extra watch, worker, Kubernetes object read,
+public field or GraphStore method is introduced. Advertisement remains distinct
+from installation, effective authorization and successful observation.
+
+Portable regressions cover both scopes, implicit/explicit identities, both
+conflict orders, late duplicates, unrelated metadata, recovery revisions and
+sticky persistence gaps. Fake-client lifecycle tests prove that ambiguous
+metadata starts no list/watch, that a later valid response enables the existing
+collectors, and shutdown still joins them. Local client-go HTTP tests assert one
+exact discovery read without object requests. Real-cluster Gatekeeper behavior
+and M4 acceptance remain pending.
+
+### M2 API inventory endpoint identity follow-up
+
+API inventory no longer retains an arbitrary first descriptor when a discovery
+response contains repeated top-level resource names for the same group/version.
+Every candidate for that endpoint is excluded, even for identical duplicates or
+when the other row has an invalid Kind or inconsistent explicit group/version.
+Both row orders receive the same qualification. Subresources remain excluded;
+the same resource name in another group/version is independent. Other valid
+descriptors remain available, and the round is partial rather than proof of API
+presence, absence or complete observation.
+
+Selection retains at most the remaining portion of the existing 256-descriptor
+budget. A second contextual scan of that returned list counts only selected
+names, saturating at two occurrences, then removes ambiguous candidates. This
+also detects duplicates after selection reaches the cap without retaining
+additional identities. A capped round stays limited, starts no later version
+request, and does not backfill slots freed by exclusions. Cancellation discards
+the round. The 64-version budget, ten-second round deadline and five-minute
+worker interval remain unchanged; no object read, fallback, hot-path query or
+public schema change is added.
+
+Portable regressions cover sequential and partial aggregated discovery, member
+and standalone scope, Kind/scope/verb/identity conflicts, invalid rows before or
+after valid rows, duplicate counts beyond a byte counter's range, subresources,
+independent names and late duplicates after the descriptor cap. Recorded impact
+captures preserve only the scoped current round and leave optional API
+assessments unknown for partial evidence. A later complete response replaces the
+capture without merging older rows. Local HTTP tests use the real client-go
+parser and assert exact discovery paths without object requests. These checks
+do not establish real-cluster discovery behavior or M4 acceptance.
+
+### M2 member-scoped API inventory follow-up
+
+The production federation path now creates a discovery client from each
+member's own kubeconfig, alongside its dynamic client. Each member informer
+owns the existing bounded API metadata worker and records inventory under its
+operator-selected cluster ID. It never substitutes the management cluster's
+inventory. Impact requests continue to authorize member scope before reading
+cached evidence; no discovery is added to the request path or wire schema.
+
+The worker retains the standalone limits: a ten-second round, five-minute
+polling interval, ten-minute evidence expiry, at most 64 group versions and
+256 endpoint descriptors. It reads discovery metadata only, never Secret
+objects or other object collections. A member's discovery denial or failure
+records its own sanitized qualification without stopping sibling informers.
+Missing contextual discovery remains unknown. Discovery success does not
+clear list/watch, handler, persistence, or other observation gaps.
+
+Removing a member, stopping the manager, or canceling its parent context
+cancels and joins the member worker before its informer returns. Removal and
+shutdown retain the member name until workers finish, preventing an old
+inventory worker from overlapping a same-name replacement. Reattachment then
+starts a new inventory generation. Existing dynamic-only factory users remain
+supported and do not construct a discovery client.
+
+Portable race tests exercise two member-specific loopback discovery endpoints,
+one advertised inventory and one denied member, cached reads without new
+requests, no object/Secret requests, management/hidden-scope isolation,
+removal and reattachment, failed/unsupported discovery, in-flight cancellation,
+and same-name exclusion while workers drain. These are local implementation
+tests, not real-cluster or M4 acceptance. This slice adds API inventory only;
+the next follow-up adds member CRD/Gatekeeper collection. Complete collector
+coverage, version equivalence, and per-member history qualification remain open.
+
+### M2 member-scoped CRD and Gatekeeper collection follow-up
+
+Production federation now gives each member one owned bundle containing its
+core/inventory informer, CRD discovery, and Gatekeeper discovery. All three use
+the member's own dynamic/discovery clients. CRD instances and constraints carry
+the member cluster ID before persistence or deletion, and CRD and Gatekeeper
+source evidence remains independent under that same member scope.
+
+The CRD collector retains served-version selection, CRD UID/shape reconciliation,
+per-type observation tokens and existing resource/edge retention semantics.
+Rego results are copied into the member's identity space; explicitly foreign
+edge endpoints are rejected with an extraction gap. The shared evaluation
+cache includes cluster ID, full API version, UID, resourceVersion, rule hash and
+entrypoint, so matching UID/version strings in different members or API
+representations cannot reuse one result.
+
+Gatekeeper uses that member's supported-template discovery check and existing
+dynamic Constraint registration. Extractor reads are restricted to the owning
+member even if an extractor omits or changes its filter; emitted edges must
+also stay in that member. Discovery absence/denial, failed list/watch, processing,
+extraction and write gaps keep their existing explicit qualifications. A
+permission failure does not become evidence of absence or stop another member.
+The worker never requests Secret objects. Existing loaded rule packs remain the
+configured startup set; this change does not add per-member pack acquisition.
+
+Member removal, parent cancellation and shutdown cancel and join the bundle's
+collectors, including running and retired dynamic informer callbacks. The member
+name is not available for reattachment until those callbacks finish. An early
+collector exit cancels and joins its own bundle and is recorded as a member
+error; it does not cancel sibling members. Shared dynamic metrics now sum the
+registered informers across members instead of being overwritten by each manager.
+No new discovery request enters the impact handler, and no v1alpha1 or impact
+wire-schema change is made.
+
+Portable race tests cover two same-name member datasets, CRD and Constraint
+identities/edges/deletes, independent source evidence, denied member discovery
+and lists, no Secret requests, scoped extractor reads, rejected foreign edges,
+cache separation, aggregate metrics and blocked-callback shutdown. The production
+member factory is exercised with fake Kubernetes clients, not a live cluster.
+These checks do not establish complete collector coverage, served-version
+equivalence, Gatekeeper policy effectiveness, missed-delete repair, member
+history continuity, or real-deployment/M4 acceptance.
+
+### M2 member-scoped missed-delete repair follow-up
+
+Production member bundles now reconcile retained graph rows for actively
+registered canonical core endpoints, selected CRD endpoints and generated
+Gatekeeper Constraint endpoints. After initial handler delivery, each endpoint
+runs an immediate repair round and repeats every five minutes. This repairs
+objects deleted while a member was detached/restarted and delete writes that
+failed after their informer callback had already been consumed. Ordinary local
+cache resync still does not relist Kubernetes or replay a missing delete.
+
+Each round captures candidates from the owning member and exact Kind/API version
+before requesting a fresh all-namespace list with empty `resourceVersion`, no
+selectors and page size 500. Every continuation page must succeed with the same
+nonempty snapshot version before any deletion is allowed. Incomplete, denied,
+expired, malformed or over-limit lists cannot authorize a sweep. Work is limited
+to one repair round at a time per member, a ten-second deadline including queue
+and delivery-lock waits, 10,000 candidates/listed objects and 32 pages. Repair
+does not change informer list/watch options, require new Kubernetes verbs, or
+run inside an impact request.
+
+Only missing names become deletion candidates. Same-name presence of any UID
+protects a replacement. Atomic store deletion compares member identity, API
+version, UID and resourceVersion with the captured candidate, then cascades
+incident edges in the same memory critical section or PostgreSQL/AGE transaction.
+Rows changed during the list are retained for a later round. GraphStore v2's
+method set and the public wire schemas remain unchanged; a store without the
+optional conditional-delete capability records a persistence gap and does not
+fall back to an unsafe read followed by unconditional deletion.
+
+Object callbacks and repair deletion share a member-local identity lock through
+the complete resource/extraction/edge-write pipeline. An in-flight extractor
+cannot write incident edges after repair deletes its resource. Other object
+identities remain independent, and lock entries are released after their last
+owner/waiter. Registration cancellation stops its repair work; bundle shutdown
+joins those workers before the member name is reusable. Core repair emits a
+delete notification/history enqueue only after a committed deletion, at repair
+detection time. A failed ordinary core delete no longer emits a success receipt.
+
+Failed repair reads, malformed lists and work limits retain a sticky processing
+gap; failed graph reads/deletes or unavailable conditional deletion retain a
+persistence gap. Successful later repair does not reset earlier coverage gaps,
+assert a drained watch backlog, or reconstruct the time of an upstream deletion.
+Unversioned/reference-only nodes, Secrets, different API versions, unregistered
+or retired endpoints, and other members are not swept. CRD/template disappearance
+and API unavailability alone are not proof that retained instances are absent.
+
+Portable race tests exercise the production member factory across reattachment,
+all three collector paths, member and standalone isolation, retained older API
+versions, complete pagination, page failure/expiry, malformed/limited lists,
+same-name replacement and concurrent updates, failed watch-delete repair on a
+scheduled round, success-only receipts, sticky gaps, bounded concurrency,
+blocked extraction and cancellation/join. Both store backends implement the
+same conditional-delete contract tests; PostgreSQL/AGE execution requires the
+separate container-backed test environment. These local tests do not establish
+real-cluster reliability, cross-version or retired-endpoint cleanup, complete
+collector coverage, member history continuity, or M4 acceptance.
+
+### M2 member-scoped retained history metadata follow-up
+
+The Tier 2 federation profile with history enabled now gives each member bundle
+an independent retained-metadata observer. Construction alone neither registers
+a scope nor queries history. Starting the bundle publishes a new empty cache
+for its exact member name, samples event/marker bounds, and repeats every five
+minutes. Member removal and bundle shutdown cancel and join the observer,
+including an in-flight query. The same name stays reserved until that lifetime
+has returned; reattachment starts with `not_queried` evidence rather than the
+previous member cache. A stopped observation retains its stopped flag, checked
+window and freshness qualification. It does not become current on request reads.
+
+All observers use the existing optional `HistoryBoundsReader` capability with
+the named member and configured retention window. At most two member metadata
+reads run concurrently; waiting for that shared budget is included in the
+existing five-second read deadline. The registry retains at most 128 distinct
+member scopes, including stopped entries. Same-name replacement reuses its
+slot. An over-capacity member remains running but its uncached history metadata
+is `unsupported`, without a query or eviction of another member's evidence.
+Missing scoped storage capability is also `unsupported`; there is no fallback
+to unlabelled/global event or marker APIs.
+
+Impact requests read a fixed-size owned cache through an immutable published
+index. They do not wait for a membership mutation or running query, register a
+new observer, refresh stale evidence, or read the global writer counters.
+Authorization and attached-member checks still precede all impact evidence
+access. A member's `retentionEvidence.bounds.clusterId` must match the selected
+scope, and window, retention, durability, timestamp and freshness checks remain
+mandatory. Failed queries clear previous successful bounds; a failed or blocked
+member cannot supply evidence for another member.
+
+The existing `availability.evidence.history` shape now permits exact-member
+retention metadata independently of recording qualification. With these caches,
+`retentionNanos` is the configured window and `retainedData` reflects the cached
+metadata state. In this original metadata-only slice the parent history state
+remains `unsupported` with reason
+`history_cluster_scope_unavailable`, coverage remains `unknown`, and the writer
+observation-start timestamp remains zero. These fields mean that member-level
+recording lifecycle is not qualified; successfully reading retained timestamps
+does not qualify the shared writer, reset a recording gap, establish complete
+history or verify a recovery point. Existing unlabelled markers remain excluded
+from named-member reads. Legacy history-route visibility remains separate work.
+
+Portable race tests cover member/standalone/hidden-scope separation, Secret
+exclusion, bounds and payload/count non-disclosure, failed/unsupported and stale
+caches, fresh reattachment, duplicate exclusion while a query drains, cancellation
+of queued reads, bounded concurrent reads and registry capacity. Actual member
+factory tests verify ownership and joins. Actual impact-handler tests verify
+allowed responses, denied requests before cache access and repeated cache reads
+without database queries. These local checks do not establish deployed Tier 2
+performance, member writer loss accounting, continuous retained history,
+restorable snapshots, legacy history-route authorization or M4 acceptance.
+
+### M2 member-scoped recording lifecycle and loss follow-up
+
+Production Tier 2 members with history enabled now bind their core informer
+history sink to a member recording session before starting collectors. Initial
+core delivery, core updates/deletes and committed core missed-delete repair
+events use that session. The session observes its own start/cancellation/close,
+queued and in-flight delivery, queue loss and exhausted-write loss. It does not
+infer a member lifecycle or loss from global writer metrics. This slice initially
+covered core events only; the following dynamic-history follow-up extends its
+member ingress. No complete history scope is asserted.
+
+The existing shared queue, configured worker count and per-event retry/backoff
+budget remain unchanged. A queue item carries its exact recording token. When
+overflow discards the oldest item, queue loss is recorded on the discarded
+item's member, rather than the incoming event's member. A rejected incoming
+event or exhausted store-write budget marks its own token. Foreign-cluster
+events are rejected, not silently retagged. Queued events remain metadata-only;
+the recording registry retains no object names, UIDs, namespaces or payloads.
+Global Prometheus counters retain their previous aggregate meaning.
+
+Bundle cancellation marks its recording session stopped. After collectors have
+joined, closing the session stops accepting delivery and waits for its own
+queued/in-flight writes. It neither closes the shared writer nor stops another
+member's session. The member name remains reserved until these writes finish,
+including a blocked sink that ignores cancellation. Same-name replacement gets
+a new start interval and pending-delivery count while inheriting previously
+known loss flags. Obsolete closed tokens cannot enqueue into or mutate the new
+session. Later successful writes, retained metadata reads and reattachment do
+not reset a known history gap.
+
+At most 128 member recording scopes, including stopped entries, retain qualified
+state in the process. Same-name replacement reuses the entry. Beyond that cap,
+events may still use the shared queue, but member recording remains explicitly
+unsupported rather than allocating an unbounded history registry or stopping
+graph collection. Legacy direct writer calls without a member token cannot
+qualify a member's lifecycle or loss. Disabled history and Tier 1 remain outside
+this feature.
+
+The existing impact history states now describe registered member sessions:
+`recording` means the member sink and shared writer are running; `degraded`
+records that member's known loss or unavailable storage; `stopped` retains its
+shutdown and loss qualification. `history_delivery_pending` includes its
+in-flight writes even when the shared queue appears empty. History coverage
+remains `unknown`, or `partial` for known delivery loss, never complete. Without
+a registered recording session the previous unsupported member qualification
+remains. Retained metadata is independent in all of these states, and exact
+member/window/durability/freshness validation remains mandatory. No v1alpha1,
+GraphStore v2 method-set or public wire-shape change is made.
+
+The writer now also serializes queue closure against non-blocking sends and
+ignores duplicate Start calls, preserving the configured worker budget and
+preventing a concurrent Stop/Enqueue from sending to a closed channel. Portable
+race tests exercise overflow ownership, scoped retry exhaustion, pending writes,
+foreign-event rejection, sticky loss on reattachment, stale-token exclusion,
+capacity, writer cancellation, concurrent shutdown and worker-budget preservation.
+Production member-factory and actual impact-handler tests verify ingress binding,
+per-member drain/name exclusion, independent retained metadata and cache-only
+authorized disclosure. These establish local behavior, not deployed write
+reliability, complete dynamic-source history, continuous retention, verified
+recovery points, legacy history-route authorization or M4 acceptance.
+
+### M2 member dynamic-source history follow-up
+
+Production member bundles now supply one shared `ResourceHistory` to core,
+CRD-instance and Gatekeeper-constraint collectors, bound to the member recording
+token described above. A collector holds its existing member resource lock
+through graph receipt lookup, resource persistence, metadata enqueue and edge
+extraction. The graph's current UID/resourceVersion is the receipt; no extra
+object cache, queue, worker, Kubernetes API call or retry policy is introduced.
+All database work remains in background collection rather than the impact query
+path. GraphStore v2 and public response schemas remain unchanged.
+
+Only successful graph writes with verifiable UID/version identity can enqueue
+an add/update. A receipt-read failure does not establish a baseline and therefore
+stops that delivery with a persistence gap. A failed resource write does not
+advance the receipt or enqueue history. Unchanged cache replay and overlapping
+collectors observing the same current UID/version do not write another resource
+or event, while edge extraction still runs to repair target-arrival or earlier
+edge-write failures. A served-version switch updates the graph representation
+without manufacturing an object change. An Add callback for a previously stored
+UID with a new resourceVersion records an update; replacing a known UID records
+an add. Without a stored baseline the callback supplies the observation type;
+none of these events prove the Kubernetes creation time.
+
+Watch deletes read the stored incarnation and use the existing optional atomic
+`ResourceVersionDeleter` capability. Both stores already implement it. A failed
+read/delete enqueues no event; absence or an old-UID tombstone is a no-op, so a
+same-name replacement survives. A tombstone for the same UID may have an older
+resourceVersion or served version; successful deletion records the last stored
+receipt. Both dynamic collectors also enqueue deletes after their existing
+missed-delete workers commit under that lock. Overlapping repair/watch deletes
+therefore record only the successful removal. Retired CRD/template registrations
+retain graph rows and do not imply deletion. Unversioned objects can still be
+stored and extracted, but leave a processing gap and produce no history event;
+unverifiable deletes retain the row for future qualified repair.
+
+Events carry only member/resource identity metadata, never specs or status.
+They reuse the same bounded queue, workers, retry budget, member pending/loss
+accounting and drain/name-reservation lifecycle. The recording registry still
+contains no object identities. An unchanged object retained through member
+reattachment does not produce a fresh creation event. This does not establish
+that its earlier history was delivered: graph persistence and history enqueue
+are separate, and retained metadata cannot erase known loss.
+
+These receipts compare only the current graph version. Kubernetes resourceVersions
+are opaque; separate watches may observe different versions out of order. This
+feature neither sorts those versions nor retains a complete historical deduplication
+ledger. History coverage remains unknown, or partial with known delivery loss.
+Standalone dynamic collectors, continuous retained history, recovery verification,
+legacy history-route authorization and M4 cluster acceptance remain outside this
+slice. Portable tests cover write/read/delete failures, replay extraction,
+served-version changes, UID replacement and stale tombstones, concurrent shared
+receipts, actual production member-factory overlap, CRD/Gatekeeper repair history,
+member isolation, retirement without fabricated deletes and same-name reattachment.
+They establish local source/synthetic behavior, not deployed Tier 2 qualification.
+
+### M2 standalone dynamic-source history follow-up
+
+History-enabled standalone startup now constructs core, CRD-instance and
+Gatekeeper collectors through one production component factory. They share an
+explicit `NewStandaloneResourceHistory` binding, the existing standalone writer
+and one callback-lock coordinator. Empty cluster identity selects only
+unlabelled graph rows; passing an empty member name to `NewResourceHistory`
+remains invalid. Named rows, even with the same UID, are rejected by that binding
+and are neither modified nor assigned standalone history. Legacy unlabelled
+records retain their unknown provenance; no named-member attribution is inferred.
+
+The writer is supplied only when `runWatch` has enabled Tier 2 snapshots. With
+history disabled or on Tier 1, dynamic collectors keep their previous graph-only
+path and no new history sink or coordinator is allocated. Memory-backed tests
+are fixtures, not a Tier 1 snapshot feature. No member-recording session is
+registered for empty scope: the existing standalone writer lifecycle, queue,
+worker/retry budget, pending/loss accounting and shutdown drain remain in use.
+All three component lifetimes are joined before the writer is stopped.
+
+Callbacks hold the shared resource lock through current graph-receipt lookup,
+resource write, metadata enqueue and extraction. Unchanged UID/resourceVersion
+replays do not write another event; extraction still runs. Served-version
+representation changes, UID replacement, read/write failures and cancellation
+follow the same receipt contract as named members. Watch deletes use the stored
+incarnation and optional atomic `ResourceVersionDeleter`; duplicate/old-UID
+callbacks do not delete a replacement. Missing conditional-delete capability
+fails closed without unconditional fallback. Events contain identity metadata,
+not specs/status or Secret contents. These observations do not establish an
+upstream creation timestamp or complete retained history.
+
+At this history-only stage, the existing `MemberRepair` coordinator supplies
+locks in this scope, but its `Run` rejects empty member identity before listing,
+scheduling or repair work. The standalone repair follow-up below adds explicit
+standalone binding rather than treating an empty member name as authorization.
+This history-only slice introduces no new watch, fresh list, Kubernetes write,
+query-time database work, tombstone ledger or background worker pool. Cleanup
+across retired APIs remains separate work. Independent
+watches can still deliver out of order; graph receipts do not provide global
+ordering or historical deduplication, and a late upsert can temporarily restore
+a deleted node. Writer or observation gaps are not cleared by a successful replay.
+
+Portable contract tests now exercise named and standalone scopes for receipt
+failures, replays, concurrent overlap, served-version changes, UID replacements,
+tombstones and metadata-only events. The actual production-factory fixture runs
+history enabled and disabled, confirms unchanged initial List/Watch counts,
+records the expected adds/updates/delete, recreates the collectors against
+retained graph receipts and reads the result through the scoped event reader.
+The same-UID named row is preserved and disabled history produces no events.
+These are fake-client/in-memory race checks, not PostgreSQL deployment, durable
+crash recovery, continuous-history or real-cluster acceptance evidence.
+
+### M2 standalone missed-delete repair follow-up
+
+The production standalone factory now shares one `NewStandaloneRepair`
+coordinator across core, CRD-instance and Gatekeeper collectors, including
+overlapping registrations. Its explicit standalone binding accepts only
+unlabelled graph rows; `NewMemberRepair` with an empty member name still cannot
+run repair. Named-member rows are excluded both by the scoped store read and
+the returned-row check. No legacy provenance is inferred.
+
+Repair is independent of Tier 2 history: Tier 1 and history-disabled collectors
+also repair their current graph without enabling snapshots. With history enabled,
+the same standalone writer receives a metadata-only detection-time delete only
+after committed conditional removal. Overlapping collectors and restarts cannot
+emit another repair delete for an already absent row. This is not a Kubernetes
+deletion timestamp, a continuous history guarantee, or a recovery point.
+
+Each active registration waits for initial handler delivery before its first
+round, then runs every five minutes. All standalone collectors share one repair
+slot. Each round keeps the existing ten-second timeout, 500-item pages,
+10,000-item candidate/list bounds and 32-page ceiling. Repair uses fresh,
+unfiltered list snapshots and validates every page before any deletion. Denied,
+failed, inconsistent, malformed, limited, cancelled or incomplete lists never
+authorize removal. Secret endpoints are excluded. No watches, Kubernetes writes,
+analysis-time database work, writer queues or worker pools are added.
+
+Candidate rows are captured before listing and must match the active kind and
+group/version and carry a valid UID/version receipt. Conditional deletion
+compares that receipt atomically under the shared callback lock, preserves any
+same-name live object or changed stored receipt, and cascades incident edges.
+Missing atomic-store capability fails closed. Collectors join their repair
+workers on shutdown; cancelled rounds cannot delete retained candidates. A
+successful round never clears sticky observation or writer gaps. Unversioned
+legacy rows, retired endpoints and other API versions remain untouched.
+Independent-watch ordering and historical deduplication remain unqualified.
+
+Portable race tests cover pagination/failures, member isolation, receipt changes,
+metadata-only committed deletes, callback/extraction serialization, initial-sync
+and shutdown joining. Production-factory fake-client tests exercise core, CRD
+and Gatekeeper repair with history on/off, overlapping constraint sources and
+restart, while preserving retired/unversioned/member rows and read-only API
+requests. These checks do not establish deployed PostgreSQL behavior, actual
+Kubernetes list/watch reliability, continuous history or M4 acceptance.
+
+### M2 still-served version repair follow-up
+
+CRD collectors now supply the selected registration's current served-version set
+to the existing shared repair coordinator. Retained rows at a version whose
+watch was retired can be checked only while that version is still explicitly
+served by the current CRD. Each retained representation is compared against a
+fresh, complete list from its own exact group/version/resource, kind and current
+scope. Retained rows from a different scope are preserved with a processing gap;
+wrong-scope list items invalidate the round. An
+empty selected-version list is never evidence that another version is empty.
+Endpoint snapshot versions are validated independently, not treated as one
+cross-version Kubernetes transaction. This does not establish conversion
+equivalence, CRD-incarnation provenance for legacy rows, or a historical ledger.
+
+The selected endpoint remains the only CRD instance watch. The repair round
+captures one owned, sorted served-version snapshot; changing only that set does
+not restart the selected watch or reset its coverage token. Its metadata lifetime
+cancels an in-flight round when the set changes. Registration replacement and
+retirement cancel the old repair lifetime; shutdown joins the existing workers.
+The next scheduled round reads the updated set; no extra repair timer or immediate
+retry is added.
+
+All endpoints share the existing one-slot, ten-second round deadline, 10,000
+candidate and listed-item limits and 32-page ceiling. At most 32 served versions
+are accepted per round. Invalid, duplicate, missing-selected or oversized sets
+fail closed with a processing gap. Only versions with valid retained candidates
+are listed. Every required endpoint and continuation page must validate before
+any deletion is attempted; a 404, denied/failed/partial response or total work
+limit retains all candidates for that round. Existing atomic receipt checks,
+callback locks, incident-edge cascading and committed metadata-only history
+receipts are unchanged. Failures qualify the active registration; auxiliary
+lists do not make a stopped/unregistered version's watch evidence healthy.
+
+This applies to member and explicitly bound standalone CRD collectors, with
+history enabled or disabled. Core and Gatekeeper-specific workers keep their
+existing single-endpoint repair; a generated Constraint CRD seen by the CRD
+collector follows the CRD path. No Secret access, Kubernetes write, store schema,
+public API, GraphStore v2 method, history queue or worker pool is added.
+
+Fully unserved/deleted CRDs, stopped templates, retired kinds/scopes and versions
+not declared served remain outside automatic cleanup. Disappearance or API
+failure never fabricates object deletion or clears existing gaps. Portable
+tests cover independent old/new snapshots, scope isolation, combined budgets,
+all-lists-before-delete behavior, changed receipts, committed history, selected
+watch preservation and mid-list version revocation. These fake-client/in-memory
+race checks do not establish real-cluster or deployed PostgreSQL acceptance.
+
+### M2 fully retired source retention and invalidation follow-up
+
+The accepted retirement policy is **retain and qualify, never infer deletion**.
+Stopping a collector, removing a CRD/template, receiving an API 404 or ageing a
+cache does not remove graph resources/incident edges, append deletion events or
+clear known observation/history loss. There is no TTL garbage collection for
+these records. Resumed, explicitly served endpoints may still prove absence
+through the bounded fresh-list repair above; otherwise data stays retained.
+
+New CRD-instance and Gatekeeper writes can carry a private last-writer receipt:
+exact member (or explicitly unlabelled standalone scope), source, metadata owner
+name/UID, endpoint/kind/scope, random registration token, and object UID/version.
+It is stamped only by the matching live type token, not from Kubernetes payload
+fields, labels, annotations or same-name inference. The receipt is stored with
+the resource in the same memory operation or PostgreSQL/AGE transaction. Tier 2
+uses an optional private JSONB-envelope field, without a new table or migration.
+The receipt is not Kubernetes ownership, a complete source ledger, or proof of
+current object existence. Legacy records are never backfilled by endpoint name.
+
+| Qualification | Meaning and policy |
+| --- | --- |
+| `registered` | The stored writer receipt matches the current registration. Watch health, per-object freshness and historical completeness still require their separate evidence. |
+| `retired` | That exact writer registration is known stopped. Keep the graph data and qualify its observation; do not manufacture an object deletion. |
+| `replaced` | The current endpoint belongs to another registration/owner/shape. The new lifetime cannot adopt the old receipt without fresh object delivery. |
+| `unknown` | Receipt absent, invalid, foreign, ambiguous, capacity-limited or lifecycle knowledge unavailable. Retain data without attributing an owner. |
+
+Lifecycle metadata shares the existing per-cluster/source/type bounds; no
+per-object side ledger, worker, timer or queue is added. It is process-local.
+After restart, stored Tier 2 receipts survive but lifecycle knowledge is unknown
+until registration/delivery supplies new evidence. Even a same-name/same-UID
+owner receives a new registration token. A fresh callback can refresh the private
+receipt for an unchanged object without creating another resource-history event.
+Overlapping sources do not retag an unchanged receipt to erase its last writer's
+limitations; this is not all-source delivery accounting. Source replacement and
+bundle shutdown keep the existing shared callback locks and worker joining.
+
+Gatekeeper registrations now bind template UID when available. A template
+kind/UID change retires its stored old endpoint; old-UID or unidentified
+tombstones cannot retire a proven replacement. A matching template UID resolves
+the stored endpoint even if the deleted spec is obsolete. Missing legacy owner
+identity may keep collection working but cannot attest provenance or replace an
+explicitly owned endpoint.
+
+Gatekeeper callbacks recheck registration cancellation after acquiring the shared
+resource lock, after resource persistence and extraction, and before each edge
+write. Template replacement, retirement and shutdown therefore stop subsequent
+callback stages when an in-flight dependency returns after cancellation. An
+already-started store operation can still commit if it ignores cancellation;
+there is no rollback or compensating deletion of retained data. The replacement
+callback uses the same resource lock and commits its own receipt after the old
+callback drains. Cancellation errors do not create new persistence/extraction
+gaps or clear prior gaps; actual non-cancellation failures retain their existing
+gap reporting. Object history still describes committed writes, not metadata
+retirement or a guaranteed upstream event order.
+
+Fake-client manager regressions block resource persistence, extraction or the
+first edge write across replacement, retirement and shutdown. They cover named
+member and standalone scope with history enabled/disabled, distinguish committed
+in-flight edges from forbidden subsequent writes, retain resources and source
+qualification, and join callbacks at shutdown. Separate cancellation-error
+regressions cover resource/edge persistence, extraction and deletion while
+preserving existing loss evidence and committed-history counts. These are local
+race checks, not real-cluster or deployed storage acceptance.
+
+The private receipt never enters resource JSON, v1alpha1, portable graph exports,
+history payloads or Secret references. Invalid private storage metadata degrades
+to unknown without hiding the underlying resource. Impact projections retain a
+bounded internal receipt; PostgreSQL selects only its allowlisted scalar fields
+and charges it to the existing projection byte budget. Conditional graph deletion
+also compares the stored writer receipt, so an older repair candidate cannot
+delete a freshly observed registration with otherwise unchanged UID/version.
+GraphStore v2 and public response schemas remain unchanged.
+
+For the root and returned resources, observed impact analysis checks cached
+source lifetimes before/after its existing immutable graph read. It retains the
+same nodes/paths and adds `retained_source_unknown`, `retained_source_retired`,
+`retained_source_replaced` or `retained_source_window_unstable` qualifications
+where applicable. The API/client/text/JSON/HTML path preserves these limitations
+without exposing owner identities or making another query. This is not a global
+retained-object inventory or a distributed transaction. Core coverage keeps its
+existing static requirements; Secrets remain reference-only.
+
+Portable tests exercise source retirement/replacement/restart, metadata-only
+receipt refresh, member isolation, unowned legacy data, scope/UID/version
+mismatch, projection budgets, invalid private-envelope decoding, template
+handoff and late tombstones, and actual API/client/report preservation. Shared
+memory/PostgreSQL contracts and PostgreSQL scalar-projection checks are included;
+container-backed SQL execution remains a separate deployment qualification.
+These local checks do not establish real-cluster reliability, continuous history,
+verified recovery or M4 acceptance.
+
+### M2 overlapping-source receipt parity follow-up
+
+CRD and Gatekeeper callbacks now use the same stored-writer replay decision with
+history enabled or disabled. An unchanged object delivered by the other source
+does not overwrite its stored receipt, adopt retired data or clear the original
+writer's qualification. Missing/invalid incoming origin cannot erase a valid
+receipt for that same member, identity, API version, UID and opaque version.
+Fresh delivery by a new registration of the same source can refresh its receipt;
+an actual UID/version or API-representation change can commit a new writer.
+Equality checks do not order resourceVersions or establish version equivalence.
+
+History-disabled versioned dynamic callbacks add one stored-resource point read
+under the existing shared resource lock before deciding whether to write.
+Receipt lookup failure stops that delivery's write/extraction and records the
+existing persistence gap, without an unconditional-write fallback or automatic
+retry. Cancellation after a context-ignoring lookup also stops the write. Both
+modes continue edge extraction for a successful unchanged replay, allowing lost
+relationships to be recovered without retagging the resource. Unversioned data
+still cannot attest origin. No additional Kubernetes request, watch, background
+worker, per-object side cache, GraphStore method or public field is introduced.
+
+Fake-client integrations run both collector orders in named-member and standalone
+scopes, with history on/off. They verify retirement, another source's restart,
+same-source receipt refresh, replayed edge recovery, actual version changes,
+foreign-member retention and metadata-only history. Portable receipt/failure
+tests cover legacy and invalid origin, UID/API-version changes, failed reads and
+writes, recovery on later delivery and cancellation. Deployed PostgreSQL cost
+and real-cluster acceptance remain separate M4 work; local tests do not qualify
+either.
+
+### M2 core replay source-receipt preservation follow-up
+
+Core collection can observe the same optional API endpoints as CRD collection,
+including Kyverno policies. A new core informer or a changed local cache entry
+with history disabled now consults the existing stored-writer receipt before
+deciding whether to write. An unchanged member/identity/API-version/UID/version
+observation preserves that writer, including registered, retired or replaced
+private receipts and unowned legacy rows. Core delivery alone cannot adopt or
+erase a dynamic registration for the same observed version. Actual UID/version
+changes can still commit a new unqualified core observation; opaque versions
+are compared for equality, never ordered across watches.
+
+This reuses the existing `UpsertObservedResource` decision under the scope's
+shared resource lock. A versioned cold or mismatched cache entry adds one point
+read; unversioned writes keep their existing behavior. Successful stored replay
+can populate the existing core cache without a resource write or resource-change
+event. Unchanged cache hits continue to skip resource reads and writes while
+still re-extracting edges. That fast path is not a fresh proof of the stored row
+or a mechanism for repairing external storage deletion. No source-side cache,
+Kubernetes request, worker, public field or GraphStore method is added.
+
+Receipt lookup failure has no unconditional-write fallback and does not mark the
+local version successful. Cancellation after a context-ignoring lookup stops
+write/extraction and creates no false shutdown gap. Active receipt read/write
+failures retain data and record the persistence gap. A later normal delivery can
+commit the fresh observation, without clearing historical gaps. Notifications
+and the legacy snapshot sink follow committed graph/resource changes; replayed
+edges can recover after informer recreation without duplicate resource events.
+
+Portable tests cover both scope/history modes, live/retired/replaced/unknown
+source qualification, cold/repeated/recreated core delivery, exact point-read
+counts, edge recovery, foreign-member preservation, fresh UID/version changes,
+read/write failure, cancellation and later recovery. The existing 10K unchanged
+resync regression remains required. Deployed point-read cost, real-cluster
+behavior and M4 acceptance remain unqualified.
+
+### M2 history-independent upsert identity qualification follow-up
+
+Core, CRD and Gatekeeper upserts now apply the existing minimum observed-version
+identity check after successful persistence while the callback is still active,
+regardless of the history setting. A stored observation missing UID,
+resourceVersion or apiVersion records a processing gap instead of leaving that
+type qualified as initialized with no known gap. Such graph rows and their
+existing derived-edge behavior remain retained; the row cannot attest a private
+writer origin. This is minimum-field qualification, not a new parser for all
+Kubernetes identity syntax or proof of complete observation.
+
+An uncommitted write failure records the persistence gap. A dependency returning
+after cancellation does not start extraction or add a new identity-processing
+gap for shutdown, even if its in-flight resource write committed. Existing gaps
+and committed valid-version history remain intact. Successful later delivery
+does not clear earlier processing, persistence or extraction gaps.
+
+Core's successful-version cache and legacy snapshot sink now require that same
+minimum identity. A row missing apiVersion cannot poison the UID/version cache
+and suppress a later complete delivery with the same UID/version. The incomplete
+observation emits no qualified resource-history event. The shared history writer
+also requires the previous row to have minimum identity before using it to
+suppress duplicate history. A fresh complete observation following an incomplete
+row can therefore record its first qualified version once; subsequent unchanged
+replay remains deduplicated. Valid cross-version representation changes keep
+their existing history semantics.
+
+Portable callback matrices exercise all three pipelines, member/standalone
+scopes, both history modes, complete and missing-field observations, active and
+failed writes, cancellation before failure and cancellation with commit. They
+verify source receipts, coverage classification, core cache eligibility, qualified
+history, later identity/edge recovery and foreign-row retention. The change reuses
+existing persistence and receipt reads; it adds no Kubernetes request, watch,
+worker, storage capability, GraphStore method or public API field. Real-cluster
+and deployed PostgreSQL behavior and M4 remain unqualified.
+
+### M2 watch-deletion receipt parity follow-up
+
+Core, CRD-instance and Gatekeeper object-delete callbacks now share conditional
+deletion with history enabled or disabled. An old-UID tombstone cannot remove a
+same-name replacement or its incident edges. An actual deletion notification
+for the same member, namespace, kind, name, UID and API group may carry an older
+opaque version or another representation: the atomic operation compares
+the complete current stored receipt, including API version and private writer
+origin. Concurrent UID/version/origin refresh makes that operation a no-op.
+This does not infer version equivalence, metadata retirement or endpoint absence
+as object deletion.
+
+Missing callback UID/version/API-version fields retain data and record the
+existing processing gap. Unverifiable stored identity and API-group mismatches
+also retain data. Receipt read/conditional-write failures or
+missing optional `ResourceVersionDeleter` capability retain data and record the
+existing persistence gap; there is no unconditional delete fallback or automatic
+retry. Source retirement still keeps data. Core callbacks forget only the
+matching UID's successful-write marker, including when another collector already
+removed the row; an old UID cannot invalidate a replacement's marker. Delete
+broadcasts and configured metadata-only snapshot events follow committed
+deletion only. Events use the committed stored version, not a delayed
+tombstone's version; duplicate/uncommitted notifications emit no deletion event.
+Cancellation before mutation prevents work, while cancellation after a confirmed
+commit does not erase that committed event or notification.
+
+Portable regressions cover all three callback paths, both history modes and
+named-member/standalone scope, including stale/duplicate tombstones, older
+representations, concurrent receipt refresh, missing capability, read/write
+failure, cancellation, scoped retention and edge cascading. Fake fixtures carry
+UID/version evidence, and store test adapters forward conditional deletion.
+Short-mode discovery tests explicitly skip envtest control-plane startup. These
+local tests do not establish deployed PostgreSQL behavior or M4 acceptance. No
+Kubernetes mutation, extra watch, background worker, GraphStore v2 method or
+public API field is added.
+
+### M2 core callback cancellation and committed notification follow-up
+
+Core upsert callbacks now recheck cancellation at entry, after acquiring the
+scope/resource lock, after resource persistence and extraction, and before each
+Secret-reference placeholder or edge write. Member removal and shutdown stop
+subsequent callback stages when a dependency returns after cancellation. This
+also applies to unchanged replay, which still re-extracts relationships while
+active. No additional Kubernetes request, watch, cache or worker is introduced.
+
+A dependency already in flight can ignore cancellation and commit. Keep that
+resource/placeholder/edge and its confirmed resource receipt/history; do not
+roll it back or infer deletion. An upsert callback notifies clients once if it
+confirmed a resource, reference-placeholder or edge write, including when it
+then exits on cancellation. An unchanged replay with only failed edge writes
+does not send a false update notification; later confirmed edge recovery can
+notify without manufacturing resource history. Notifications remain best effort.
+
+Cancellation errors do not create persistence/extraction gaps or clear earlier
+loss evidence. Active non-cancellation failures retain their existing gap
+reporting, and successful partial extraction results still reach persistence.
+Secret placeholders remain reference-only; this change does not watch/read
+Secret objects or add Secret history payloads. Fake-client manager regressions
+block all four stages, prove shutdown joins callbacks, and cover member and
+standalone scopes, both history modes and replay. Portable failure tests cover
+pre-cancelled entry, cancellation errors, sticky gaps, committed notifications
+and active partial extraction. These offline tests do not qualify real-cluster
+reliability, deployed PostgreSQL cancellation or M4 acceptance.
+
+### M2 builtin extraction cancellation boundary follow-up
+
+The shared builtin extractor registry now checks its parent context before each
+extractor, after each dependency returns and before exposing the final batch.
+Cancellation or an expired deadline returns the parent's context error and no
+edges, including when an earlier extractor succeeded or failed with usable
+partial results. Already-started dependencies may still return late; the
+registry does not launch another extractor or expose their late output. Empty
+registries also preserve parent cancellation rather than reporting success.
+
+An extractor error under a still-active parent remains an ordinary partial
+failure: keep its usable edges, run later extractors and return the first
+error. This includes a dependency's own cancellation/deadline error when the
+registry's parent remains active. There is no detached goroutine, global lock,
+retry, new watch or additional query. Concurrent callers retain independent
+contexts, so an old cancelled callback does not stop a healthy successor.
+
+Core and Gatekeeper callbacks still keep resources, private writer receipts and
+metadata-only history committed before cancellation. Cancelled registry output
+cannot start Secret-reference placeholder or edge writes. Existing loss
+evidence remains sticky; teardown does not create a new extraction/persistence
+gap. Later active delivery re-extracts relationships without duplicating
+unchanged resource history or adopting a new stored writer. The registry change
+does not alter active partial-result persistence or the whole-batch scope guard.
+
+Portable tests cover pre-cancelled and expired entry, every extractor position,
+late success/error output, earlier partial failures, empty registries, real
+builtin Service selection and phase-controlled concurrent callers. Core and
+Gatekeeper callback regressions use the real registry across member/standalone
+scope and both history modes, checking retained data, replay and scoped reads.
+These checks do not establish real-cluster shutdown or deployed PostgreSQL/M4
+acceptance.
+
+### M2 shared Rego evaluation cancellation and failure handoff follow-up
+
+The existing rule-evaluation cache now waits for a shared evaluation through a
+completion channel or the waiting caller's own context. A cancelled waiter can
+return while the first evaluator remains blocked; it does not cancel that
+evaluator, remove its flight entry or disturb other members. Cancellation is
+checked before returning cached results and after evaluation, so a dependency
+returning after its caller was cancelled cannot publish that late value. The
+actual evaluator still runs under the existing context/OPA timeout boundaries;
+this change does not add a worker or forcibly interrupt context-ignoring code.
+
+When an evaluator fails, active waiting calls return to the mutex-protected
+ownership decision. Only one becomes the replacement evaluator for that key;
+the rest wait for its completion or their own cancellation. A second cache check
+under that mutex handles publication between the fast-path miss and ownership
+selection. Failed values and partial values accompanying errors are not cached.
+Each caller invokes its evaluation function at most once and retains its own
+failure; no single call automatically retries its failed evaluation. Flight
+entries are retired and waiters notified when the owning call exits.
+
+The key uses member/API-version/UID/opaque version/rule hash plus the prepared
+entrypoint (see the identity follow-ups below). Different member keys can
+evaluate independently, and warm hits do not acquire the flight-map mutex.
+Existing LRU capacity, metrics and per-evaluation timeout limits remain in
+place. Cancellation without evaluation or a usable cache result adds no cache
+hit/miss. No Kubernetes/storage query, watch, public API field or GraphStore
+method is introduced.
+
+Portable phase-controlled regressions cover cold/warm/waiting cancellation and
+deadlines, failed and cancelled evaluators with one/eight waiters, sequential
+failed handoffs, exact hit/miss counts, flight cleanup, member-key independence
+and a real local Rego-engine warm-cache replay. Real-cluster shutdown behavior,
+deployed load and M4 acceptance remain unqualified.
+
+### M2 CRD Rego partial extraction follow-up
+
+Resource-level Rego evaluation now returns edges from complete earlier modules
+alongside the first active failure, including a missing compiled module,
+evaluation error, recovered panic or malformed output. It still stops at that
+failure, in the existing router order; it does not run later modules or retry
+the failing module within that call. Decoding remains atomic within one module:
+a valid prefix followed by a malformed edge contributes nothing from that module.
+Successful whole-module values keep their existing cache entries, while failed
+values remain uncached. A subsequent active delivery can recover missing edges.
+Per-evaluation timeouts, cache capacity and other budgets are unchanged; the
+query-identity follow-up below extends the cache key with the prepared entrypoint.
+
+The CRD callback records an extraction gap for active failures and keeps usable
+returned edges only after validating the complete batch in its explicit member
+or unlabelled standalone scope. A foreign or empty endpoint rejects the entire
+returned batch before any edge write, including a valid prefix. Edge write
+failures retain separate persistence-gap evidence while other active writes can
+proceed. Recovery does not clear prior gaps, adopt a different stored writer or
+create duplicate metadata-only history for an unchanged source observation.
+Existing retained resources/edges are not cleaned up.
+
+Cancellation takes precedence over partial output. The engine checks it at entry,
+between modules and after evaluation; cancelled calls return no edges. The CRD
+callback rechecks it after evaluation and before each edge write. An already
+started storage dependency can still commit despite cancellation; its committed
+edge, source receipt and configured resource history remain without rollback.
+Cancellation creates no new extraction/persistence gap and preserves earlier
+loss evidence. This adds no worker, watch, Kubernetes/storage query, public API
+field or GraphStore method.
+
+Portable race regressions cover first/later module failures, atomic malformed
+outputs, error causes, cached replay, cancellation and subsequent active recovery.
+Callback matrices include the actual local Rego engine, named-member/standalone
+scope, both history modes, whole-batch scope rejection, failed/cancelled writes,
+committed receipts, metadata-only history and sticky gaps. These offline checks
+do not establish deployed PostgreSQL behavior, real-cluster coverage or M4
+acceptance.
+
+### M2 Rego prepared-query cache identity follow-up
+
+The existing bounded Rego cache now includes the prepared entrypoint alongside
+member, full API version, UID, opaque resource version and source hash. A rule pack may register
+identical source bytes with different entrypoints; those queries must have
+separate entries and in-flight ownership. A source or entrypoint change selects
+a new key without purging other cached results. Resource versions are compared
+for equality and are not interpreted as numbers or ordered across observations.
+
+Each module iteration captures one immutable compiled module under the engine
+lock. Both the cache key and the cache-miss evaluation use that exact compiled
+module. In particular, a call waiting for another evaluator does not look up the
+module name again after a reload: it may complete with the older captured query,
+while a subsequent call captures the replacement. The newer query can evaluate
+independently of the older blocked key, and neither result is stored under the
+other query's identity. This is a per-module snapshot, not an atomic rule-pack
+reload or a guarantee that all modules in one resource call use one pack revision.
+
+Existing timeout/recover guards, cancellation checks, error metrics, successful
+whole-module caching and active partial-result semantics remain in place. Failed
+compilation leaves the prior compiled module and usable cache entries intact.
+LRU capacity and evaluation budgets are unchanged; no worker, watch, storage read,
+public API field, GraphStore method or rule-pack format change is introduced.
+
+Portable actual-engine regressions cover identical-source entrypoints in both
+registration orders, named-member/standalone scope, cold/warm replay and a
+phase-controlled failed-leader handoff across source-only or entrypoint-only
+reload. They verify independent new-query progress, old-query completion,
+restoration without cache poisoning, failed compilation and exact hit/miss counts.
+Real-cluster behavior, deployed load and M4 acceptance remain unqualified.
+
+### M2 Rego cache eligibility for incomplete observations follow-up
+
+Resource-level Rego evaluation now requires the existing
+`graph.ValidResourceVersion` predicate before using the result cache. The resource
+must have kind, name, API version, UID and opaque resource version, and must not
+be a reference-only Secret. Missing identity cannot prove equivalence between
+deliveries or objects. An ineligible observation still evaluates its routed
+modules, but neither reads nor populates the LRU or the shared in-flight map.
+It does not wait for an unprovable shared key or change cache hit/miss counters.
+Eligible observations keep the existing bounded cache and query-identity keys;
+the engine does not invent UID/version fields or use payload hashes as receipts.
+
+Both paths execute the same captured compiled query through the existing timeout
+and panic guards, decode each module atomically and recheck cancellation. Active
+failure still returns whole earlier successful modules alongside the error;
+cancellation discards the call's output. Timeout/panic counters remain available
+for uncached evaluation. Cache capacity, per-module evaluation budgets and
+member/standalone edge validation remain unchanged. Incomplete repeated delivery
+can therefore cost another bounded evaluation, rather than reuse an unqualified
+result. This adds no worker, watch, store query, public API field or GraphStore
+method.
+
+CRD callbacks retain fresh derived relationships alongside the existing sticky
+processing gap for incomplete persisted identity. They do not fabricate private
+origin receipts or metadata-only history for those observations. A later complete
+delivery restores qualified receipts, history eligibility and normal caching;
+unchanged complete replay adds no duplicate resource history. It cannot erase
+the earlier gap or infer deletion of retained edges. The offline CLI keeps its
+existing fixture UID mapping for rule input; samples without resourceVersion
+also follow this uncached evaluation path.
+
+Portable actual-engine tests cover missing UID/version/API version, changed
+payloads and separate objects, qualified cache preservation/recovery, an already
+blocked unprovable key, cancellation, active errors, timeout, panic, malformed
+output and partial-module results. Real-engine CRD callback matrices cover both
+scope/history modes, fresh edge retention, sticky processing gaps, private source
+receipts, metadata-only history and foreign-member isolation. These checks do not
+qualify real-cluster behavior, deployed cost or M4 acceptance.
+
+### M2 Rego cache separation across API representations follow-up
+
+The result-cache key now includes the resource's full `GroupVersion` API-version
+string, including its API group. A resource may arrive through two served API
+versions with equal UID/resourceVersion while rule input differs, including the
+`apiVersion` field and converted payload shape. UID/version equality alone does
+not establish equivalence between those representations. Each full API version
+therefore has independent cached results and in-flight ownership for the same
+member/object/source/entrypoint. A blocked evaluation for one version does not
+hold up a call for another version, and unchanged replay within a version still
+uses the cache.
+
+Rule routing remains group/kind based; wildcard matching and rule-pack formats
+are unchanged. Both raw informer input and the minimal resource-input fallback
+use the same representation boundary. Incomplete identity still bypasses caching.
+The LRU keeps its existing entry limit, so different API versions occupy separate
+entries within that limit rather than increasing capacity. Timeout, cancellation,
+panic/error guards and partial-result semantics remain unchanged. No watch,
+worker, Kubernetes/storage query, public API field or GraphStore method is added.
+
+CRD endpoint-switch callbacks continue to apply the existing stored-writer
+rules: fresh delivery through another API version can update the current graph
+representation and private source receipt, while equal qualified UID/version
+does not manufacture another metadata-only history event. Retirement alone
+still authorizes neither adoption nor deletion. Existing relationships remain
+retained; a new representation can add its own successfully derived relationships.
+Cache separation does not prove version equivalence, choose an authoritative
+representation or change those persistence/history policies.
+
+Portable actual-engine regressions cover both delivery orders, raw and minimal
+input, exact and wildcard routing, member/standalone scopes, independent progress
+past another representation's blocked key, full API-group separation and exact
+cold/warm cache accounting. CRD callback matrices cover endpoint retirement and
+fresh version delivery in both history modes, new scoped relationships, matching
+source receipts and unchanged metadata-only history counts. Real-cluster watch
+behavior, conversion correctness, deployed cost and M4 acceptance remain pending.
+
+### M2 collector read and edge scope follow-up
+
+Core and Gatekeeper extractors now receive a read-only scope adapter rather than
+the complete store. Every list uses the existing `ListResourcesInCluster`
+capability with the owning member, regardless of an omitted or conflicting
+extractor filter. Empty scope explicitly selects unlabelled standalone rows,
+not all members. Kind, namespace and label filters remain intact. A cancelled
+or failed read, or a store response containing another member, exposes no
+partial results and has no unscoped-query fallback or automatic retry. The
+adapter does not expose GraphStore mutation/query capabilities beyond its one
+filtered-list method; it is not a sandbox for arbitrary extension code.
+
+All three collector paths validate the entire edge batch in that explicit scope
+before any edge or core Secret-reference placeholder is persisted. Relative
+endpoints are qualified for a named member; foreign prefixes and empty endpoints
+reject the batch, including a standalone callback that returns a named-member
+endpoint. External identity colons after the first slash remain valid. Rejection
+keeps the committed source resource/history and records an extraction gap; it
+does not persist a valid prefix of an invalid batch. Valid active partial
+extraction keeps its existing behavior. The older `ScopeEdgesToCluster` helper
+retains its empty-scope pass-through behavior for callers outside these explicit
+collector paths. Existing stored data is not cleaned or retroactively reowned.
+
+Portable tests exercise broad/conflicting extractor filters, opaque read-only
+capabilities, exact filter preservation, cancelled/failed/foreign-row reads and
+whole-batch rejection before Secret placeholders. Builtin Service selection
+excludes other members in standalone mode, and builtin Kyverno report lookup
+cannot apply another member's results to local edges. A fresh local report can
+still repair edge results on unchanged replay without adding resource history.
+CRD/Gatekeeper fake-client tests cover both named-member and standalone scopes.
+No Kubernetes request, additional storage query, worker, public API field or
+GraphStore v2 method is added. Real-cluster and deployed PostgreSQL qualification
+remain separate M4 work; these tests do not establish complete collector coverage.
+
+### M2 Kyverno report-read failure qualification follow-up
+
+Kyverno extraction distinguishes a successful empty report query from a failed
+store read. Missing `PolicyReport` / `ClusterPolicyReport` rows still permit
+plain ENFORCES edges with no result attribute. A failed query contributes no
+rows, including any partial response returned with its error. The other report
+kind can still supply usable observations; the extractor returns the first
+report-read error alongside its valid edges. Core collection records the existing
+sticky extraction gap rather than silently treating that read as successful.
+
+If a later target query fails, earlier successful target matches remain available
+alongside the error. The failed query's partial rows are excluded. Other
+registered extractors continue under the registry's existing partial-result
+contract. Each existing lookup runs at most once per callback; no storage query,
+worker, automatic retry, public response field or Kubernetes permission is added.
+Explicit member/standalone read and edge scope guards remain in force.
+
+Cancellation checks before and after report/target reads stop subsequent lookups,
+including when a dependency returns rows after cancellation. The collector keeps
+already committed resource/history writes, skips derived writes and preserves
+prior gaps without fabricating a new extraction failure for shutdown. A normal
+later delivery can repair the report overlay without duplicate resource history;
+successful replay does not erase the earlier extraction gap. Stored graph data
+is not cleaned or treated as deletion evidence.
+
+Portable extractor and core-callback regressions cover failed/absent reports,
+partial responses, usable edges after later target failure, registry continuation,
+foreign-report isolation, both history modes, cancellation and sticky-gap replay.
+These local checks do not qualify actual Kyverno installation, complete policy
+coverage, deployed PostgreSQL behavior or M4 acceptance.
+
+### M2 Gatekeeper partial-extraction retention follow-up
+
+Gatekeeper target extraction now returns earlier successful matches when a later
+kind or namespace query fails. Rows accompanying the failed query are excluded;
+confirmed violation attributes on earlier edges are retained. The registry can
+still contribute other extractors' results under its existing partial-result
+contract. Queries stop at the first target-read failure without an automatic
+retry. Context checks before and after each target query stop further reads
+when a dependency returns after cancellation.
+
+The Gatekeeper collector records an extraction gap and continues with usable
+partial results. It validates the complete returned edge batch before any edge
+write, even when extraction returned an error. A foreign or empty endpoint
+rejects the entire batch; relative endpoints remain qualified to the owning
+member, or explicitly unlabelled standalone scope. A failed edge write records
+the separate persistence gap and does not suppress later valid writes. This
+uses the existing scoped lister, resource lock, history writer and graph methods;
+it adds no query, watch, worker, permission or public API field.
+
+Cancellation after extraction skips all derived writes and adds no false
+extraction failure for shutdown. If cancellation occurs during an edge write,
+that write can still commit, but later writes stop. Already recorded gaps and
+committed resource/history receipts are retained. A later normal delivery can
+repair missing edges without duplicating unchanged resource history or clearing
+the earlier extraction, processing or persistence gaps. No stored graph data is
+removed or treated as deletion evidence.
+
+Portable regressions cover later kind/namespace query failures, failed-query
+partial rows, registry continuation, whole-batch scope rejection, violation
+attributes, edge-write failures, cancellation, replay and private source receipts
+in member/standalone scopes with both history modes. Real Gatekeeper installation,
+deployed PostgreSQL behavior, complete policy coverage and M4 remain unqualified.
+
+### M2 NetworkPolicy partial-extraction retention follow-up
+
+NetworkPolicy ingress and egress extraction now retain successful peer edges
+when a later peer, rule or namespace lookup fails. This includes earlier
+namespaces inside one combined pod/namespace selector and earlier peers outside
+that selector. Rows returned with a failed query do not contribute edges. The
+existing registry retains independent SELECTS_NP and other extractor results;
+the core collector records the existing sticky extraction gap before persisting
+valid scoped partial results. A successful empty namespace query is not a read
+failure and still permits independent selection edges.
+
+All NetworkPolicy target reads check cancellation before and after the existing
+query, including SELECTS_NP, pod-only peers, namespace-only peers and combined
+selectors. A context-ignoring dependency cannot cause another query to begin
+after cancellation or contribute late rows. The callback retains a resource or
+history write already committed before cancellation, skips derived writes and
+preserves prior gaps without adding a false extraction failure for shutdown.
+
+The existing member/explicitly unlabelled standalone lister and whole-batch edge
+scope guard remain in force. A normal later delivery can recover missing edges
+without another unchanged-resource history event or clearing the earlier gap.
+No query, watch, worker, permission, public field or GraphStore method is added;
+stored data is not cleaned or treated as deletion evidence.
+
+Portable regressions cover both directions, later peer/rule/namespace failures,
+failed-query partial rows, query counts, cancellation at each read stage,
+independent registry output, member isolation, both history modes, empty queries,
+committed notifications and replay recovery. These edges remain declarations,
+not effective CNI reachability. Existing matchLabels-only selector support and
+the policyTypes, wildcard/empty-peer and ipBlock limits remain unchanged.
+Real-cluster behavior, deployed PostgreSQL qualification and M4 remain pending.
+
+### M2 existing snapshot-route member visibility follow-up
+
+Existing snapshot list/diff handlers now authorize before history reads and use
+explicit optional scoped capabilities. V1 federation requests select one attached
+`cluster`; standalone scope reads only unlabelled rows, with unknown legacy
+provenance. The frozen v1alpha1 query/response schemas gain no fields. Its
+unscoped history aliases reject federation/restricted access instead of bypassing
+the v1 selector. An authenticated forbidden scope is rejected before attachment
+lookup; denied requests never read storage or disclose hidden attachment names.
+
+`HistoryEventReader` supplies bounded metadata for diff classification. A new
+optional `HistoryMarkerReader` supplies exact-member marker lists in both stores
+without changing GraphStore v2. Filtering occurs before limits/counts. Memory
+reads its bounded test-support ring; PostgreSQL applies cluster equality and a
+1001-row lookahead in a read-only transaction with a five-second statement
+limit. The shared marker builder caps returned rows and metadata. PostgreSQL
+container tests are provided but are not established by short-mode local runs;
+no indexed scan-performance claim is made.
+
+Handlers reject truncated event pages, row/byte overflow, foreign metadata and
+out-of-order event projections rather than returning misleading partial diffs.
+They revalidate explicit adapters and emit closed provider-error text. Shared
+classification preserves the existing response shape and uses only authorized
+metadata. Final response encoding is capped at 2 MiB, with a five-second deadline
+and the existing shared two-request analysis admission budget. Cancelled/late
+workers cannot write success and retain admission until completion. Bodies are
+not cached and vary by Authorization.
+
+Portable route/store tests cover exact scope including empty legacy scope,
+same-UID events across members, denied reads before attachment/storage access,
+alpha alias rejection, explicit capability wrappers, Secret exclusion, scoped
+counts, overflow, cancellation, late workers and admission sharing. OpenAPI adds
+the v1 selector only. These checks do not qualify durable deployment, continuous
+history, recoverable snapshots, scoped internal marker creation, snapshot Web/CLI
+member selection or M4 acceptance. Detached retained scopes require reattachment
+before this read API can query them. See the [multi-cluster history contract](../installation/multicluster.md#scoped-history-reads-v17-development).
+
+### Existing history-client member selection follow-up
+
+The snapshot page, topology decoration and change-log panel now derive history
+scope from the existing cluster selection and federation mode. They disable reads
+for the all-members view, detached selections, unavailable mode evidence and
+cluster-list failure. Empty configured federations remain explicitly federated;
+only confirmed standalone mode selects unlabelled history. No effect copies
+derived scope into additional state. Query keys include the selected member,
+abort signals flow to transport, and late results cannot replace a different
+member's query. Loading/error states hide cached rows and reset old decorations.
+Full resource IDs include member prefixes and the actual empty namespace;
+aggregated nodes are never decorated as resource instances. Member rows remain
+plain text until member-aware resource-detail navigation is available.
+
+History requests do not retry or fall back to global reads. Marker polling uses
+the existing one-minute interval only while reads succeed. Server error text is
+shown for authorization/budget/capacity/deadline failures; 503 no longer falsely
+means that history is necessarily disabled. Credentials continue through the
+existing same-origin transport, with no token UI or persistence.
+
+The main CLI previously had only `snapshot trigger`. New read-only `snapshot list`
+and `snapshot diff` commands use the bounded `historyclient` package, one GET and
+explicit `--cluster`; they reject repeated/empty/multiple scope flags, redirects,
+unknown metadata fields, unexpected content types, oversized bodies and invalid
+list counts/scopes. Bearer credentials come only from `KUBEATLAS_TOKEN`, remote
+HTTP is rejected, and provider error bodies/URLs are not echoed. Typed metadata
+is validated and reserialized for stdout, so this is distinct from the exact-wire
+impact capture/export contract. The diff schema has no member echo: its scope
+relies on the requested URL and the trusted server, not a fabricated guarantee.
+The internal trigger write and kubectl-plugin commands are unchanged.
+
+Portable checks exercise real API/client integration, CLI scope/auth/error
+handling, Web cache and delayed-response isolation, member/cluster-scoped canvas
+identity, blocked scopes and unavailable/error states. Browser QA uses the
+production build with synthetic API/WS transport at desktop and mobile sizes;
+it does not establish real-cluster behavior, PostgreSQL deployment performance,
+member-specific marker creation, complete retained history or M4 acceptance.
+
+### M2 internal member marker creation follow-up
+
+`POST /api/_internal/snapshot/trigger` now requires snapshots to be enabled and
+uses the same exact-member visibility/attachment checks as the history reads.
+Federation requires one member, standalone selects only unlabelled graph rows,
+and no all-member fan-out or global fallback occurs. Visibility is not write
+permission: deployment/network controls must continue to restrict this internal
+operator surface. No public write UI, Kubernetes write, or new permission grant
+is introduced.
+
+The optional `SnapshotMarkerRecorder` preserves the GraphStore v2 method set.
+Memory counts and appends under one cancellable write lock. PostgreSQL counts
+and inserts with one parameterized `INSERT ... SELECT` statement, observing one
+MVCC snapshot. The edge join requires both stored endpoint resources in the
+selected member, excluding dangling and cross-member tuples. Counts include
+reference-only graph nodes and do not materialize or return graph payloads. The
+handler echoes the stored receipt's counts and trigger, plus an optional named
+`clusterId`, and rejects invalid or foreign receipts. Existing memory marker-ring
+retention and legacy append semantics are unchanged.
+
+Recording shares the two-request analysis admission, uses a cooperative
+five-second context, and remains synchronous so there is no abandoned mutation
+worker. PostgreSQL also sets a five-second statement timeout; rollback cleanup
+can take up to another second. This is not hard preemption of a faulty provider.
+Errors are closed; expiry or a commit error can leave an unknown write outcome.
+There is no implicit retry or idempotency guarantee, and operator repetition can
+create additional markers. A successful marker does not drain the writer,
+repair missing events, establish complete history, or qualify recovery.
+
+Portable tests cover member/empty-scope counts, dangling and cross-member edges,
+parameterized metacharacter scopes, persisted receipts, concurrent count
+consistency, cancellation without delayed writes, disabled/unsupported stores,
+authorization before attachment/storage, invalid queries, late/foreign receipts,
+closed errors, no retries and shared admission. The PostgreSQL contract test is
+registered but skipped by `-short`; source compilation does not establish its
+runtime SQL behavior or deployed performance. V1 OpenAPI gains the selector and
+optional member echo; the frozen alpha specification stays unchanged.
+
+The trigger-client follow-up below adds member selection and an existing-Secret
+credential reference to the CLI/CronJob path. Actual PostgreSQL execution and M4
+cluster acceptance remain pending. No real cluster is required for this local
+source/test slice.
+
+At marker-creation commit `cc389e7`, local graph/store/API/history-client short
+race suites, changed-code lint, vet, CGO-free build, frozen-alpha compatibility
+and docs build passed. The expanded `go test -short -race -p 1 ./...` gate was
+**not green**: `TestMemberFactoryBindsRecordingAndJoinsOnlyOwnPendingWrites`
+blocked west delivery (also reproduced with a pre-change source overlay), and
+`TestMemberFactoryDynamicHistoryOverlapRepairAndReattachment` returned ten east
+events instead of eight. Twenty pre-change focused runs did not reproduce that
+count mismatch, so its cause was unresolved at that checkpoint. Full lint also
+reported `QF1001` in `impact_availability.go`. The follow-up below separates
+those historical results from the current regression contracts.
+
+### Member-history regression contracts
+
+The member-recording lifecycle fixture formerly blocked **every** east event.
+Once CRD and Gatekeeper delivery joined core delivery, two east events could
+occupy both shared writer workers. Per-member recording tokens isolate lifecycle,
+pending/loss evidence and draining; they do not reserve a worker or guarantee
+fair scheduling. A controlled pool-saturation test now holds both workers in
+east, verifies west remains queued/pending, then releases capacity and verifies
+both members drain without loss. The production-factory lifecycle test instead
+blocks only the east Pod event, confirms east dynamic events and the west Pod
+commit, and preserves its pending-write, independent removal and same-name
+exclusion assertions. It stages west startup after east's dynamic deliveries
+commit, keeping the initial burst within the existing four-slot queue rather
+than relying on worker startup scheduling. Worker count, queue size and retry
+budgets are unchanged.
+
+The overlap fixture formerly advanced to deletion after observing two committed
+update events. A committed event acknowledges only the first successful source;
+core, generic CRD and Gatekeeper callbacks are independent. A deterministic
+history test now delivers each watch's update/delete pair in source order while
+interleaving the watches. After a committed delete removes the graph receipt,
+a late upsert can reinsert the same UID and produce another metadata observation;
+its later delete removes it again. One late watch adds two events. This explains
+a mechanism consistent with the earlier extra update/delete pair, but the old
+log has no source attribution and does not identify which callback was late.
+
+Test-only extraction probes now acknowledge each source's initial and update
+handling before the overlap fixture advances to the next phase. Exact event
+counts and duplicate/payload assertions remain. Reattachment clears only the
+probe observations, waits for a fresh core callback and initial empty Constraint
+CRD delivery, and verifies the retired Foo CRD does not resume or mutate its
+retained graph row. No production ordering barrier, tombstone cache, watch,
+Kubernetes request or new history guarantee is introduced. ResourceVersions
+remain opaque; delayed cross-watch delivery can temporarily restore a deleted
+node and add observations. This limitation is now explicit in the recorder's
+contract and is not fixed by making the controlled fixture deterministic.
+
+Both formerly intermittent factory cases and both new controlled regression
+cases passed twenty short/race repetitions. The availability-validator lint
+expression now uses the equivalent `!active && !memberRetention` form. These
+portable checks do not qualify real-cluster behavior, PostgreSQL deployment,
+continuous history or recovery.
+
+The final expanded short/race suite passed. First-party lint
+(`./cmd/... ./pkg/... ./tools/...`), `go vet ./...`, CGO-free verification,
+alpha compatibility and docs checks passed. CLI diagnostic-write results are
+now explicitly best-effort, preserving the existing failure exit status and
+single-request behavior. The unrestricted `golangci-lint run ./...` still reports
+two `govet inline` suggestions in `web/node_modules/flatted/golang/pkg/flatted`;
+those third-party files and the lint configuration were not changed.
+
+### Internal trigger CLI and single-member scheduling follow-up
+
+The main CLI's trigger path now uses `historyclient.Trigger`: one POST with
+explicit member/trigger scope, optional environment bearer credential, normal TLS
+trust, no environment proxy, no redirect/retry/fallback and a thirty-second
+ceiling. A fresh non-reusing transport prevents replay on a reused connection.
+Responses have a 4 KiB body and 64 KiB header cap. Typed validation requires all
+count/duration fields, nonnegative integers, the selected member and trigger;
+unknown/duplicate keys (including escaped duplicate names), null required
+fields, malformed/trailing/oversized data and interrupted receipt delivery are
+rejected. Provider bodies and credential-bearing URLs are never echoed. Only
+validated typed metadata is serialized to stdout; stdout failure remains an
+unknown acknowledgement outcome and cannot start another write.
+
+The CLI rejects repeated flags and invalid selection before dispatch. Help and
+parse errors do not print inherited or supplied credential URLs. HTTP is limited
+to literal loopback or exact `service.namespace.svc` / fully qualified
+`.svc.cluster.local` hostnames for the existing internal CronJob path. That
+syntactic exception does not establish pod, DNS or network trust; operators must
+trust the plaintext internal path before attaching credentials. Other remote
+addresses require HTTPS. The default is literal loopback, not localhost DNS.
+
+The chart can pass one `snapshots.trigger.cluster` and inject `KUBEATLAS_TOKEN`
+through an existing Secret's name/key. It neither renders plaintext token data
+nor adds Kubernetes permissions. Named standalone selection, partial references,
+and a selected member with visibility rules but no credential reference are
+rejected. Empty defaults preserve the standalone command; v1.7 federation still
+rejects an omitted member at runtime. No cluster union or per-member CronJob
+fan-out is added. New flags require a matching development image; the chart's
+v1.6.0 metadata/default image and all release artifacts are unchanged.
+
+The existing schedule, `Forbid` concurrency, 120-second deadline, Pod resources,
+NetworkPolicy source labels and disabled service-account token remain. Job
+`backoffLimit` is zero with `restartPolicy: Never`: failures do not trigger a
+replacement attempt through Job backoff. Later schedule ticks are distinct
+observations, not retries of an unknown commit. Kubernetes Job execution is not
+an exactly-once guarantee; controller duplicates or operator repetition can
+produce extra markers. History completeness, drained delivery, backups and
+recovery remain unqualified.
+
+Portable checks cover actual scoped API/client integration, CLI auth/validation
+and outcome codes, malformed/foreign/duplicate/truncated receipts, cancellation,
+redirect non-following, no retries, Secret-reference rendering and no-fan-out
+CronJob budgets. These are local source/loopback/rendering checks; no real
+cluster, PostgreSQL instance, image build/download or published artifact is
+established by this slice.
 
 ### M3 server-backed Web analysis: first slice
 
@@ -1364,9 +3294,177 @@ under its configured external authentication, including allowed/denied member
 scope, expected-UID replacement, known references, initial sync and list/watch
 failure qualification on Tier 1 and Tier 2. Frozen-candidate deployment validation
 remains pending. API inventory presentation does not close complete collector
-coverage, version equivalence, or per-member history/discovery gaps. Federated
-members currently have no production inventory worker, so their inventory stays
-unavailable. Discovery errors, stale evidence and limits cannot prove absence.
+coverage, version equivalence, or
+per-member history qualification. Active member endpoints have bounded
+missed-delete repair as described above. Federated members run their own bounded inventory, CRD and
+Gatekeeper workers as described above; failed, denied, stale, unsupported or
+limited evidence remains qualified and cannot prove absence.
+
+#### Read-only candidate probe
+
+Use the same clean source revision as the running candidate. Record the
+application image, database image and Chart digests, Kubernetes version, tier,
+upgrade baseline and authentication configuration in the candidate evidence.
+Compare the deployed identities with that record before probing. The API
+probe checks the server's reported build metadata and storage durability.
+
+Place a private JSON plan outside the source tree. The following is a fixture
+example. Replace the commit, identities and expected observations with the
+recorded candidate values.
+
+```json
+{
+  "commit": "0123456789abcdef0123456789abcdef01234567",
+  "version": "1.7.0-rc.1",
+  "tier": "tier2",
+  "cases": [
+    {
+      "name": "member-reference",
+      "query": {
+        "Namespace": "demo",
+        "Kind": "ConfigMap",
+        "Name": "settings",
+        "ClusterID": "east",
+        "ExpectedUID": "fixture-root-uid",
+        "Relation": "dependents",
+        "MaxDepth": 5,
+        "Limit": 200
+      },
+      "status": 200,
+      "paths": {
+        "east:demo/Pod/consumer": [
+          {
+            "from": "east:demo/Pod/consumer",
+            "to": "east:demo/ConfigMap/settings",
+            "type": "USES_CONFIGMAP",
+            "traversalFrom": "east:demo/ConfigMap/settings",
+            "traversalTo": "east:demo/Pod/consumer"
+          }
+        ]
+      },
+      "coverage": {
+        "Source": "core",
+        "Version": "v1",
+        "Resource": "pods",
+        "State": "initialized_no_known_gap"
+      },
+      "history": {"State": "recording", "RetainedData": "observed"}
+    }
+  ]
+}
+```
+
+When freezing the plan, record the SHA-256 of its exact file bytes with the
+candidate evidence. For example, `shasum -a 256 /absolute/private/plan.json`
+prints the digest. Supply the recorded lowercase digest when running the probe.
+Even formatting changes require a new digest. A missing or mismatched digest
+stops the probe before the first HTTP request.
+
+Provide an already established local tunnel to the configured authentication
+path. The test accepts a literal HTTP loopback address with an explicit port.
+Supply the token through `KUBEATLAS_TOKEN` and keep it out of the plan and logs.
+
+```bash
+KUBEATLAS_IMPACT_CANDIDATE_PLAN=/absolute/private/plan.json \
+KUBEATLAS_IMPACT_CANDIDATE_PLAN_SHA256="<recorded lowercase SHA-256>" \
+KUBEATLAS_IMPACT_CANDIDATE_SERVER=http://127.0.0.1:18080 \
+  go test ./pkg/api -run '^TestImpactFrozenCandidate$' -count=1 -v
+```
+
+Run a plan for each prepared tier and fault condition. Positive cases require
+the exact ordinary target IDs and every stored and traversed edge endpoint.
+For `OWNS` steps, record `ownerUIDStatus` as `matched` or `unknown`. Use the
+query direction throughout the path and include each intermediate resource as
+a declared match. Use an empty `paths` object for an expected empty result.
+Update older plans that listed edge types alone to use step objects, then
+record the new digest. Add 401, 403 and 409 cases for anonymous
+access, denied member access and replacement of the expected UID. Select the
+collector in a coverage oracle with `core`, `crd` or `gatekeeper` and identify
+its exact served version. Use `Reason` to check the specific list or watch
+failure. A history oracle can check independent writer state and a fresh
+retained window, including exact `FirstEventAt`, `LastEventAt` and
+`LatestMarkerAt` timestamps when the fixture defines them. This uses cached
+metadata. A marker observation alone cannot establish a restorable backup.
+
+To verify reference explanations, add a `referenceEvidence` array alongside
+`paths`. Include one record per distinct stored `USES_CONFIGMAP`, `USES_SECRET`
+or `MOUNTS_VOLUME` edge used by the expected ordinary paths. The probe matches
+records by stored edge and compares consumer UID and resource version, status,
+reason and each use in capture order. A `version_bound` record requires the
+consumer version and at least one use. An `unknown` record requires a reason
+and an empty `uses` array. Use `[]` for a case with no reference edges. Omit the
+field for a case that only verifies other evidence.
+
+For example, the ConfigMap case above can assert one optional environment
+reference from the recorded consumer version.
+
+```json
+{
+  "referenceEvidence": [
+    {
+      "from": "east:demo/Pod/consumer",
+      "to": "east:demo/ConfigMap/settings",
+      "type": "USES_CONFIGMAP",
+      "sourceUID": "fixture-consumer-uid",
+      "sourceResourceVersion": "17",
+      "status": "version_bound",
+      "uses": [
+        {
+          "fieldPath": "/spec/containers/0/envFrom/0/configMapRef",
+          "mode": "environment",
+          "optional": "optional",
+          "refresh": "container_restart_required"
+        }
+      ]
+    }
+  ]
+}
+```
+
+For a case that verifies RBAC associations, add an `authorization` oracle
+alongside the ordinary `paths` object. Specify `applicable`, the exact
+authorization paths and `truncated` if the authorization result reaches its
+own limit. Use an empty authorization `paths` object to assert no associations.
+Authorization steps can walk either direction in the same path. For
+`BINDS_ROLE` and `BINDS_SUBJECT`, record `bindingScope` and, for a RoleBinding,
+the binding's namespace. Each intermediate resource belongs in the
+authorization result. The probe checks the association evidence category,
+unknown source-version evidence and `effectivePermissions: not_evaluated`.
+Omit the oracle for cases that only verify ordinary paths.
+
+For example, the following oracle expects the role `east:grant/Role/reader`
+to have one matching binding in the `grant` namespace.
+
+```json
+{
+  "authorization": {
+    "applicable": true,
+    "paths": {
+      "east:grant/RoleBinding/reader": [
+        {
+          "from": "east:grant/RoleBinding/reader",
+          "to": "east:grant/Role/reader",
+          "type": "BINDS_ROLE",
+          "traversalFrom": "east:grant/Role/reader",
+          "traversalTo": "east:grant/RoleBinding/reader",
+          "bindingScope": "namespace",
+          "bindingNamespace": "grant"
+        }
+      ]
+    }
+  }
+}
+```
+
+The probe logs the verified plan digest before the opening build check. It
+uses bounded GETs and emits a completion marker with the same digest after
+the closing build check succeeds and all cases and thresholds pass. Use the
+deployed Web and CLI for the release client flows. Capture the
+upgrade, Secret sentinel and destructive restore results from the isolated
+deployment checks. Keep the plan and command output with the candidate evidence.
+See [impact performance preparation](./impact-performance.md) for optional
+sampling in the same probe. Each warm-up and measured request verifies its
+scoped input counts from the successful response's projection header.
 
 M4 verifies upgrade from the latest v1.6 patch, frozen supported Kubernetes
 versions, existing API compatibility, Secret sentinel checks, bounded query
@@ -1376,12 +3474,14 @@ freeze hardware, edge density, query depth/limit, and at least 100 samples per
 query before measuring. Dense and 10K cases are reported separately. This is
 new v1.7 acceptance, not a retroactive pass or reopening of v1.6 issue #26.
 
-Only the final frozen candidate receives a complete **72-hour** observation.
-No 168-hour experiment is planned. Freeze workload, warm-up/baseline windows,
-sampling/gap bounds, resource-growth limits, recovery exercises, immutable
-image identities, and an independent verifier before launch. No unexplained
-restart/OOM, normal-load drops, or write failures may pass. Never concatenate
-interrupted attempts or retry silently. Elapsed time alone is not acceptance.
+The release owner revised final observation on November 13, 2026 to a
+**10-minute functional acceptance window on local Docker Desktop**, starting
+after deployment readiness. Record the candidate commit, artifact identities,
+Kubernetes version, storage tiers, exercised functions and complete results.
+Check Web/API/CLI, collection, persistence and health during the window.
+Unexpected restarts, OOMs, normal-load drops and write failures fail the run.
+The earlier 72-hour observation requirement is superseded. Release evidence
+must describe this bounded functional scope and make no endurance claim.
 Workstation launchers and private evidence stay outside this repository.
 
 Headlamp/Backstage/rules/Action retain independent release scope and receive

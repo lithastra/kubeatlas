@@ -60,6 +60,7 @@ func (s *Server) Routes() []RouteInfo {
 				{Name: "max_depth", Type: "integer", Description: "Default 5; range 1..10"},
 				{Name: "limit", Type: "integer", Description: "Default 200; range 1..1000 per facet"},
 				{Name: "expected_uid", Type: "string", Description: "Optional observed root instance precondition; mismatch or unknown UID returns 409"},
+				{Name: "projection_counts", Type: "string", Enum: []string{"true"}, Description: "Include scoped projection resource and edge counts in the successful response header."},
 			},
 			Response: ResponseSpec{Description: "Versioned, scope-bound analysis with explicit evidence limitations", SchemaRef: "ImpactResponse"},
 			handler:  s.handleImpact,

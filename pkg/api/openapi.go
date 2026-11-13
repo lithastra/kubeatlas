@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/lithastra/kubeatlas/pkg/impact"
 )
 
 // OpenAPI version + document metadata. Bump apiInfoVersion when the
@@ -95,10 +97,19 @@ func (s *Server) openAPIPathsFor(version string) map[string]any {
 }
 
 // openAPIOperationFor adjusts the version-sensitive parts of an
-// operation entry (currently just the response schema reference
-// for ResourceDetailResponse, which carries the v1-only enrichment
-// fields).
+// operation entry without mutating the frozen alpha operation or schema.
 func openAPIOperationFor(r RouteInfo, version string) map[string]any {
+	if version == APIVersionV1 && r.Pattern == "/api/_internal/snapshot/trigger" {
+		r.Summary = "Record one member's stored-graph observation marker"
+		r.QueryParams = append(append([]ParamSpec{}, r.QueryParams...), ParamSpec{Name: "cluster", Type: "string", Description: "Exactly one attached member is required in federation; omit in standalone mode. Internal operator access is required; read visibility is an additional check, not write authorization."})
+		r.Description = "Requires enabled snapshots and internal operator access. Atomically counts the selected stored graph and writes its metadata marker. Excludes dangling and cross-member edges. Shares two-request analysis admission with a five-second cooperative store deadline. An error or timeout can leave an unknown write outcome; no automatic retry. This is not a backup, full sync or proof of complete history."
+		r.Response.SchemaRef = "SnapshotTriggerResponseV1"
+		r.Response.Description = "Persisted scoped graph counts, trigger and recording duration; named-member responses echo clusterId"
+	}
+	if version == APIVersionV1 && (r.Pattern == "/api/v1alpha1/snapshots" || r.Pattern == "/api/v1alpha1/snapshots/diff") {
+		r.QueryParams = append(append([]ParamSpec{}, r.QueryParams...), ParamSpec{Name: "cluster", Type: "string", Description: "Exactly one attached member in federation; required in federated mode. Omit in standalone mode. Authorization precedes history reads."})
+		r.Description += " Selected-cluster reads are metadata-only and bounded to 1000 rows, 2 MiB and five seconds; overflow returns 413 rather than a partial diff/list. Empty standalone scope selects only unlabelled rows, whose legacy provenance is unknown. Recording/retention completeness and recovery are not implied."
+	}
 	op := openAPIOperation(r)
 	if version == APIVersionV1 && r.Response.SchemaRef == "ResourceDetailResponse" {
 		// Override the success-content $ref to point at the v1
@@ -197,6 +208,12 @@ func openAPIResponses(r RouteInfo) map[string]any {
 		successCode: successResp,
 	}
 	if r.Pattern == impactPath {
+		successResp["headers"] = map[string]any{
+			impact.ProjectionCountsHeader: map[string]any{
+				"description": "With projection_counts=true, the scoped resource and edge record counts from the same analysis, as two comma-separated decimal integers.",
+				"schema":      map[string]any{"type": "string"},
+			},
+		}
 		for code, description := range map[string]string{
 			"400": "Malformed, unknown, duplicate, or out-of-range query parameter",
 			"401": "Bearer token required", "403": "Cluster access denied", "404": "Resource or authorized cluster not found",
@@ -262,6 +279,17 @@ func openAPIComponentsFor(version string) map[string]any {
 			return c
 		}
 		schemas["ImpactResponse"] = impactResponseSchema()
+		schemas["SnapshotTriggerResponseV1"] = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"clusterId":     map[string]any{"type": "string", "description": "Selected member; omitted for the exact unlabelled standalone scope."},
+				"trigger":       map[string]any{"type": "string", "enum": []any{"periodic", "manual"}},
+				"resourceCount": map[string]any{"type": "integer"},
+				"edgeCount":     map[string]any{"type": "integer"},
+				"durationMs":    map[string]any{"type": "integer"},
+			},
+			"required": []any{"trigger", "resourceCount", "edgeCount", "durationMs"},
+		}
 		schemas["ImpactErrorResponse"] = map[string]any{
 			"type": "object", "required": []string{"error", "code"},
 			"properties": map[string]any{

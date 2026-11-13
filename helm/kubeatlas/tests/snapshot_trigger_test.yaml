@@ -1,0 +1,128 @@
+suite: internal single-member snapshot trigger
+templates:
+  - snapshot-cronjob.yaml
+tests:
+  - it: emits no CronJob while snapshots are disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: preserves the standalone command and bounds job execution without retries
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+    asserts:
+      - isKind:
+          of: CronJob
+      - equal:
+          path: spec.concurrencyPolicy
+          value: Forbid
+      - equal:
+          path: spec.jobTemplate.spec.backoffLimit
+          value: 0
+      - equal:
+          path: spec.jobTemplate.spec.activeDeadlineSeconds
+          value: 120
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.restartPolicy
+          value: Never
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.automountServiceAccountToken
+          value: false
+      - lengthEqual:
+          path: spec.jobTemplate.spec.template.spec.containers[0].command
+          count: 5
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].resources.limits.memory
+          value: 64Mi
+
+  - it: passes exactly one member and an existing Secret reference
+    release:
+      namespace: ops
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+      image.tag: dev-local
+      multicluster.enabled: true
+      multicluster.kubeconfigSecret: members
+      snapshots.trigger.cluster: prod
+      snapshots.trigger.tokenSecretRef.name: operator-credential
+      snapshots.trigger.tokenSecretRef.key: token
+    asserts:
+      - hasDocuments:
+          count: 1
+      - lengthEqual:
+          path: spec.jobTemplate.spec.template.spec.containers[0].command
+          count: 6
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].command[5]
+          value: --cluster=prod
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env[0]
+          value:
+            name: KUBEATLAS_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: operator-credential
+                key: token
+                optional: false
+      - notExists:
+          path: spec.jobTemplate.spec.template.spec.containers[0].env[0].value
+
+  - it: rejects a named member in standalone mode
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+      snapshots.trigger.cluster: prod
+    asserts:
+      - failedTemplate:
+          errorMessage: snapshots.trigger.cluster requires multicluster.enabled
+
+  - it: rejects incomplete Secret references
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+      snapshots.trigger.tokenSecretRef.name: operator-credential
+    asserts:
+      - failedTemplate:
+          errorPattern: tokenSecretRef
+
+  - it: rejects multiple members rather than producing a fan-out
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+      multicluster.enabled: true
+      multicluster.kubeconfigSecret: members
+      snapshots.trigger.cluster: prod,staging
+    asserts:
+      - failedTemplate:
+          errorPattern: cluster
+
+  - it: rejects plaintext credential values in the new trigger configuration
+    set:
+      snapshots.trigger.token: synthetic-unit-token
+    asserts:
+      - failedTemplate:
+          errorPattern: token
+
+  - it: requires a credential reference for a selected member with visibility rules
+    set:
+      persistence.enabled: true
+      persistence.embedded.enabled: true
+      snapshots.enabled: true
+      multicluster.enabled: true
+      multicluster.kubeconfigSecret: members
+      multicluster.rbac.rules:
+        - token: synthetic-unit-token
+          clusters: [prod]
+      snapshots.trigger.cluster: prod
+    asserts:
+      - failedTemplate:
+          errorMessage: member triggers with visibility rules require snapshots.trigger.tokenSecretRef
