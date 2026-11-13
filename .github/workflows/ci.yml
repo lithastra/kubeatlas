@@ -20,6 +20,7 @@ jobs:
       - run: node --test .github/scripts/release-download-audit.test.cjs
       - run: node --test .github/scripts/core-artifact-audit.test.cjs
       - run: node --test .github/scripts/core-artifact-tier2.test.cjs
+      - run: python3 -B test/verify/upgrade_recovery_test.py
       - run: bash test/verify/artifact-trust-contract.sh
 
   non-ascii-check:

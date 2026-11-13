@@ -63,13 +63,15 @@ require_text "$tier2_workflow" "expected_operator: ${EXPECTED_CNPG_OPERATOR}"
 require_text "$tier2_workflow" "local-postgres-age:${EXPECTED_POSTGRES_AGE_TAG}"
 require_text "$tier2_workflow" 'name: PostgreSQL + AGE (linux/${{ matrix.arch }})'
 require_text "$tier2_workflow" '--platform "linux/${TARGET_ARCH}"'
-require_text "$tier2_workflow" 'name: Public v1.5.2 upgrade + embedded restore'
+require_text "$tier2_workflow" "baseline: ['1.5.2', '1.6.0']"
+require_text "$tier2_workflow" 'KUBEATLAS_UPGRADE_BASELINE: ${{ matrix.baseline }}'
 require_text "$tier2_workflow" 'bash test/verify/v160-upgrade-recovery.sh'
-require_text "$tier2_workflow" '- v152-upgrade-recovery'
+require_text "$tier2_workflow" '- public-upgrade-recovery'
+require_text "$tier2_workflow" 'RECOVERY_RESULT: ${{ needs.public-upgrade-recovery.result }}'
 require_text "$tier2_workflow" '- postgres-age-architectures'
 
 recovery_verifier=test/verify/v160-upgrade-recovery.sh
-require_text "$recovery_verifier" 'PUBLIC_VERSION=1.5.2'
+require_text "$recovery_verifier" 'PUBLIC_VERSION="${KUBEATLAS_UPGRADE_BASELINE:-1.5.2}"'
 require_text "$recovery_verifier" 'pg_dump -Fc'
 require_text "$recovery_verifier" 'pg_restore --clean --if-exists --exit-on-error'
 require_text "$recovery_verifier" 'Secret values and runtime credentials are absent from every gated surface'

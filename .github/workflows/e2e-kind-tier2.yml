@@ -358,12 +358,16 @@ jobs:
             crd/clusters.postgresql.cnpg.io \
             --timeout=2m
 
-  v152-upgrade-recovery:
-    name: Public v1.5.2 upgrade + embedded restore
+  public-upgrade-recovery:
+    name: Public v${{ matrix.baseline }} upgrade + embedded restore
     needs:
       - cnpg-upgrade-chain
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: ['1.5.2', '1.6.0']
 
     steps:
       - uses: actions/checkout@v7
@@ -407,7 +411,7 @@ jobs:
           kubectl rollout status deployment/cnpg-cloudnative-pg \
             --namespace cnpg-system --timeout=2m
 
-      - name: Build the v1.6 candidate application image
+      - name: Build the candidate application image
         run: |
           mkdir -p cmd/kubeatlas/web/dist
           echo '<html><body>upgrade recovery placeholder</body></html>' \
@@ -420,7 +424,7 @@ jobs:
           cp bin/kubeatlas .docker-context/linux/amd64/kubeatlas
           docker build -t kubeatlas:upgrade-recovery .docker-context
 
-      - name: Build the v1.6 PostgreSQL + AGE image
+      - name: Build the candidate PostgreSQL + AGE image
         run: |
           docker build \
             -t local-postgres-age:16.15-age1.6.0-rc0.2 \
@@ -433,8 +437,9 @@ jobs:
           kind load docker-image local-postgres-age:16.15-age1.6.0-rc0.2 \
             --name kubeatlas-upgrade-recovery
 
-      - name: Prove public v1.5.2 upgrade and destructive embedded restore
+      - name: Prove public release upgrade and destructive embedded restore
         env:
+          KUBEATLAS_UPGRADE_BASELINE: ${{ matrix.baseline }}
           KUBEATLAS_NAMESPACE: kubeatlas-upgrade-recovery
           KUBEATLAS_RELEASE: kubeatlas-recovery
           KUBEATLAS_CANDIDATE_IMAGE: kubeatlas:upgrade-recovery
@@ -452,7 +457,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: kubeatlas-v152-upgrade-recovery-logs
+          name: kubeatlas-v${{ matrix.baseline }}-upgrade-recovery-logs
           path: |
             /tmp/kubeatlas-upgrade-recovery-diagnostics.log
             /tmp/kubeatlas-upgrade-recovery-pg-dump.log
@@ -538,7 +543,7 @@ jobs:
     needs:
       - e2e-kind-tier2-matrix
       - cnpg-upgrade-chain
-      - v152-upgrade-recovery
+      - public-upgrade-recovery
       - postgres-age-architectures
     runs-on: ubuntu-latest
     steps:
@@ -546,7 +551,7 @@ jobs:
         env:
           MATRIX_RESULT: ${{ needs.e2e-kind-tier2-matrix.result }}
           UPGRADE_RESULT: ${{ needs.cnpg-upgrade-chain.result }}
-          RECOVERY_RESULT: ${{ needs.v152-upgrade-recovery.result }}
+          RECOVERY_RESULT: ${{ needs.public-upgrade-recovery.result }}
           ARCHITECTURE_RESULT: ${{ needs.postgres-age-architectures.result }}
         run: |
           test "${MATRIX_RESULT}" = success
