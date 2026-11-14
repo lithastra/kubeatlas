@@ -15,6 +15,12 @@ import (
 
 var _ graph.ImpactSnapshotter = (*Store)(nil)
 
+// The bounded projection expands a static JSON allowlist into many SQL
+// expressions. LLVM compilation can dominate this short read even on a small
+// graph. Disable JIT only for this transaction; pooled sessions keep their
+// configured defaults after commit or rollback. The five-second limit remains.
+const impactTransactionSQL = `SET LOCAL statement_timeout = '5s'; SET LOCAL jit = off`
+
 // Only fixed scalar receipt fields may cross the database boundary. Unknown
 // or nested fields in legacy/corrupt storage are never selected as payloads.
 const impactOriginSQL = `CASE WHEN jsonb_typeof(data->'observationOrigin') = 'object'
@@ -101,7 +107,7 @@ func (s *Store) SnapshotImpact(ctx context.Context, opts graph.ImpactSnapshotOpt
 		defer stop()
 		_ = tx.Rollback(cleanup)
 	}()
-	if _, err := tx.Exec(ctx, `SET LOCAL statement_timeout = '5s'`); err != nil {
+	if _, err := tx.Exec(ctx, impactTransactionSQL); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
