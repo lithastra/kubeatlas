@@ -469,9 +469,10 @@ integration remain distinct; M4 candidate acceptance is pending.
 Synthetic client tests do not prove real-cluster watch reliability,
 real-environment authorization configuration, effective permissions, or release delivery.
 The M0 synthetic tests document
-legacy behavior; they are not passing v1.7 feature acceptance. A final frozen
-candidate is planned for one complete 72-hour observation, not 168 hours;
-the protocol must be frozen before launch and interrupted runs never combine.
+legacy behavior; they are not passing v1.7 feature acceptance. On November 13,
+2026, the release owner replaced the earlier endurance requirement with one
+complete 10-minute functional window on local Docker Desktop after readiness.
+Interrupted runs never combine, and this bounded check makes no endurance claim.
 
 HA, built-in authentication, attack paths, GitOps drift/remediation, cloud
 resource discovery, LLM diagnosis, and blanket dependency-major upgrades remain

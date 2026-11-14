@@ -29,14 +29,25 @@ published artifacts. Documentation corrections do not rebuild those artifacts.
   Retired dynamic-source data is retained when deletion cannot be established.
   Impact results qualify incomplete or stale source evidence.
 
+### Fixed
+
+- The Web header displays the running server version instead of a hardcoded
+  development label. Missing metadata remains explicitly unavailable.
+- PostgreSQL impact projections disable JIT only inside their bounded read-only
+  transaction, avoiding compilation overhead without changing the timeout,
+  projection limits, isolation, or pooled session defaults.
+
 ### Validation and scope
 
 - Deployment scope is single replica with external authentication. Secret
   relationships use reference-only nodes.
-- Frozen-candidate verification of Web, API, and CLI flows on both storage
-  tiers, the v1.6 upgrade, bounded query performance, a 10-minute local
-  functional acceptance window,
-  and public artifact audits remains pending.
+- Release evidence separately records Web/API/CLI checks on both storage
+  tiers, upgrades from v1.5.2/v1.6.0, bounded query performance, a complete
+  10-minute local functional window, and public artifact audits. See the
+  published release notes for exact identities, results and coverage limits.
+- No endurance, HA or general production-reliability guarantee is claimed.
+  Impact analysis can reject an oversized selected-cluster projection even
+  when the requested traversal is shallow.
 
 ## [v1.6.0] — Production operability — 2026-09-26
 
