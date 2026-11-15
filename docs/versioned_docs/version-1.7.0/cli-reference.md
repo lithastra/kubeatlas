@@ -1,0 +1,298 @@
+---
+sidebar_position: 7
+title: CLI reference
+---
+
+# CLI reference
+
+The `kubeatlas` binary is the same in every install — server, one-shot
+modes, and stand-alone subcommands all live in a single executable.
+Run it without arguments to start the API server; pass a subcommand
+to invoke a specific operation.
+
+## Subcommands
+
+### `kubeatlas snapshot trigger` (v1.7) {/* #kubeatlas-snapshot-trigger-v17-development */}
+
+Records one stored-graph observation marker through an existing internal operator
+endpoint. It does not access Kubernetes or PostgreSQL directly. Federation
+requires one explicit `--cluster`; standalone omits it. Member visibility is an
+additional check, not permission to access this internal write endpoint.
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--server` | `KUBEATLAS_URL`, else `http://127.0.0.1:8080` | HTTPS; HTTP only on literal loopback or exact Kubernetes Service DNS. No URL credentials, query or fragment. |
+| `--cluster` | omitted | Exactly one attached visible member; no inference or fan-out. |
+| `--trigger` | `manual` | `manual` or `periodic`. |
+| `--timeout` | `30s` | Overall client cap, range 1s..30s; server work still has its own five-second budget. |
+
+All flags may occur once. `KUBEATLAS_TOKEN` is the only bearer-credential input;
+there is no token argument, login, discovery or persistence. No redirects,
+environment proxy, API fallback or automatic retry is used. A 200 response must
+contain a validated, scope-matching receipt within 4 KiB before typed metadata
+is printed. Exit 0 means a validated receipt was written; exit 2 means non-200;
+exit 1 covers usage, transport, receipt and stdout failure. The latter failures
+may occur after a marker commit, so repeating the command is a separate write.
+
+```bash
+# Use an already available internal operator endpoint; supply token separately.
+kubeatlas snapshot trigger --server http://127.0.0.1:8080 --cluster prod
+```
+
+The Service-DNS HTTP exception supports the existing in-cluster CronJob path;
+its syntax cannot establish DNS or network trust. Keep the internal operator
+boundary and trust that path before sending a bearer credential. Other remote
+URLs require HTTPS with normal TLS verification; explicit localhost HTTP URLs
+must be changed to a literal loopback address. See
+[internal member markers](./installation/multicluster.md#internal-member-markers-v17-development)
+for Secret references, scheduling and remaining runtime qualification.
+
+
+### `kubeatlas export`
+
+Walks the cluster the current `KUBECONFIG` points at, runs every
+built-in extractor, and emits the result as a Graphviz DOT
+document. Pipe through `dot -Tsvg`, `dot -Tpng`, or any other
+Graphviz output format.
+
+```bash
+kubeatlas export --format=dot > graph.dot
+dot -Tsvg graph.dot -o graph.svg
+```
+
+#### Flags
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--format` | `dot` | Only `dot` is supported. Pipe through Graphviz for other formats. SVG, PNG, and Mermaid are all reachable through `dot -T...`. |
+| `--namespace` | `""` (whole cluster) | Restrict the rendered graph to one namespace. Cross-namespace edges are dropped when one endpoint is filtered out. |
+| `--output` | `""` (stdout) | Write to a file instead of stdout. |
+| `--title` | `KubeAtlas` | Override the digraph identifier. Useful when generating multiple SVGs into a single dashboard. |
+
+#### Examples
+
+Render only the `petclinic` namespace:
+
+```bash
+kubeatlas export --format=dot --namespace=petclinic | dot -Tsvg > petclinic.svg
+```
+
+Generate a PNG with a custom title:
+
+```bash
+kubeatlas export --format=dot --title="prod cluster" \
+  --output=/tmp/prod.dot
+dot -Tpng /tmp/prod.dot -o /tmp/prod.png
+```
+
+Pipe directly into image-processing toolchains:
+
+```bash
+kubeatlas export --format=dot | dot -Tdot:cairo | base64 | gh gist create -
+```
+
+#### What's *not* supported (on purpose)
+
+- `--format=svg` / `--format=png` — `export` emits DOT only. For a
+  rendered image use `kubeatlas -once -format=svg`, pipe `export`
+  through `dot -Tsvg` / `dot -Tpng`, or call the
+  `GET /api/v1/export` endpoint.
+- `--format=mermaid` — Mermaid was retired on the API side at v1.0,
+  and the CLI follows the same path.
+- `--server=URL` — not implemented yet. The default cluster-direct
+  discovery covers the common case (operator's laptop pointing at
+  any cluster); a future release may add this for "render what the
+  running KubeAtlas already saw" workflows.
+
+### `kubeatlas diagnose`
+
+Scans the cluster the current `KUBECONFIG` points at and writes a
+self-contained [diagnostic report](./concepts/diagnose-report) — the
+dependency graph plus the orphan, cycle, and top blast-radius
+analyses — as a single HTML document or as JSON. Like `export`, it
+runs offline: no KubeAtlas server in the cluster is required.
+
+```bash
+# Whole-cluster HTML report
+kubeatlas diagnose --all-namespaces --output cluster-report.html
+
+# One namespace, as JSON for a pipeline
+kubeatlas diagnose --namespace petclinic --format json > petclinic.json
+```
+
+#### Flags
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--namespace`, `-n` | `""` (whole cluster) | Restrict the report to one namespace. Mutually exclusive with `--all-namespaces`. |
+| `--all-namespaces` | `false` | Report every namespace (whole-cluster scope). |
+| `--format` | `html` | `html` (self-contained document) or `json` (structured, `jq`-friendly). |
+| `--output`, `-o` | `""` (stdout) | Write to a file instead of stdout. |
+| `--context`, `--kubeconfig` | current context, `$KUBECONFIG` | Select the cluster for the scan. |
+
+The HTML report is fully self-contained — inline CSS and SVG, no CDN,
+no web fonts — so it opens with no network access, which is the point
+for air-gapped review. The graph image is rendered with the graphviz
+`dot` binary; when `dot` is absent the report still renders in full,
+with a notice in place of the image.
+
+#### Examples
+
+Produce a report for a CI run and attach it as an artifact:
+
+```bash
+kubeatlas diagnose --all-namespaces --format html --output report.html
+```
+
+Assert in a pipeline that a namespace has no orphaned resources:
+
+```bash
+kubeatlas diagnose -n petclinic --format json | jq -e '.orphans | length == 0'
+```
+
+The same report is available from a running server at
+`GET /api/v1/diagnose?namespace=<ns>&format=html|json`.
+
+### `kubeatlas rules-test`
+
+Offline rule-pack evaluator for rule-pack contributors. See
+[Rego rules](./concepts/rego-rules) for the workflow.
+
+## Top-level flags (server mode)
+
+When invoked without a subcommand, `kubeatlas` runs the API server
+and the informer pipeline. The most common flags:
+
+| Flag | Notes |
+|---|---|
+| `--once` | Single offline discovery pass — talk to the Kubernetes API directly (no KubeAtlas server), emit the graph, and exit. |
+| `--format` | Output format for `--once`: `json` (default), `dot`, or `svg`. `svg` renders via the graphviz `dot` tool. |
+| `--level`, `--namespace`, `--kind`, `--name` | Drive `--once` mode — the aggregation level and the resource selector. See `kubeatlas --help`. |
+| `--context`, `--kubeconfig` | Select the cluster for local runs — the kubeconfig context and file. Default to the current context and `$KUBECONFIG`. |
+| `--rule-pack <ref>` | Load an extra rule pack (OCI ref or local directory). Repeatable. The Helm chart sets `KUBEATLAS_RULE_PACKS` from `rulePacks.extras`. |
+| `--version` | Print build metadata and exit. |
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success. |
+| 1 | Usage / connection / I/O error. The CLI prints a one-line message to stderr. |
+| 2 | `rules-test` only — at least one fixture produced no edges or errored. The per-sample report is still emitted on stdout. |
+
+## `kubectl-atlas` plugin
+
+`kubectl-atlas` is a separate binary — the KubeAtlas `kubectl`
+plugin. Placed on `PATH`, `kubectl` exposes it as `kubectl atlas`.
+It shows a KubeAtlas view of a resource, a namespace, or the whole
+cluster:
+
+```bash
+kubectl atlas deployment api -n petclinic   # one resource
+kubectl atlas namespace petclinic           # a namespace
+kubectl atlas cluster                       # the whole cluster
+```
+
+### Modes
+
+The plugin runs in three modes — the first two need no KubeAtlas
+server in the cluster:
+
+| Mode | Selected by | What it does |
+|---|---|---|
+| Offline | *(default)* | Builds the graph from the Kubernetes API and renders a static SVG file locally. Needs the graphviz `dot` tool on `PATH`. |
+| Local UI | `--local-ui` | Runs a KubeAtlas server in-process and opens the interactive web UI. No graphviz, no in-cluster server. Holds until `Ctrl-C`. |
+| Online | `--online`, `--server`, `KUBEATLAS_URL` | Opens a live in-cluster KubeAtlas UI. The URL is resolved from `--server`, then `KUBEATLAS_URL`, then a `kubectl port-forward` to the in-cluster Service. |
+
+Offline mode is self-contained — it renders in-process and does not
+need the `kubeatlas` binary on `PATH`.
+
+### Flags
+
+| Flag | Notes |
+|---|---|
+| `--online` | Use a running in-cluster KubeAtlas server instead of rendering offline. |
+| `--server <url>` | KubeAtlas UI base URL — implies `--online`. |
+| `--local-ui` | Offline: serve the interactive UI from an in-process server instead of rendering an SVG. |
+| `--host <addr>` | Bind address for the `--local-ui` server. Default `127.0.0.1`; use `0.0.0.0` to expose it on the network. |
+| `--kubeatlas-namespace <ns>` | Namespace KubeAtlas is installed in, for online port-forward discovery. Default `kubeatlas`. |
+| `-n`, `--namespace <ns>` | Namespace of the target resource. |
+| `--context`, `--kubeconfig` | Select the cluster — the kubeconfig context and file. |
+| `--no-browser` | Print the URL (or file path) instead of opening a browser. |
+
+### `kubectl atlas impact` (v1.7) {/* #kubectl-atlas-impact-v17-unreleased */}
+
+This new subcommand reads one captured analysis from `GET /api/v1/impact`.
+Unlike the view commands above, it always uses a running KubeAtlas server,
+never opens a browser, and never computes a local fallback. It does not change
+the existing `kubeatlas diagnose` report or frozen v1alpha1 API.
+
+```bash
+kubectl atlas impact ConfigMap settings -n demo --server https://atlas.example
+kubectl atlas impact ServiceAccount api -n demo --cluster east --output json
+kubectl atlas impact Deployment api -n demo --relation dependencies \
+  --max-depth 3 --expected-uid <uid> --output html --out impact.html
+```
+
+Use the exact case-sensitive Kind (`Deployment`, not `deploy` or `deployments`).
+Omit `-n` for a cluster-scoped root. Namespace selects the root, not a filter on
+returned matches; cross-namespace relationships remain visible. `--cluster`
+selects exactly one federated member and is required by a federated server;
+omit it for a standalone server. It is not the kubeconfig `--context`.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--relation` | `dependents` | `dependents` or `dependencies`; no ambiguous `both`. |
+| `--max-depth` | `5` | 1–10 hops; never unbounded. |
+| `--limit` | `200` | 1–1000 results per facet; ordinary and authorization counts remain separate. |
+| `--expected-uid` | unset | Pin the root instance. A changed or unknown UID fails; unset selects the currently named instance. |
+| `--cluster` | unset | Exact federated member ID; never all clusters. |
+| `--output`, `-o` | `text` | `text`, `json`, or `html`. This is a format, not a filename. |
+| `--out` | stdout | Create a new file with mode 0600; `-` also selects stdout. Existing files and symlinks are rejected. |
+| `--timeout` | `30s` | Overall discovery/read deadline, from 1s to 2m; the HTTP read is also capped at 30s. |
+
+Server resolution follows `--server`, then `KUBEATLAS_URL`, then a temporary
+`kubectl port-forward`, using the existing namespace/context/kubeconfig flags.
+The tunnel closes on command completion, cancellation, or failure. `--local-ui`
+and `--host` are rejected; `--online` and `--no-browser` are unnecessary.
+
+Set the optional bearer credential through `KUBEATLAS_TOKEN` using your normal
+secure environment mechanism. There is deliberately no token argument, URL
+credential, or token in an exported report. Remote servers require HTTPS with
+normal certificate validation. Plain HTTP is allowed only for a literal
+loopback address, for example `http://127.0.0.1:8080` after port-forwarding.
+Redirects are not followed, including redirects to another path on the same
+server. Reverse-proxy base paths are supported; URL queries/fragments are not.
+
+Results alone go to stdout; file-write diagnostics go to stderr. Exit 0 means
+a valid capture, **not** a safety approval: unknown coverage, incomplete/empty
+results, or server-declared truncation remain successful results with explicit
+qualifications. Invalid queries, authorization failures, UID mismatches, network
+errors, unsupported schemas, and write failures exit nonzero. Errors do not
+copy upstream response bodies. There are no automatic retries. Requests to
+older servers without this endpoint fail rather than using the legacy count.
+
+JSON contains the complete supported schema-v1 response envelope. HTML contains
+the same captured JSON as escaped text, plus a readable evidence report, inline
+CSS, and a restrictive content policy; no scripts or external resources are
+loaded. Counts, paths, references, authorization, observation, and cached
+history all come from this one response. Rendering adds no reads. Separate CLI
+invocations make separate captures and may legitimately differ; HTML's embedded
+JSON is the exact capture for that report. Unknown response fields fail closed;
+update the CLI together with the supported server schema.
+
+Text and HTML reports show observation gaps by resource endpoint, separately
+before and after the captured graph read. For example, `v1/pods` with
+`list_permission_denied` identifies a missing observation instead of treating
+the result as complete. Initial-delivery and watch flags, CRD/Gatekeeper source
+limits, and API-inventory state, check time, stale/stopped/limited flags remain
+visible even when later evidence recovers. Missing records say unavailable;
+no recorded gaps only qualifies the supplied rows. A complete API inventory
+enumerates advertised endpoints, not collector coverage or effective permissions.
+
+Exports contain sensitive topology even though no Secret values are included.
+Review access before sharing. `--out` protects newly created files; shell
+redirection has the permissions and overwrite behavior of your shell. If a
+write/close fails, a partial output file may remain and is not silently deleted.
+Retained event bounds do not establish continuous history, and metadata markers
+are not backups or verified recovery points.

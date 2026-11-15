@@ -65,7 +65,7 @@ marker cannot reconstruct a discarded event or prove a complete diff window.
 
 Alongside the event stream, KubeAtlas writes **snapshot markers** —
 rows in `snapshot_meta` that record "at this timestamp the stored graph
-held N observed resources". In v1.7 development, resource and edge counts and
+held N observed resources". In v1.7, resource and edge counts and
 marker append share one atomic stored-graph observation. A marker does not
 contain an atomic historical graph or backup. The diff reads its supplied time window;
 a marker neither fills missing events nor proves a recoverable snapshot.
@@ -151,7 +151,7 @@ for the field-level *how*.
 See the [API reference](../api-reference.md#snapshots-tier-2) for
 the full request and response shapes.
 
-## Standalone dynamic history (v1.7 development)
+## Standalone dynamic history (v1.7) {/* #standalone-dynamic-history-v17-development */}
 
 With Tier 2 snapshots explicitly enabled, standalone core, CRD-instance and
 Gatekeeper collectors now share current graph receipts and the existing history
@@ -169,9 +169,9 @@ guarantee is implied. A late watch update after deletion can still reinsert a
 row and produce another observation. All collectors use the existing queue,
 workers and retry limits; adding this source coverage does not erase known loss.
 
-## Member-scoped reads (v1.7 development)
+## Member-scoped reads (v1.7) {/* #member-scoped-reads-v17-development */}
 
-In the unreleased v1.7 implementation, federation requests must explicitly select
+In v1.7, federation requests must explicitly select
 one attached member with `cluster`, for example
 `GET /api/v1/snapshots/diff?cluster=prod&from=1h`. Snapshot lists use the same
 selector. Both routes enforce member visibility before reading history; the
@@ -199,7 +199,7 @@ then enable both persistence and snapshots:
 
 ```bash
 helm upgrade --install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.6.0 \
+  --version 1.7.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \

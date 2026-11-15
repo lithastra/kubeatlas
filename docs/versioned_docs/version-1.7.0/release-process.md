@@ -1,0 +1,442 @@
+---
+sidebar_position: 8
+title: Release process
+---
+
+# Release process
+
+KubeAtlas is released as a set of independently versioned products.
+A core Git tag is therefore the start of a release, not proof that the
+whole release is usable. The release owner closes the matrix below with
+public-download evidence before announcing the version.
+
+For the v1.6 release line, the manual `Release preflight` has two required
+parts: build all candidate artifacts without publishing, and run the exact
+candidate across the frozen vanilla Kubernetes 1.34, 1.35, and 1.36 Tier 2
+matrix. A build-only result is not a release result. After publication, the
+weekly public clean-cluster workflow anonymously verifies the current GitHub
+binary/checksum, public OCI Chart, versioned documentation, and clean Tier 1
+and Tier 2 installs. See [Signals, alerts, and recovery](./operations/runbooks.md).
+
+## v1.7.0 release matrix {/* #v170-release-matrix */}
+
+[KubeAtlas v1.7.0](https://github.com/lithastra/kubeatlas/releases/tag/v1.7.0)
+was published on **November 15, 2026**, from signed-tag source
+`d819ce163b4885d41510a4dff77c0dc7a8bd4f3c`.
+
+| Component | Version and identity | Evidence |
+|---|---|---|
+| Server and CLI | `v1.7.0`; ten archives and SHA-256 checksums | Checksums, static metadata for all archives and native macOS ARM64 execution; [public download evidence](https://github.com/lithastra/kubeatlas/releases/tag/v1.7.0). |
+| Application image | `1.7.0`, `sha256:786c70665dab2fa7a99316a658be603df425df4b84596cf7ada5e272f10866ac` | [Signed OCI audits and clean Tier 1/Tier 2 installation](https://github.com/lithastra/kubeatlas/actions/runs/43662489097). |
+| PostgreSQL + AGE | `16.15-age1.6.0-rc0.2`, `sha256:412ae56754e71aac96e8cb6327f70782c50bd4aeff75ff0ddf32eb4ee7400936` | Reused immutable image; native AMD64/ARM64 checks and release-bound signature/attestations. AGE remains upstream `1.6.0-rc0`. |
+| Helm chart | `1.7.0`, `sha256:01b8c64b358e6c529afc445baed2799feb55bbe9c3689ba3354ec7b9142bea5f` | Anonymous OCI verification and clean Tier 1/Tier 2 installation. |
+| Documentation | `1.7.0` stable | Historical versions remain available; `/next/` is unreleased. |
+
+The [exact-source CI](https://github.com/lithastra/kubeatlas/actions/runs/43659451540)
+and [full manual preflight](https://github.com/lithastra/kubeatlas/actions/runs/43659458131)
+cover the final release source. Preflight includes Kubernetes 1.34/1.35/1.36,
+CloudNativePG upgrade windows and public v1.5.2/v1.6.0 upgrade/restore.
+
+### Functional and performance scope
+
+- A complete **600.06-second** local Docker Desktop window passed on
+  implementation candidate `421e09524cd7f81b68e497ce076185248706af4f`.
+  The release source differs only in release documentation and its merge
+  commit; production sources and dependency locks are identical.
+- Both tiers passed real Web/API/CLI capture/export and UID-conflict checks,
+  collection create/update/delete, snapshot marker/diff and Secret-reference
+  checks. The window recorded no unexpected restart, OOM, snapshot drop or
+  write failure. Collector accounts had no Secret-read permission.
+- On Apple M4 with a 10-vCPU, approximately 8 GB Docker VM, the live 5,000-object
+  ConfigMap-heavy sparse profile used 10 warmups and 100 verified samples per
+  tier, depth 5 and result limit 200. Tier 1 p95 was **76.2 ms** with 269 edges;
+  Tier 2 p95 was **62.9 ms** with 286 edges. These are separately declared
+  projections, not a claim about dense graphs or arbitrary production loads.
+- Member API/CLI checks covered allowed/denied scopes, anonymous rejection,
+  UID conflict and denied exports, plus real CRD and Gatekeeper-object
+  create/update/delete. Two logical members used one physical cluster.
+  No Gatekeeper admission engine or external identity-provider integration
+  was exercised by that fixture.
+- An earlier 14,767-object Desktop-cluster attempt returned HTTP 413 and is
+  retained as failed evidence. The successful run used an isolated cluster;
+  old stress workloads were not removed. A selected-cluster projection can
+  exceed its byte budget even for a shallow traversal.
+- The release owner replaced the earlier endurance requirement with the
+  ten-minute functional window. **No endurance, HA, effective-permission or
+  general production-reliability guarantee is claimed.** Binary archives
+  remain checksum-verified; OCI signatures do not sign those archives.
+
+Independently versioned integrations retain the delivery boundaries in the
+historical matrix below. Core publication is not a new plugin compatibility
+or distribution claim.
+
+## Source-history maintenance (2026-09-24)
+
+Repository history was rewritten to remove workstation-specific validation
+tools and personal checkout paths. This is source maintenance, not a new
+release. Existing downloaded binaries, checksums, container images, and Helm
+packages were not rebuilt or replaced. They retain their original build
+identities. GitHub's automatically generated source archives now reflect
+the rewritten tags and must not be confused with those published binaries.
+
+The rewritten historical tags are unsigned; old commit and tag signatures
+cannot authenticate the new history. This does not retroactively sign or
+revalidate any release artifact. For example, the original v1.5.2 build
+commit is `acb0ced4479f2d4ac3f0509ace1d5717ab4111b1`, while its rewritten
+source commit is `8686f3f8d3367fbbe818ab11b95dd280c6e7179f`.
+Continue verifying published archives against their published checksums and
+images against their recorded immutable digests.
+
+Contributors with an older clone should preserve uncommitted work separately
+and clone the repository again. Do not merge old history back into the new
+main branch. Existing PR views, forks, and cached commits may still reference
+the previous history.
+
+## v1.6.0 release matrix — published
+
+[KubeAtlas v1.6.0](https://github.com/lithastra/kubeatlas/releases/tag/v1.6.0)
+was published on **September 26, 2026**, from signed-tag source
+`69609e320045cbd943185dfa7900c3302359999e`. Later commits on `main` and
+documentation corrections do not rebuild, replace, or re-sign those artifacts.
+
+| Component | Published version | Verified evidence |
+|---|---|---|
+| Core server and CLI | `v1.6.0` | Ten platform archives and checksums; [exact-source CI](https://github.com/lithastra/kubeatlas/actions/runs/35991313372), [full manual preflight](https://github.com/lithastra/kubeatlas/actions/runs/35991450060), and [anonymous complete downloads](https://github.com/lithastra/kubeatlas/actions/runs/36227051229) passed. |
+| Application image | `1.6.0` | Public linux/amd64 and linux/arm64 index; digest-bound signature, per-platform SBOM and provenance verified by the [artifact audit](https://github.com/lithastra/kubeatlas/actions/runs/36222619795). |
+| PostgreSQL + AGE image | `16.15-age1.6.0-rc0.2` | Both architectures, immutable recipe, exact-release signing and attestations verified by the same audit. Apache AGE is still the upstream `1.6.0-rc0` dependency, not GA 1.6.0. |
+| Helm chart | `1.6.0` | Public digest and signature verified; Tier 1 audit and a separate public Tier 2 smoke check passed. |
+| Documentation | `1.6.0` stable | Default release instructions, with historical versions preserved and development isolated under `/next/`. Build success is separate from checking deployed content. |
+
+### Immutable core artifact identities
+
+| Artifact | Verified OCI reference |
+|---|---|
+| Application | `ghcr.io/lithastra/kubeatlas@sha256:ff185a897c10f244de6b014a868af4fecaa1f15c300c1de9a7b58a62a3b338c8` |
+| PostgreSQL + AGE | `ghcr.io/lithastra/postgres-age@sha256:412ae56754e71aac96e8cb6327f70782c50bd4aeff75ff0ddf32eb4ee7400936` |
+| Helm chart | `oci://ghcr.io/lithastra/charts/kubeatlas@sha256:1ba4fe34276337f70d5a5d160dea1a3f225c9d3950b6e869691219a7c528fce3` |
+
+### Validation scope and limits
+
+- The exact-source preflight passed all 12 jobs, including Kubernetes
+  1.34/1.35/1.36, both database architectures, CloudNativePG upgrade windows,
+  and public v1.5.2 upgrade/restore.
+- The separate final-public-artifact Tier 2 smoke check covered **Linux AMD64
+  on Kubernetes 1.36.1**, with digest matching, real updates, health/queue
+  checks, Secret sentinel, and cleanup. It was not another one-hour run.
+- All ten standalone archives passed checksum, inventory, architecture, and
+  embedded-build-identity checks. Runtime execution coverage was limited to
+  the macOS ARM64 standalone executables. Anonymous complete downloads passed for all
+  archives; OCI signatures do not cover these binary archives.
+- Published validation scope was limited to one-hour functional checks.
+  **No 72-hour endurance test, dedicated performance acceptance, HA, or
+  general production-reliability guarantee is claimed for v1.6.0.** Earlier
+  failed or superseded runs are not time credit. Single-replica operation and
+  external authentication remain required.
+
+See the [release notes](https://github.com/lithastra/kubeatlas/releases/tag/v1.6.0)
+for the complete audit provenance and validation limits.
+
+### Independently versioned integrations
+
+Distribution status checked September 28, 2026; publication is not a new
+core-version compatibility claim.
+
+| Integration | Distribution state | Compatibility / delivery boundary |
+|---|---|---|
+| Krew `atlas` | Official index at `v1.6.0`; [upstream PR #6366](https://github.com/kubernetes-sigs/krew-index/pull/6366) merged. | Six platform URLs and checksums match the published CLI archives. |
+| Headlamp plugin | [Standalone v1.2.2](https://github.com/lithastra/kubeatlas-headlamp-plugin/releases/tag/v1.2.2) with archive and checksums. | Manual release installation is separate from upstream catalog availability; catalog follow-up remains deferred. |
+| GitHub Action | [v1.0.1](https://github.com/lithastra/kubeatlas-action/releases/tag/v1.0.1), also selected by `@v1`. | Existing [kind compatibility CI](https://github.com/lithastra/kubeatlas-action/actions/runs/32686038064) pins core v1.5.2; do not claim a new v1.6.0 pairing test. |
+| Rule packs | 14 formal OCI packs at `0.1.0`; [distribution audit](https://github.com/lithastra/kubeatlas-rules/actions/runs/35586284112) passed. | Signed OCI distribution, not GitHub Releases; the audit's CLI is v1.5.2, not a v1.6.0 compatibility result. |
+| Backstage plugin | [1.0.1 source-only delivery](https://github.com/lithastra/kubeatlas-backstage-plugin#install). | Intentionally not published to npm. npm `1.0.0` lacks the packaging fix; build the pinned source as documented. New host/server compatibility is not claimed. |
+
+## v1.5.2 release matrix (historical)
+
+| Component | Required version | Distribution | Required evidence |
+|---|---:|---|---|
+| Core server and CLI | `v1.5.2` | GitHub Release | Checksums match every archive; binaries report `1.5.2` |
+| Server image | `1.5.2` | `ghcr.io/lithastra/kubeatlas` | Anonymous multi-architecture manifest pull |
+| PostgreSQL + AGE image | `16.6-age1.6.0-rc0.1` | `ghcr.io/lithastra/postgres-age` | Anonymous amd64 and arm64 manifest pull; SBOM and provenance attestations present |
+| Helm chart | `1.5.2` | `oci://ghcr.io/lithastra/charts/kubeatlas` | Anonymous pull, lint, and clean-cluster install |
+| Rule packs | Versions in each `metadata.yaml` | `ghcr.io/lithastra/rules/<pack>` | 14 formal packs resolve, verify against the release-workflow OIDC identity, pull, and load against their samples |
+| GitHub Action | `v1.0.1` and moving `v1` | `lithastra/kubeatlas-action` | Real release download, checksum, extraction, execution, and temporary-directory cleanup |
+| Krew manifest | `v1.5.2` | `kubernetes-sigs/krew-index` | All platform URLs and SHA256 values validate |
+| Headlamp plugin | `1.2.0` | `headlamp-k8s/plugins` | Catalog metadata, archive checksum, tests, and production build agree |
+| Backstage plugin | `1.0.0` | npm | Anonymous install and production build |
+| Documentation | `1.5.2` | Documentation site | Production build has no broken links or anchors; current install commands resolve publicly |
+
+The core v1.5.2 security patch is gated by its binaries, application and
+database images, Helm chart, rule-pack audit, and documentation. The GitHub
+Action, Krew manifest, Headlamp catalog, and Backstage npm package are
+independently versioned integrations: record their evidence honestly, but do
+not keep a published core security fix out of the production install path while
+an external catalog review is pending. The Headlamp catalog PR may therefore
+remain open without blocking v1.5.2; update it only for substantive code,
+artifact, or maintainer feedback.
+
+Recorded v1.5.2 evidence:
+
+- The [public GitHub Release](https://github.com/lithastra/kubeatlas/releases/tag/v1.5.2)
+  and [release workflow](https://github.com/lithastra/kubeatlas/actions/runs/32648122333)
+  publish the tagged binaries, image, and Chart. The public Chart resolves to
+  OCI digest `sha256:6fda2e18b31537aa99db0b63366387c64e7e526e0c1ba7ccf7999048e3e1cee5`.
+- The [rule-pack distribution audit](https://github.com/lithastra/kubeatlas-rules/actions/runs/32675302764)
+  resolves, verifies, pulls, and loads all 14 formal OCI packs.
+- The [GitHub Action compatibility run](https://github.com/lithastra/kubeatlas-action/actions/runs/32686038064)
+  downloads and exercises the v1.5.2 release against a real kind cluster.
+- The [Krew v1.5.2 manifest](https://github.com/kubernetes-sigs/krew-index/pull/6234)
+  is merged. Backstage `1.0.0` resolves anonymously from npm. The
+  [Headlamp catalog PR](https://github.com/headlamp-k8s/plugins/pull/757)
+  remains under external review and is not represented as merged.
+
+Apache AGE does not publish a GA `1.6.0` tag for PostgreSQL 16. The
+database image therefore names the upstream `1.6.0-rc0` dependency
+explicitly and pins its Git commit in the Dockerfile. The final suffix
+is the KubeAtlas image recipe revision: `.1` for v1.5.2 and `.2` for
+v1.6.0. Reusing a recipe tag for different
+bytes is not allowed. The release workflow first inspects the registry:
+if the tag already exists, it verifies and reuses its amd64, arm64, and
+attestation manifests. It builds only when the tag is absent. A registry
+error is fatal rather than being treated as absence, and the release
+contract rejects a changed Dockerfile unless the image tag also changes.
+
+## Artifact trust boundary
+
+The release evidence must describe each artifact independently:
+
+- Binary archives have a GoReleaser-generated SHA-256 checksum file.
+- The PostgreSQL + AGE build explicitly enables BuildKit SBOM and
+  provenance attestations, and the release verifies their manifests.
+- The published v1.5.2 application image, Helm chart, and binary archives do
+  not have KubeAtlas Cosign signatures. Do not retroactively call them signed.
+- The v1.6 release workflow is configured to keyless-sign the application
+  image, PostgreSQL + AGE image, and Helm OCI chart by immutable digest. It
+  also explicitly creates and verifies per-platform application-image and
+  database-image SPDX SBOM and SLSA provenance statements.
+- Configuration is not public evidence. Do not call a v1.6 artifact signed or
+  attested until its tag workflow and anonymous clean-cluster audit pass for
+  the exact final candidate commit and published digests. Local functional,
+  performance, and endurance results do not substitute for this public audit.
+- Binary archives remain checksum-verified but unsigned. Their contents are
+  not covered by the OCI image signatures.
+
+The v1.5.2 unsigned application artifacts are a documented historical
+limitation, not evidence that signature verification for separately
+distributed Rego rule packs is disabled. Those are different release
+pipelines.
+
+## Verifying the published v1.6.0 artifacts {/* #verifying-a-v16-core-candidate */}
+
+The release audit runs these checks from a fresh job with an empty registry
+credential configuration. The values below identify the published v1.6.0
+release; compare the resolved digests with the immutable identities above and
+the retained `core-artifact-audit-v1.6.0` workflow artifact before deployment:
+
+```bash
+tag=v1.6.0
+commit=69609e320045cbd943185dfa7900c3302359999e
+version=${tag#v}
+issuer=https://token.actions.githubusercontent.com
+identity="https://github.com/lithastra/kubeatlas/.github/workflows/release.yml@refs/tags/${tag}"
+
+app_repository=ghcr.io/lithastra/kubeatlas
+database_repository=ghcr.io/lithastra/postgres-age
+chart_repository=ghcr.io/lithastra/charts/kubeatlas
+database_tag=16.15-age1.6.0-rc0.2
+
+app_digest=$(oras resolve "${app_repository}:${version}")
+database_digest=$(oras resolve "${database_repository}:${database_tag}")
+chart_digest=$(oras resolve "${chart_repository}:${version}")
+
+for artifact in \
+  "${app_repository}@${app_digest}" \
+  "${database_repository}@${database_digest}" \
+  "${chart_repository}@${chart_digest}"; do
+  cosign verify \
+    --certificate-identity "${identity}" \
+    --certificate-oidc-issuer "${issuer}" \
+    --certificate-github-workflow-repository lithastra/kubeatlas \
+    --certificate-github-workflow-ref "refs/tags/${tag}" \
+    --certificate-github-workflow-sha "${commit}" \
+    -a "release-tag=${tag}" \
+    -a "release-commit=${commit}" \
+    "${artifact}"
+done
+```
+
+Checking only that *some* valid Sigstore signature exists is insufficient. The
+identity, GitHub repository, tag ref, commit SHA, signed annotations, and
+immutable digest are all part of the verification policy. The retained audit
+also inspects both image indexes and proves that their linux/amd64 and
+linux/arm64 manifests each have SPDX and SLSA statements bound to that exact
+platform digest.
+
+After verification, pin the application image digest during installation so a
+later tag lookup is not introduced between verification and deployment:
+
+```bash
+helm upgrade --install kubeatlas \
+  oci://ghcr.io/lithastra/charts/kubeatlas \
+  --version "${version}" \
+  --namespace kubeatlas --create-namespace \
+  --set-string "image.digest=${app_digest}"
+```
+
+The operator example selects the Helm chart by version; verify its resolved
+OCI digest immediately before installation. The release audit uses Helm 3.20
+to pull the chart by its verified OCI digest, then installs that local archive
+with the verified application-image digest on a clean kind cluster.
+
+## v1.6 trust-gate order
+
+1. Freeze the release workflow, runtime images, Chart, dependencies, recovery
+   behavior, and instrumentation.
+2. Complete the agreed candidate validation and retain its exact commit,
+   images, workload, duration, and acceptance criteria outside the source
+   repository. Record any approved exception and untested scope explicitly.
+   A functional run does not establish endurance. Do not transfer an older
+   candidate's results to changed runtime or dependency surfaces.
+3. Run the manual frozen candidate preflight on the same commit.
+4. Create the signed release tag. The tag workflow publishes the database and
+   application image indexes with attestations, creates a draft GitHub Release,
+   pushes the Chart, and keyless-signs all three OCI digests.
+5. Keep the GitHub Release draft. A separate no-package-permission job creates
+   an empty registry credential configuration, resolves the public artifacts,
+   verifies exact workflow/ref/SHA signatures, validates per-platform
+   attestations, anonymously pulls the database image and Chart, and installs
+   the digest-pinned application on clean Kubernetes.
+6. Preserve the bounded JSON audit artifact even on failure. Publish the draft
+   release only when the clean audit and every other core row are green.
+
+### Recovering an audit-only failure
+
+Draft releases are not returned by GitHub's published-release-by-tag endpoint.
+The existing Release writer verifies the signed tag, lists releases with push
+access, and re-reads the matching draft by numeric ID. The independent artifact
+audit consumes that gate and retains only `contents: read`; it has no package
+write or OIDC signing permission.
+
+If publishing succeeded but the audit failed, preserve the failed run and keep
+the Release draft. Do not move the signed tag or rerun producer jobs just to
+pick up a workflow fix. After reviewing and merging the fix, manually dispatch
+**Audit existing release artifacts** (`release-artifact-audit.yml`) on `main`,
+supplying all six immutable identity inputs from the original publication:
+`tag`, `commit`, `tag_object`, `app_digest`, `database_digest`, and `chart_digest`.
+The three digests must include their `sha256:` prefix.
+
+This recovery workflow checks the signed tag and draft in a separate metadata
+job. Only that job has `contents: write`, solely because GitHub requires push
+access to list drafts; its API calls are read-only. The audit job uses current
+reviewed verification tools and the original release's database dependency
+contract, rejects any tag-to-digest mismatch, verifies the original tag
+workflow's signatures and attestations, and performs anonymous pulls and a
+Tier 1 chart installation in an ephemeral CI cluster. It does not build, push,
+sign, modify tags, or promote the Release.
+
+After both jobs pass, a separate contents-read job creates a new Kubernetes
+1.36.1 AMD64 cluster for the public Tier 2 installation. It rechecks all three
+tag-to-digest mappings, verifies the downloaded OCI manifest and Chart bytes,
+and installs the original Chart with both application and database images
+pinned by digest. The external prerequisite stays CloudNativePG chart 0.29.0 /
+operator 1.30.0. Operator and application installation deadlines remain five
+and ten minutes, respectively; failures are retained, not retried automatically.
+
+The bounded smoke check requires Ready Pods, unchanged runtime identities,
+zero restarts/OOM, durable storage, a bound PVC, and three real ConfigMap
+updates with exact-version API/history visibility within 30 seconds each.
+It also checks operational metrics, zero queue/drop/write errors, and a
+synthetic Secret-value sentinel. It never reads existing Secret values or
+database backups, and retains only bounded metadata, aggregate database
+counts and endpoint results, not response bodies or raw application logs.
+Namespace cleanup is ownership-checked; the workflow additionally deletes the
+disposable cluster. Neither cleanup failure can produce a passing audit.
+
+Retain `release-draft-gate-<run>-<attempt>`,
+`core-artifact-audit-recovery-<run>-<attempt>` and
+`core-artifact-tier2-<run>-<attempt>` alongside the original failure.
+The evidence distinguishes `auditToolsCommit` from the release commit. Passing
+this supplemental audit does not retroactively turn the failed tag run green,
+verify binary archive payloads, establish Tier 2 recovery or endurance, or
+authorize publication. Recheck the draft and remaining release gates before
+requesting promotion.
+
+The new Tier 2 job is only executed by manual dispatch on reviewed `main`,
+after its signed-tag/draft and OCI signature gates succeed. Pull-request tests
+use isolated command/HTTP doubles and are not live installation evidence.
+An earlier Tier 1-only audit does not retroactively include this job.
+
+### Verifying public binary downloads after promotion
+
+Authenticated draft downloads do not prove anonymous public downloads. Once the
+existing Release has been promoted, dispatch **Audit public release downloads**
+(`release-download-audit.yml`) on reviewed `main`. Supply the original `tag`,
+`commit`, signed `tag_object`, numeric `release_id`, and the previously reviewed
+`checksums_digest` (including `sha256:`). Do not replace the expected checksum
+digest with a newly observed value to make a failed audit pass.
+
+This separate, `contents: read` workflow uses public HTTP GET requests without
+authorization or cookies. It validates the signed tag and published Release,
+downloads the complete checksum file, then streams all ten archives through
+SHA-256 and byte-count checks. It requires the exact current platform inventory:
+server binaries for Linux/macOS and CLI binaries for Linux/macOS/Windows, each
+on AMD64 and ARM64. The checksum contents must match both the frozen checksum
+digest and every asset's metadata. Tag, Release and asset identities are checked
+again after all downloads, so mid-run replacement cannot pass unnoticed.
+
+Downloads have bounded response sizes, allowlisted HTTPS redirect hosts, three
+workers and a 180-second deadline per request including redirects and the body.
+There are no automatic retries. Retain
+`release-download-audit-<run>-<attempt>` even on failure; partial-byte counts and
+failure codes are evidence, not successful full-file verification. Signed CDN
+URLs and raw response/error bodies are not retained.
+
+The audit does not rebuild, sign, replace, publish, extract or execute artifacts,
+and does not create or access a Kubernetes cluster. It adds full anonymous
+download integrity evidence, not all-platform native execution, OCI signatures,
+endurance or production-reliability guarantees. Keep failed local or CI attempts
+separate. After a passing run, recheck the original Release identity and update
+only the pending download-verification statement in its notes.
+
+## v1.5.2 release order (historical)
+
+1. Run `Release preflight` for `v1.5.2` on the exact `main` commit. It
+   builds the Web bundle, binaries, archives, checksums, local snapshot
+   images, and Helm package without registry login or publication.
+2. Merge only after ordinary CI, Tier 2 upgrade/lifecycle E2E, snapshot
+   E2E, and release preflight are required and green on the protected
+   default branch.
+3. Push the signed `v1.5.2` tag. The release workflow reuses the immutable
+   PostgreSQL image when it already exists, while the core release publishes
+   in parallel; Helm packaging waits for both.
+4. Keep the GitHub Release in draft state while a clean environment
+   anonymously pulls and verifies the binaries, images, and chart.
+5. Run the rule repository distribution audit. It must verify and load
+   all 14 formal packs, not merely find their tags.
+6. Publish and smoke-test Action `v1.0.1`; move `v1` only after that
+   immutable tag succeeds.
+7. Update Krew and the Headlamp catalog using checksums from already
+   published immutable archives. Verify the Backstage npm version. Track each
+   integration independently when an external review remains pending.
+8. Update version-pinned installation commands only after the matching
+   chart is publicly pullable. This keeps documentation executable at
+   every point in the release.
+9. Publish the draft GitHub Release and core announcement only when every core
+   release row has evidence. Announce an independently versioned integration
+   only after its own row is complete.
+
+The GitHub Release being a draft does not make the tag run a dry run:
+the versioned application image and Helm chart are already public by that
+point, and the application workflow also updates its moving `latest` tag.
+Creating the Git tag is therefore the production publication decision.
+
+If any row fails, stop the release and preserve its logs and diagnostic
+artifacts. A local Kind result is useful evidence but never substitutes
+for the required protected-branch workflow.
+
+## Default-branch protection
+
+The five Lithastra-owned repositories require pull requests, DCO,
+CODEOWNERS review, passing CI, and blocked force-pushes. For the core
+repository, Tier 2 and snapshot E2E are required checks rather than
+optional evidence. Rulesets are repository settings and must be audited
+after workflow job names change; a workflow file alone cannot make its
+own check mandatory.

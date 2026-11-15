@@ -4,6 +4,11 @@ title: v1.7 impact analysis contract
 
 # v1.7 impact analysis contract
 
+> This page preserves the implementation sequence and its historical pending
+> gates. For the shipped v1.7 scope and observed results, use the
+> [release qualification](../release-process.md#v170-release-matrix).
+
+
 Status: **M0 design baseline, not a shipped feature**. The release owner accepted
 the v1.7 direction on September 30, 2026. This document defines implementation
 and acceptance work; it is not evidence that those checks already pass.
