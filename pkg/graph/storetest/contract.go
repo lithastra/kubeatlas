@@ -325,6 +325,10 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
+	t.Run("empty label values require existing keys", func(t *testing.T) {
+		runEmptyLabelFilters(t, factory)
+	})
+
 	t.Run("snapshot returns all resources and edges", func(t *testing.T) {
 		s := factory(t)
 		ctx := context.Background()

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/lithastra/kubeatlas/pkg/api"
 	"github.com/lithastra/kubeatlas/pkg/graph"
@@ -52,7 +53,7 @@ func postJSON(t *testing.T, url string, into any) (*http.Response, []byte) {
 }
 
 func TestSnapshotTrigger_DefaultsToManual(t *testing.T) {
-	base, _, stop := seedAndServe(t, snapshotTriggerFixture)
+	base, _, stop := seedAndServe(t, snapshotTriggerFixture, api.WithSnapshots(time.Hour))
 	defer stop()
 
 	var resp api.SnapshotTriggerResponse
@@ -72,7 +73,7 @@ func TestSnapshotTrigger_DefaultsToManual(t *testing.T) {
 }
 
 func TestSnapshotTrigger_PeriodicTrigger(t *testing.T) {
-	base, _, stop := seedAndServe(t, snapshotTriggerFixture)
+	base, _, stop := seedAndServe(t, snapshotTriggerFixture, api.WithSnapshots(time.Hour))
 	defer stop()
 
 	var resp api.SnapshotTriggerResponse
@@ -86,7 +87,7 @@ func TestSnapshotTrigger_PeriodicTrigger(t *testing.T) {
 }
 
 func TestSnapshotTrigger_RejectsUnknownTrigger(t *testing.T) {
-	base, _, stop := seedAndServe(t, snapshotTriggerFixture)
+	base, _, stop := seedAndServe(t, snapshotTriggerFixture, api.WithSnapshots(time.Hour))
 	defer stop()
 
 	r, _ := postJSON(t, base+"/api/_internal/snapshot/trigger?trigger=bogus", nil)
@@ -97,7 +98,7 @@ func TestSnapshotTrigger_RejectsUnknownTrigger(t *testing.T) {
 
 func TestSnapshotTrigger_EmptyCluster(t *testing.T) {
 	// No fixture — the marker still records, with zero counts.
-	base, _, stop := seedAndServe(t, nil)
+	base, _, stop := seedAndServe(t, nil, api.WithSnapshots(time.Hour))
 	defer stop()
 
 	var resp api.SnapshotTriggerResponse

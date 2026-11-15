@@ -19,6 +19,7 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/aggregator"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
+	"github.com/lithastra/kubeatlas/pkg/impact"
 	"github.com/lithastra/kubeatlas/pkg/multicluster"
 	"github.com/lithastra/kubeatlas/pkg/operations"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
@@ -122,7 +123,10 @@ func TestImpactAPIAuthorizationBeforeEveryRead(t *testing.T) {
 						return operations.AnalysisAvailability{}, nil
 					}),
 				}))
-			w := serveImpactTest(s, impactTestRequest(context.Background(), "/api/v1/impact/demo/ConfigMap/settings?cluster="+tc.query, tc.token))
+			w := serveImpactTest(s, impactTestRequest(context.Background(), "/api/v1/impact/demo/ConfigMap/settings?projection_counts=true&cluster="+tc.query, tc.token))
+			if w.Header().Get(impact.ProjectionCountsHeader) != "" {
+				t.Fatal("failed request exposed projection counts")
+			}
 			if w.Code != tc.status || spy.calls.Load() != 0 || evidenceReads.Load() != 0 || clusters.calls.Load() != tc.lists {
 				t.Fatalf("status=%d graph=%d evidence=%d lists=%d", w.Code, spy.calls.Load(), evidenceReads.Load(), clusters.calls.Load())
 			}
@@ -209,7 +213,7 @@ func TestImpactAPIScopeEvidenceAndWireContract(t *testing.T) {
 }
 
 func TestImpactAPIInvalidInputNeverReads(t *testing.T) {
-	for _, query := range []string{"?cluster=prod", "?cluster=", "?limit=0", "?limit=-1", "?limit=1001", "?limit=01", "?limit=1&limit=2", "?max_depth=0", "?max_depth=11", "?max_depth=banana", "?relation=upstream", "?relation=", "?expected_uid=", "?namespace=other", "?label_selector=app=x", "?x=%zz", "?limit=1;cluster=hidden", "?expected_uid=%00"} {
+	for _, query := range []string{"?cluster=prod", "?cluster=", "?limit=0", "?limit=-1", "?limit=1001", "?limit=01", "?limit=1&limit=2", "?max_depth=0", "?max_depth=11", "?max_depth=banana", "?relation=upstream", "?relation=", "?expected_uid=", "?namespace=other", "?label_selector=app=x", "?x=%zz", "?limit=1;cluster=hidden", "?expected_uid=%00", "?projection_counts=", "?projection_counts=false", "?projection_counts=true&projection_counts=true"} {
 		t.Run(query, func(t *testing.T) {
 			spy := &impactAPIStore{}
 			s := New("", spy, aggregator.NewRegistry())
@@ -382,7 +386,10 @@ func TestImpactAPIResponseCapFailsBeforeSuccess(t *testing.T) {
 	if err := store.UpsertResource(context.Background(), root); err != nil {
 		t.Fatal(err)
 	}
-	w := serveImpactTest(New("", store, aggregator.NewRegistry()), impactTestRequest(context.Background(), "/api/v1/impact/demo/Pod/large", ""))
+	w := serveImpactTest(New("", store, aggregator.NewRegistry()), impactTestRequest(context.Background(), "/api/v1/impact/demo/Pod/large?projection_counts=true", ""))
+	if w.Header().Get(impact.ProjectionCountsHeader) != "" {
+		t.Fatal("oversized response exposed projection counts")
+	}
 	if w.Code != 413 || w.Body.Len() > 1024 || strings.Contains(w.Body.String(), "\"analysis\"") {
 		t.Fatalf("oversized response %d length=%d", w.Code, w.Body.Len())
 	}
@@ -489,6 +496,59 @@ func TestImpactAPIEvidenceFailureNeverReturnsPartialAnalysis(t *testing.T) {
 			}
 			if spy.calls.Load() != wantReads {
 				t.Fatalf("graph reads=%d want=%d", spy.calls.Load(), wantReads)
+			}
+		})
+	}
+}
+
+func TestImpactAPIProjectionCountsMatchScopedInput(t *testing.T) {
+	root := graph.Resource{Namespace: "demo", Kind: "ConfigMap", Name: "settings", GroupVersion: "v1"}
+	consumer := graph.Resource{Namespace: "demo", Kind: "Pod", Name: "consumer", GroupVersion: "v1"}
+	projection := &graph.Graph{}
+	for _, cluster := range []string{"", "prod", "hidden"} {
+		root.ClusterID, consumer.ClusterID = cluster, cluster
+		projection.Resources = append(projection.Resources, root, consumer)
+		projection.Edges = append(projection.Edges, graph.Edge{From: consumer.ID(), To: root.ID(), Type: graph.EdgeTypeUsesConfigMap})
+	}
+	projection.Resources = append(projection.Resources, graph.Resource{ClusterID: "prod", Namespace: "demo", Kind: "Pod", Name: "disconnected"})
+	projection.Edges = append(projection.Edges,
+		graph.Edge{From: "prod:demo/Pod/disconnected", To: "prod:demo/ConfigMap/dangling", Type: graph.EdgeTypeUsesConfigMap},
+		graph.Edge{From: "prod:demo/Pod/consumer", To: "hidden:demo/ConfigMap/settings", Type: graph.EdgeTypeUsesConfigMap},
+	)
+	for _, tc := range []struct{ name, cluster, want string }{
+		{"standalone", "", "2,1"},
+		{"named", "prod", "3,2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := &impactAPIStore{read: func(_ context.Context, o graph.ImpactSnapshotOptions) (*graph.Graph, error) {
+				if o.ClusterID != tc.cluster {
+					t.Error("count request changed projection scope")
+				}
+				// Deliberately over-return data to exercise defense in depth.
+				return projection, nil
+			}}
+			var opts []ServerOption
+			query := "?projection_counts=true"
+			if tc.cluster != "" {
+				opts = append(opts, WithClusterLister(&impactAPIClusters{clusters: []string{"prod"}}))
+				query += "&cluster=prod"
+			}
+			s := New("", spy, aggregator.NewRegistry(), opts...)
+			path := "/api/v1/impact/demo/ConfigMap/settings"
+			w := serveImpactTest(s, impactTestRequest(t.Context(), path+query, ""))
+			var response ImpactResponse
+			if w.Code != http.StatusOK || spy.calls.Load() != 1 || w.Header().Get(impact.ProjectionCountsHeader) != tc.want ||
+				json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Analysis.Counts.Total != 1 ||
+				strings.Contains(w.Body.String(), "ProjectionCounts") || strings.Contains(w.Body.String(), "projectionCounts") {
+				t.Fatal("projection counts must describe the same scoped input without entering the impact body")
+			}
+			query = ""
+			if tc.cluster != "" {
+				query = "?cluster=prod"
+			}
+			w = serveImpactTest(s, impactTestRequest(t.Context(), path+query, ""))
+			if w.Code != http.StatusOK || w.Header().Get(impact.ProjectionCountsHeader) != "" || spy.calls.Load() != 2 {
+				t.Fatal("ordinary impact request received projection metadata")
 			}
 		})
 	}

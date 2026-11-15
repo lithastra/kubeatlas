@@ -17,6 +17,8 @@ import (
 // That Raw is a partial projection, NOT a complete Kubernetes object. Full Raw,
 // labels, source annotations, edge attributes, and cross-cluster edges are
 // excluded. Same-cluster dangling tuples remain; Secrets stay reference-only.
+// A valid private origin receipt may accompany the internal projection. It is
+// charged to its byte budget and never enters resource JSON or Secret nodes.
 // Legacy snapshots/serialization are unchanged. No partial graph on error.
 //
 // This does not authorize a cluster or guarantee collection freshness. Visibility
@@ -131,6 +133,13 @@ func (b *ImpactProjectionBuilder) AddResource(ctx context.Context, r Resource) e
 	projected := Resource{
 		Kind: r.Kind, Name: r.Name, Namespace: r.Namespace, ClusterID: r.ClusterID,
 		UID: r.UID, ResourceVersion: r.ResourceVersion, GroupVersion: r.GroupVersion,
+		Origin: r.Origin,
+	}
+	if r.Origin.Matches(r) {
+		o := r.Origin
+		if err := b.charge(192, o.ClusterID, o.Source, o.OwnerName, o.OwnerUID, o.Group, o.Version, o.Resource, o.Kind, o.Registration, o.ObjectUID, o.ObjectVersion); err != nil {
+			return err
+		}
 	}
 	if len(r.OwnerReferences) != 0 {
 		projected.OwnerReferences = append([]OwnerRef(nil), r.OwnerReferences...)

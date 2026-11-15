@@ -38,7 +38,7 @@ func coverageObjects() (*unstructured.Unstructured, *unstructured.Unstructured) 
 		"spec": map[string]any{"crd": map[string]any{"spec": map[string]any{"names": map[string]any{"kind": "K8sRequiredLabels"}}}},
 	}}
 	constraint := &unstructured.Unstructured{Object: map[string]any{
-		"apiVersion": "constraints.gatekeeper.sh/v1beta1", "kind": "K8sRequiredLabels", "metadata": map[string]any{"name": "test-labels", "resourceVersion": "1"},
+		"apiVersion": "constraints.gatekeeper.sh/v1beta1", "kind": "K8sRequiredLabels", "metadata": map[string]any{"name": "test-labels", "uid": "synthetic-constraint-uid", "resourceVersion": "1"},
 		"spec": map[string]any{"synthetic": "payload-canary"},
 	}}
 	return template, constraint
@@ -231,6 +231,17 @@ func (s *coverageFailStore) DeleteResource(ctx context.Context, id string) error
 	}
 	return s.GraphStore.DeleteResource(ctx, id)
 }
+
+func (s *coverageFailStore) DeleteResourceVersion(ctx context.Context, r graph.Resource) (bool, error) {
+	if s.fail.Load() {
+		return false, errors.New("delete-canary")
+	}
+	deleter, ok := s.GraphStore.(graph.ResourceVersionDeleter)
+	if !ok {
+		return false, errors.New("missing conditional deletion capability")
+	}
+	return deleter.DeleteResourceVersion(ctx, r)
+}
 func (s *coverageFailStore) UpsertEdge(ctx context.Context, edge graph.Edge) error {
 	if s.fail.Load() {
 		return errors.New("edge-canary")
@@ -305,6 +316,9 @@ func TestGatekeeperCoverageProcessingExtractionAndDeleteGaps(t *testing.T) {
 				})
 				d.handleConstraint(context.Background(), "K8sRequiredLabels", obj, token)
 			case "delete":
+				if err := store.GraphStore.UpsertResource(context.Background(), discovery.UnstructuredToResource(obj, "K8sRequiredLabels")); err != nil {
+					t.Fatal(err)
+				}
 				store.fail.Store(true)
 				d.handleConstraintDelete(context.Background(), "K8sRequiredLabels", cache.DeletedFinalStateUnknown{Obj: obj}, token)
 			}

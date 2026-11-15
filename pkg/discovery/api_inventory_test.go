@@ -289,7 +289,7 @@ func TestStartupFilteringUsesExactResourceAndOneCheckPerVersion(t *testing.T) {
 			}
 			client := inventoryStub{resources: func(context.Context, string) (*metav1.APIResourceList, error) {
 				calls++
-				r := &metav1.APIResourceList{GroupVersion: gateway.GroupVersion().String(), APIResources: []metav1.APIResource{{Name: "gateways", Kind: "Gateway", Verbs: metav1.Verbs{"list", "watch"}}}}
+				r := &metav1.APIResourceList{GroupVersion: gateway.GroupVersion().String(), APIResources: []metav1.APIResource{{Name: "gateways", Kind: "Gateway", Namespaced: true, Verbs: metav1.Verbs{"list", "watch"}}}}
 				if name == "denied" {
 					return nil, apierrors.NewUnauthorized("canary")
 				}

@@ -104,6 +104,8 @@ type InformerManager struct {
 	resyncPeriod       time.Duration
 	coverage           *operations.CoverageTracker
 	coverageSession    *operations.CoverageSession
+	memberRepair       *MemberRepair
+	resourceHistory    *ResourceHistory
 
 	// Remember only successful resource writes, not merely informer delivery.
 	// Each GVR's handler is serial, but different GVRs run concurrently.
@@ -171,6 +173,12 @@ func WithSnapshotSink(s SnapshotSink) InformerOption {
 	return func(m *InformerManager) { m.snapshotSink = s }
 }
 
+// WithResourceHistory uses shared member receipts instead of the per-core cache.
+// The same MemberRepair must serialize all participating collectors.
+func WithResourceHistory(history *ResourceHistory) InformerOption {
+	return func(m *InformerManager) { m.resourceHistory = history }
+}
+
 // WithOnSynced registers a callback the informer fires exactly once,
 // after every watched GVR has finished its initial cache sync. The
 // API server uses this to flip its readiness gate so /readyz starts
@@ -202,6 +210,12 @@ func WithCoverage(tracker *operations.CoverageTracker) InformerOption {
 // cluster/client. It adds no work to handlers or impact queries.
 func WithAPIInventory(dc k8sdiscovery.DiscoveryInterface) InformerOption {
 	return func(m *InformerManager) { m.inventoryDiscovery = dc }
+}
+
+// WithMemberRepair enables bounded reconciliation for active endpoints in the
+// coordinator's explicitly bound member or standalone scope.
+func WithMemberRepair(repair *MemberRepair) InformerOption {
+	return func(m *InformerManager) { m.memberRepair = repair }
 }
 
 // NewInformerManager constructs an InformerManager using the dynamic
@@ -247,7 +261,8 @@ func (c *Client) Dynamic() dynamic.Interface {
 // until ctx is done. Returns ctx.Err() on shutdown.
 func (m *InformerManager) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	var repairs sync.WaitGroup
+	defer func() { cancel(); m.factory.Shutdown(); repairs.Wait() }()
 	if m.coverage != nil && m.inventoryDiscovery != nil {
 		done := make(chan struct{})
 		go func() { runAPIInventory(ctx, m.inventoryDiscovery, m.coverage, m.clusterID); close(done) }()
@@ -287,6 +302,23 @@ func (m *InformerManager) Start(ctx context.Context) error {
 			return fmt.Errorf("register handler for %s: %w", gvr, err)
 		}
 		registrations[gvr] = registration
+		if m.memberRepair != nil {
+			repairs.Add(1)
+			go func() {
+				defer repairs.Done()
+				m.memberRepair.Run(ctx, gvr, coreRepairKind(gvr), m.coverageSession, registration.HasSynced, func(r graph.Resource) {
+					m.persistedMu.Lock()
+					delete(m.persisted, resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name})
+					m.persistedMu.Unlock()
+					if m.resourceHistory != nil {
+						m.resourceHistory.RecordDelete(r)
+					} else {
+						m.snapshotSink.Enqueue(graph.ResourceEvent{ClusterID: r.ClusterID, Namespace: r.Namespace, Kind: r.Kind, Name: r.Name, UID: string(r.UID), ResourceVersion: r.ResourceVersion, EventType: graph.EventTypeDelete})
+					}
+					m.broadcaster("delete", r.Namespace, r.Kind, r.Name)
+				})
+			}()
+		}
 	}
 
 	m.factory.Start(ctx.Done())
@@ -302,6 +334,9 @@ func (m *InformerManager) Start(ctx context.Context) error {
 	syncs := m.factory.WaitForCacheSync(ctx.Done())
 	for gvr, ok := range syncs {
 		if !ok {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			return fmt.Errorf("informer for %s failed to sync", gvr)
 		}
 	}
@@ -322,6 +357,9 @@ func (m *InformerManager) Start(ctx context.Context) error {
 // UpdateFunc (modifications + resync re-deliveries). Already-persisted
 // versions do not produce resource writes or duplicate history events.
 func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVersionResource, obj any, eventType graph.EventType) {
+	if ctx.Err() != nil {
+		return
+	}
 	u, ok := toUnstructured(obj)
 	if !ok {
 		slog.Warn("informer received non-unstructured object", "type", fmt.Sprintf("%T", obj))
@@ -330,40 +368,88 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	}
 	r := UnstructuredToResource(u, m.kindFor(gvr, u))
 	r.ClusterID = m.clusterID
-	key := resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name}
-	version := resourceWriteVersion{uid: string(r.UID), resourceVersion: r.ResourceVersion}
-	versioned := version.uid != "" && version.resourceVersion != ""
-	m.persistedMu.RLock()
-	previous, known := m.persisted[key]
-	m.persistedMu.RUnlock()
-	resourceChanged := !versioned || !known || previous != version
-	if resourceChanged {
-		if err := m.store.UpsertResource(ctx, r); err != nil {
-			m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
-			slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
+	if m.memberRepair != nil {
+		unlock, err := m.memberRepair.LockResource(ctx, r.ID())
+		if err != nil {
 			return
 		}
-		// Mark only successful writes. Comparing old/new informer objects
-		// alone would suppress the retry after a failed initial or update write.
-		m.persistedMu.Lock()
-		if versioned {
-			m.persisted[key] = version
-		} else {
-			delete(m.persisted, key)
+		defer unlock()
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	resourceChanged := false
+	if m.resourceHistory != nil {
+		var err error
+		resourceChanged, err = m.resourceHistory.Upsert(ctx, r, eventType)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
+			slog.Warn("upsert member resource history failed", "id", r.ID(), "err", err)
+			return
 		}
-		m.persistedMu.Unlock()
+	} else {
+		key := resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name}
+		version := resourceWriteVersion{uid: string(r.UID), resourceVersion: r.ResourceVersion}
+		versioned := graph.ValidResourceVersion(r)
+		m.persistedMu.RLock()
+		previous, known := m.persisted[key]
+		m.persistedMu.RUnlock()
+		if !versioned || !known || previous != version {
+			// Core optional APIs can overlap CRD collectors. A cold local cache
+			// does not authorize erasing their stored writer on unchanged delivery.
+			var err error
+			resourceChanged, err = UpsertObservedResource(ctx, m.store, r)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
+				slog.Warn("upsert resource failed", "id", r.ID(), "err", err)
+				return
+			}
+			// Cache only successful receipt decisions, including stored replays.
+			// Failed reads/writes must not suppress a later delivery of this version.
+			m.persistedMu.Lock()
+			if versioned {
+				m.persisted[key] = version
+			} else {
+				delete(m.persisted, key)
+			}
+			m.persistedMu.Unlock()
 
-		// Enqueue is non-blocking by contract. A local-cache replay is not
-		// a resource change and must not create another history event.
-		m.snapshotSink.Enqueue(graph.ResourceEvent{
-			ClusterID:       m.clusterID,
-			Namespace:       r.Namespace,
-			Kind:            r.Kind,
-			UID:             string(r.UID),
-			Name:            r.Name,
-			EventType:       eventType,
-			ResourceVersion: r.ResourceVersion,
-		})
+			// Enqueue is non-blocking by contract. Neither a local-cache replay
+			// nor an unchanged stored receipt is a resource-change event.
+			if resourceChanged && versioned {
+				m.snapshotSink.Enqueue(graph.ResourceEvent{
+					ClusterID:       m.clusterID,
+					Namespace:       r.Namespace,
+					Kind:            r.Kind,
+					UID:             string(r.UID),
+					Name:            r.Name,
+					EventType:       eventType,
+					ResourceVersion: r.ResourceVersion,
+				})
+			}
+		}
+	}
+	// A dependency can commit despite cancellation. Preserve its resource
+	// receipt/history and notify once, but do not begin another callback stage.
+	notify := resourceChanged
+	defer func() {
+		if notify {
+			m.broadcaster("upsert", r.Namespace, r.Kind, r.Name)
+		}
+	}()
+	if ctx.Err() != nil {
+		return
+	}
+	// Persisted observations without the minimum identity fields cannot qualify
+	// successful collection, regardless of whether history recording is enabled.
+	if !graph.ValidResourceVersion(r) {
+		m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 	}
 
 	// Edge re-derivation: ask the extractor for edges rooted at this
@@ -375,50 +461,74 @@ func (m *InformerManager) handleUpsert(ctx context.Context, gvr schema.GroupVers
 	// work removed from the view aggregators). Edges are upserted; we
 	// do not delete stale edges here, that requires per-resource
 	// diffing the extractor will handle in P0-T15.
-	edges, err := m.extractor.ExtractAll(ctx, r, m.store)
+	edges, err := m.extractor.ExtractAll(ctx, r, NewScopedResourceLister(m.store, m.clusterID))
+	if ctx.Err() != nil {
+		return
+	}
 	if err != nil {
 		// Best-effort: log and still upsert whatever edges the
 		// extractors did produce before the failure.
 		slog.Warn("edge extraction failed", "id", r.ID(), "err", err)
 		m.coverageSession.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
 	}
+	scoped, scopeErr := ScopeCollectorEdges(edges, m.clusterID)
+	if scopeErr != nil {
+		m.coverageSession.RecordGap(gvr, operations.CoverageExtractionFailed, time.Now())
+		slog.Warn("extractor edge scope rejected", "id", r.ID(), "err", scopeErr)
+		return
+	}
+	edges = scoped
 	for _, e := range edges {
+		if ctx.Err() != nil {
+			return
+		}
 		if ref, ok := graph.SecretReferenceFromEdge(e); ok {
 			if err := m.store.UpsertResource(ctx, ref); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 				slog.Warn("upsert referenced Secret placeholder failed", "id", ref.ID(), "err", err)
 				continue
 			}
+			notify = true
 		}
 	}
 	for _, e := range edges {
+		if ctx.Err() != nil {
+			return
+		}
 		if err := m.store.UpsertEdge(ctx, e); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 			slog.Warn("upsert edge failed", "from", e.From, "to", e.To, "err", err)
+		} else {
+			notify = true
 		}
-	}
-
-	// Notify subscribed clients. Best-effort: the broadcaster is
-	// expected to never block (the hub drops on slow subscribers).
-	if resourceChanged || len(edges) > 0 {
-		m.broadcaster("upsert", r.Namespace, r.Kind, r.Name)
 	}
 }
 
 // handleDelete removes the resource from the store. The store cascades
 // to incident edges so we do not need to walk them here.
 func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVersionResource, obj any) {
-	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+	if ctx.Err() != nil {
+		return
+	}
+	switch tombstone := obj.(type) {
+	case cache.DeletedFinalStateUnknown:
 		obj = tombstone.Obj
+	case *cache.DeletedFinalStateUnknown:
+		if tombstone != nil {
+			obj = tombstone.Obj
+		}
 	}
 	u, ok := toUnstructured(obj)
 	if !ok {
 		m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
 		return
 	}
-	m.persistedMu.Lock()
-	delete(m.persisted, resourceWriteKey{gvr: gvr, namespace: u.GetNamespace(), name: u.GetName()})
-	m.persistedMu.Unlock()
 	kind := m.kindFor(gvr, u)
 	// Reproduce graph.Resource.ID() — multi-cluster IDs carry a
 	// <clusterID>: prefix so two clusters' same-named objects do not
@@ -427,22 +537,59 @@ func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVers
 	if m.clusterID != "" {
 		id = m.clusterID + ":" + id
 	}
-	if err := m.store.DeleteResource(ctx, id); err != nil {
+	if m.memberRepair != nil {
+		unlock, err := m.memberRepair.LockResource(ctx, id)
+		if err != nil {
+			return
+		}
+		defer unlock()
+	}
+	r := UnstructuredToResource(u, kind)
+	r.ClusterID = m.clusterID
+	stored := r
+	var deleted bool
+	var err error
+	if m.resourceHistory != nil {
+		deleted, err = m.resourceHistory.Delete(ctx, r)
+	} else {
+		stored, deleted, err = deleteObservedResource(ctx, m.store, r)
+	}
+	if ctx.Err() != nil && !deleted {
+		return
+	}
+	if !graph.ValidResourceVersion(r) {
+		m.coverageSession.RecordGap(gvr, operations.CoverageProcessingFailed, time.Now())
+	}
+	if err != nil {
 		m.coverageSession.RecordGap(gvr, operations.CoveragePersistenceFailed, time.Now())
 		slog.Warn("delete resource failed", "id", id, "err", err)
+		return
+	}
+	m.persistedMu.Lock()
+	key := resourceWriteKey{gvr: gvr, namespace: r.Namespace, name: r.Name}
+	if graph.ValidResourceVersion(r) && m.persisted[key].uid == string(r.UID) {
+		// Another collector may already have removed this row. Forget only
+		// this deleted incarnation, never a replacement's successful write.
+		delete(m.persisted, key)
+	}
+	m.persistedMu.Unlock()
+	if !deleted {
+		return
 	}
 
 	// Record the delete in the F-111 snapshot stream. Data is nil —
-	// the resource is gone, only its identity is recorded.
-	m.snapshotSink.Enqueue(graph.ResourceEvent{
-		ClusterID:       m.clusterID,
-		Namespace:       u.GetNamespace(),
-		Kind:            kind,
-		UID:             string(u.GetUID()),
-		Name:            u.GetName(),
-		EventType:       graph.EventTypeDelete,
-		ResourceVersion: u.GetResourceVersion(),
-	})
+	// use the committed stored receipt, never a delayed tombstone's version.
+	if m.resourceHistory == nil {
+		m.snapshotSink.Enqueue(graph.ResourceEvent{
+			ClusterID:       stored.ClusterID,
+			Namespace:       stored.Namespace,
+			Kind:            stored.Kind,
+			UID:             string(stored.UID),
+			Name:            stored.Name,
+			EventType:       graph.EventTypeDelete,
+			ResourceVersion: stored.ResourceVersion,
+		})
+	}
 
 	m.broadcaster("delete", u.GetNamespace(), kind, u.GetName())
 }
@@ -450,7 +597,7 @@ func (m *InformerManager) handleDelete(ctx context.Context, gvr schema.GroupVers
 func toUnstructured(obj any) (*unstructured.Unstructured, bool) {
 	switch v := obj.(type) {
 	case *unstructured.Unstructured:
-		return v, true
+		return v, v != nil
 	case unstructured.Unstructured:
 		return &v, true
 	default:

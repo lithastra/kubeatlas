@@ -37,8 +37,77 @@ func TestStore_ImpactSnapshot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	t.Run("projection settings stay inside the read transaction", func(t *testing.T) {
+		conn, err := s.pool.Acquire(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Release()
+		if _, err := conn.Exec(ctx, `SET jit = on; SET statement_timeout = '42s'`); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _, _ = conn.Exec(ctx, `RESET jit; RESET statement_timeout`) }()
+		for _, commit := range []bool{true, false} {
+			tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.Exec(ctx, impactTransactionSQL); err != nil {
+				_ = tx.Rollback(ctx)
+				t.Fatal(err)
+			}
+			var jit, timeout, readOnly, isolation string
+			if err := tx.QueryRow(ctx, `SELECT current_setting('jit'), current_setting('statement_timeout'), current_setting('transaction_read_only'), current_setting('transaction_isolation')`).Scan(&jit, &timeout, &readOnly, &isolation); err != nil {
+				_ = tx.Rollback(ctx)
+				t.Fatal(err)
+			}
+			if jit != "off" || timeout != "5s" || readOnly != "on" || isolation != "repeatable read" {
+				_ = tx.Rollback(ctx)
+				t.Fatalf("projection settings: %s %s %s %s", jit, timeout, readOnly, isolation)
+			}
+			if commit {
+				err = tx.Commit(ctx)
+			} else {
+				err = tx.Rollback(ctx)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := conn.QueryRow(ctx, `SELECT current_setting('jit'), current_setting('statement_timeout')`).Scan(&jit, &timeout); err != nil {
+				t.Fatal(err)
+			}
+			if jit != "on" || timeout != "42s" {
+				t.Fatalf("projection leaked settings after commit=%v: jit=%s timeout=%s", commit, jit, timeout)
+			}
+		}
+	})
 	t.Run("shared contract", func(t *testing.T) {
 		storetest.RunImpactSnapshot(t, func(t *testing.T) graph.GraphStore { reset(t); return s })
+	})
+	t.Run("private origin scalar allowlist", func(t *testing.T) {
+		reset(t)
+		r := storetest.ResourceOriginFixture("prod")
+		if err := s.UpsertResource(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE resources SET data=jsonb_set(data,'{observationOrigin,extra}',$2::jsonb) WHERE id=$1`, r.ID(), `{"payload":"private-origin-payload-canary"}`); err != nil {
+			t.Fatal(err)
+		}
+		var body []byte
+		if err := s.pool.QueryRow(ctx, impactResourcesSQL, "prod", 2, graph.DefaultImpactBytes).Scan(&body); err != nil || strings.Contains(string(body), "payload-canary") {
+			t.Fatal("origin selected arbitrary payload", string(body), err)
+		}
+		projected, err := s.SnapshotImpact(ctx, graph.ImpactSnapshotOptions{ClusterID: "prod"})
+		if err != nil || len(projected.Resources) != 1 || projected.Resources[0].Origin != r.Origin {
+			t.Fatal("private origin lost", projected, err)
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE resources SET data=jsonb_set(data,'{observationOrigin,ownerUID}',$2::jsonb) WHERE id=$1`, r.ID(), `{"payload":"nested-origin-canary"}`); err != nil {
+			t.Fatal(err)
+		}
+		projected, err = s.SnapshotImpact(ctx, graph.ImpactSnapshotOptions{ClusterID: "prod"})
+		if err != nil || len(projected.Resources) != 1 || projected.Resources[0].Origin != (graph.ResourceOrigin{}) {
+			t.Fatal("malformed origin hid legacy row", projected, err)
+		}
 	})
 	t.Run("reference allowlist before wire transfer", func(t *testing.T) {
 		for _, schema := range []struct{ kind, version string }{

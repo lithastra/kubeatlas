@@ -61,33 +61,68 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 	}
 	var groups *metav1.APIGroupList
 	var err error
+	var aggregatedIncomplete bool
+	var aggregatedResources map[schema.GroupVersion]*metav1.APIResourceList
+	var aggregatedFailures map[schema.GroupVersion]error
 	if aggregated, ok := dc.(interface {
 		GroupsAndMaybeResourcesWithContext(context.Context) (*metav1.APIGroupList, map[schema.GroupVersion]*metav1.APIResourceList, map[schema.GroupVersion]error, error)
 	}); ok {
-		var failed map[schema.GroupVersion]error
-		groups, _, failed, err = aggregated.GroupsAndMaybeResourcesWithContext(ctx)
+		groups, aggregatedResources, aggregatedFailures, err = aggregated.GroupsAndMaybeResourcesWithContext(ctx)
 		// ServerGroupsWithContext drops aggregated stale/failure details. Their
 		// missing resources must not become a successful absence assertion.
-		if err == nil && len(failed) != 0 {
-			return operations.APIInventoryPartial, nil, false
-		}
+		aggregatedIncomplete = len(aggregatedFailures) != 0
 	} else {
 		groups, err = dc.ServerGroupsWithContext(ctx)
+	}
+	if ctx.Err() != nil {
+		return operations.APIInventoryFailed, nil, false
 	}
 	if err != nil {
 		return inventoryErrorState(err), nil, false
 	}
-	if groups == nil || ctx.Err() != nil {
+	if groups == nil {
+		if aggregatedIncomplete {
+			return operations.APIInventoryPartial, nil, false
+		}
 		return operations.APIInventoryFailed, nil, false
 	}
 	versions := []string{"v1"} // Core discovery is queried independently of /apis.
+	versionBudget := map[string]bool{"v1": true}
+	failedGroups := map[string]bool{}
+	if aggregatedIncomplete {
+		if len(aggregatedFailures) > operations.MaxInventoryGroupVersions {
+			return operations.APIInventoryPartial, nil, true
+		}
+		for gv := range aggregatedFailures {
+			if ctx.Err() != nil {
+				return operations.APIInventoryFailed, nil, false
+			}
+			if !operations.ValidAPIResourceDescriptor(operations.APIResourceDescriptor{Group: gv.Group, Version: gv.Version, Resource: "test", Kind: "Test"}) {
+				return operations.APIInventoryFailed, nil, false
+			}
+			if !versionBudget[gv.String()] && len(versionBudget) >= operations.MaxInventoryGroupVersions {
+				return operations.APIInventoryPartial, nil, true
+			}
+			versionBudget[gv.String()] = true
+			failedGroups[gv.Group] = true
+		}
+	}
 	seenGroups := map[string]bool{}
 	for _, group := range groups.Groups {
+		if ctx.Err() != nil {
+			return operations.APIInventoryFailed, nil, false
+		}
 		// client-go includes the core group on some discovery paths.
-		if seenGroups[group.Name] || len(group.Versions) == 0 {
+		if seenGroups[group.Name] {
 			return operations.APIInventoryFailed, nil, false
 		}
 		seenGroups[group.Name] = true
+		if len(group.Versions) == 0 {
+			if aggregatedIncomplete && failedGroups[group.Name] {
+				continue // client-go removes stale versions, leaving empty groups.
+			}
+			return operations.APIInventoryFailed, nil, false
+		}
 		seenVersions := map[string]bool{}
 		for _, version := range group.Versions {
 			gv, err := schema.ParseGroupVersion(version.GroupVersion)
@@ -104,22 +139,46 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 			if slices.Contains(versions, version.GroupVersion) {
 				return operations.APIInventoryFailed, nil, false
 			}
-			if len(versions) >= operations.MaxInventoryGroupVersions {
+			if !versionBudget[version.GroupVersion] && len(versionBudget) >= operations.MaxInventoryGroupVersions {
 				return operations.APIInventoryPartial, nil, true
 			}
+			versionBudget[version.GroupVersion] = true
 			versions = append(versions, version.GroupVersion)
 		}
 	}
 	slices.Sort(versions)
 	resources := []operations.APIResourceDescriptor{}
 	state := operations.APIInventoryComplete
+	if aggregatedIncomplete {
+		state = operations.APIInventoryPartial
+	}
 	for _, version := range versions {
 		if ctx.Err() != nil {
 			return operations.APIInventoryFailed, nil, false
 		}
-		list, err := dc.ServerResourcesForGroupVersionWithContext(ctx, version)
+		var list *metav1.APIResourceList
+		var err error
+		if aggregatedIncomplete {
+			// Consume only healthy metadata already returned in this response.
+			// Stale/missing versions never trigger a fallback request.
+			gv, _ := schema.ParseGroupVersion(version)
+			if _, failed := aggregatedFailures[gv]; failed {
+				continue
+			}
+			list = aggregatedResources[gv]
+		} else {
+			list, err = dc.ServerResourcesForGroupVersionWithContext(ctx, version)
+		}
+		if ctx.Err() != nil {
+			return operations.APIInventoryFailed, nil, false
+		}
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
+				// Keep only this round's completed metadata. Rows accompanying the
+				// failed response are untrusted, and no later request is started.
+				if len(resources) != 0 {
+					return operations.APIInventoryPartial, resources, false
+				}
 				return inventoryErrorState(err), nil, false
 			}
 			state = operations.APIInventoryPartial
@@ -131,7 +190,12 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 			continue
 		}
 		gv, _ := schema.ParseGroupVersion(version)
-		seen := map[string]bool{}
+		start := len(resources)
+		// Bound candidate identities by the remaining descriptor budget. Count
+		// their occurrences separately so invalid rows and late duplicates cannot
+		// leave an arbitrary first descriptor in the captured inventory.
+		seen := map[string]uint8{}
+		resourceLimited := false
 		for _, resource := range list.APIResources {
 			if ctx.Err() != nil {
 				return operations.APIInventoryFailed, nil, false
@@ -140,15 +204,47 @@ func discoverAPIInventory(ctx context.Context, dc inventoryDiscoveryClient) (ope
 				continue
 			} // Subresources are not independent graph objects.
 			r := operations.APIResourceDescriptor{Group: gv.Group, Version: gv.Version, Resource: resource.Name, Kind: resource.Kind, Namespaced: resource.Namespaced, List: slices.Contains(resource.Verbs, "list"), Watch: slices.Contains(resource.Verbs, "watch")}
-			if !operations.ValidAPIResourceDescriptor(r) || seen[r.Resource] || (resource.Group != "" && resource.Group != gv.Group) || (resource.Version != "" && resource.Version != gv.Version) {
+			if !operations.ValidAPIResourceDescriptor(r) || (resource.Group != "" && resource.Group != gv.Group) || (resource.Version != "" && resource.Version != gv.Version) {
 				state = operations.APIInventoryPartial
 				continue
 			}
-			seen[r.Resource] = true
-			if len(resources) >= operations.MaxInventoryResources {
-				return operations.APIInventoryPartial, resources, true
+			if _, exists := seen[r.Resource]; exists {
+				continue
 			}
+			if len(resources) >= operations.MaxInventoryResources {
+				resourceLimited = true
+				break
+			}
+			seen[r.Resource] = 0
 			resources = append(resources, r)
+		}
+		// Scan the whole returned list even after candidate selection hits the
+		// cap, without retaining additional names or starting another request.
+		for _, resource := range list.APIResources {
+			if ctx.Err() != nil {
+				return operations.APIInventoryFailed, nil, false
+			}
+			if count, exists := seen[resource.Name]; exists && count < 2 {
+				seen[resource.Name] = count + 1
+			}
+		}
+		end := len(resources)
+		kept := start
+		for _, r := range resources[start:end] {
+			if seen[r.Resource] != 1 {
+				state = operations.APIInventoryPartial
+				continue
+			}
+			resources[kept] = r
+			kept++
+		}
+		clear(resources[kept:end])
+		resources = resources[:kept]
+		if ctx.Err() != nil {
+			return operations.APIInventoryFailed, nil, false
+		}
+		if resourceLimited {
+			return operations.APIInventoryPartial, resources, true
 		}
 	}
 	if ctx.Err() != nil {

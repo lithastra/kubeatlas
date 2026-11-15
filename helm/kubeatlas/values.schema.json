@@ -420,9 +420,30 @@
           "pattern": "^[0-9]+d$|^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
         },
         "fullSyncSchedule": {
-          "description": "Cron schedule (5-field) for the periodic full-sync snapshot CronJob.",
+          "description": "Cron schedule (5-field) for the periodic observation-marker CronJob.",
           "type": "string",
           "minLength": 1
+        },
+        "trigger": {
+          "type": "object",
+          "description": "Unreleased v1.7 internal member trigger; requires a matching image. One selected member, no fan-out. Empty selection preserves the legacy standalone command; v1.7 federation rejects it at runtime.",
+          "additionalProperties": false,
+          "properties": {
+            "cluster": { "type": "string", "maxLength": 253, "pattern": "^$|^[A-Za-z0-9._-]+$" },
+            "tokenSecretRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "key"],
+              "properties": {
+                "name": { "type": "string", "maxLength": 253, "pattern": "^$|^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$" },
+                "key": { "type": "string", "maxLength": 253, "pattern": "^$|^[A-Za-z0-9._-]+$" }
+              },
+              "anyOf": [
+                { "properties": { "name": { "const": "" }, "key": { "const": "" } } },
+                { "properties": { "name": { "minLength": 1 }, "key": { "minLength": 1 } } }
+              ]
+            }
+          }
         }
       }
     },

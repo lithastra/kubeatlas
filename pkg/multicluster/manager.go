@@ -13,6 +13,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	kdiscovery "k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -48,15 +49,33 @@ func DefaultInformerFactory(extraOpts ...discovery.InformerOption) InformerFacto
 	}
 }
 
+// DiscoveryInformerFactory also receives a discovery client built from the
+// same member kubeconfig as its dynamic client. It never uses the management
+// cluster's API inventory for a member.
+type DiscoveryInformerFactory func(string, dynamic.Interface, kdiscovery.DiscoveryInterface, graph.GraphStore) InformerStarter
+
+// DefaultDiscoveryInformerFactory enables the existing bounded background API
+// metadata worker. WithCoverage must be provided to retain its evidence. The
+// informer owns worker cancellation and joins it before Start returns.
+func DefaultDiscoveryInformerFactory(extraOpts ...discovery.InformerOption) DiscoveryInformerFactory {
+	return func(name string, dyn dynamic.Interface, dc kdiscovery.DiscoveryInterface, store graph.GraphStore) InformerStarter {
+		opts := append([]discovery.InformerOption{}, extraOpts...)
+		opts = append(opts, discovery.WithClusterID(name), discovery.WithAPIInventory(dc))
+		return discovery.NewInformerManager(dyn, store, opts...)
+	}
+}
+
 // Manager orchestrates per-cluster informers against a single shared
 // GraphStore. Each member runs an independent informer pipeline tagged
 // with ClusterID = the operator-chosen cluster name; failures inside
 // one member are isolated and never crash another (invariant 2.4 +
 // P3-T21 step 5).
 type Manager struct {
-	store   graph.GraphStore
-	factory InformerFactory
-	dial    dialer
+	store            graph.GraphStore
+	factory          InformerFactory
+	dial             dialer
+	discoveryFactory DiscoveryInformerFactory
+	discoveryDial    func([]byte) (kdiscovery.DiscoveryInterface, error)
 
 	mu       sync.Mutex
 	clusters map[string]*clusterEntry
@@ -73,6 +92,14 @@ func defaultDialer(kubeconfig []byte) (dynamic.Interface, error) {
 		return nil, fmt.Errorf("parse kubeconfig: %w", err)
 	}
 	return dynamic.NewForConfig(cfg)
+}
+
+func defaultDiscoveryDialer(kubeconfig []byte) (kdiscovery.DiscoveryInterface, error) {
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("parse kubeconfig: %w", err)
+	}
+	return kdiscovery.NewDiscoveryClientForConfig(cfg)
 }
 
 // clusterEntry tracks one running member cluster.
@@ -93,7 +120,16 @@ type Option func(*Manager)
 // callers usually pass a factory that also configures the extractor
 // registry, broadcaster, and snapshot sink.
 func WithFactory(f InformerFactory) Option {
-	return func(m *Manager) { m.factory = f }
+	return func(m *Manager) {
+		m.factory = f
+		m.discoveryFactory = nil
+	}
+}
+
+// WithDiscoveryFactory opts into member-specific API metadata discovery.
+// Existing WithFactory callers retain their dynamic-client-only behavior.
+func WithDiscoveryFactory(f DiscoveryInformerFactory) Option {
+	return func(m *Manager) { m.discoveryFactory = f }
 }
 
 // withDialer is unexported; tests use it via package-internal helpers.
@@ -106,10 +142,11 @@ func withDialer(d dialer) Option {
 // default factory wires pkg/discovery with WithClusterID only.
 func New(store graph.GraphStore, opts ...Option) *Manager {
 	m := &Manager{
-		store:    store,
-		factory:  DefaultInformerFactory(),
-		dial:     defaultDialer,
-		clusters: make(map[string]*clusterEntry),
+		store:         store,
+		factory:       DefaultInformerFactory(),
+		dial:          defaultDialer,
+		discoveryDial: defaultDiscoveryDialer,
+		clusters:      make(map[string]*clusterEntry),
 	}
 	for _, o := range opts {
 		o(m)
@@ -123,7 +160,8 @@ func New(store graph.GraphStore, opts ...Option) *Manager {
 var ErrClusterExists = errors.New("cluster already attached")
 
 // AddCluster attaches a new member cluster. It validates the name,
-// builds the dynamic client from kubeconfig bytes, hands them to the
+// builds the dynamic client (and optional discovery client) from the same
+// kubeconfig bytes, hands them to the
 // configured InformerFactory, and starts the informer in its own
 // goroutine. AddCluster returns once the informer's Start has been
 // invoked; cache-sync completes asynchronously.
@@ -147,7 +185,16 @@ func (m *Manager) AddCluster(ctx context.Context, name string, kubeconfig []byte
 	if err != nil {
 		return fmt.Errorf("attach cluster %q: %w", name, err)
 	}
-	starter := m.factory(name, dyn, m.store)
+	var starter InformerStarter
+	if m.discoveryFactory != nil {
+		dc, err := m.discoveryDial(kubeconfig)
+		if err != nil {
+			return fmt.Errorf("attach cluster %q discovery: %w", name, err)
+		}
+		starter = m.discoveryFactory(name, dyn, dc, m.store)
+	} else {
+		starter = m.factory(name, dyn, m.store)
+	}
 
 	cctx, cancel := context.WithCancel(ctx)
 	entry := &clusterEntry{name: name, dynamic: dyn, cancel: cancel, done: make(chan struct{})}
@@ -186,11 +233,17 @@ func (m *Manager) RemoveCluster(name string) error {
 		m.mu.Unlock()
 		return nil
 	}
-	delete(m.clusters, name)
+	// Keep the name reserved until all member workers have stopped. Otherwise
+	// an old, not-yet-started worker could replace a newly attached inventory.
 	m.mu.Unlock()
 
 	entry.cancel()
 	<-entry.done
+	m.mu.Lock()
+	if m.clusters[name] == entry {
+		delete(m.clusters, name)
+	}
+	m.mu.Unlock()
 	if entry.err != nil {
 		return fmt.Errorf("cluster %q: %w", name, entry.err)
 	}
@@ -272,7 +325,6 @@ func (m *Manager) Stop() {
 	for _, entry := range m.clusters {
 		entries = append(entries, entry)
 	}
-	m.clusters = make(map[string]*clusterEntry)
 	m.mu.Unlock()
 
 	for _, entry := range entries {
@@ -281,6 +333,13 @@ func (m *Manager) Stop() {
 	for _, entry := range entries {
 		<-entry.done
 	}
+	m.mu.Lock()
+	for _, entry := range entries {
+		if m.clusters[entry.name] == entry {
+			delete(m.clusters, entry.name)
+		}
+	}
+	m.mu.Unlock()
 }
 
 // AddFromSecret attaches one cluster per key in data, using the key

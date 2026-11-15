@@ -1,6 +1,10 @@
 package extractor
 
-import "github.com/lithastra/kubeatlas/pkg/graph"
+import (
+	"errors"
+
+	"github.com/lithastra/kubeatlas/pkg/graph"
+)
 
 // nestedSlice walks raw at the given path and returns the slice at the
 // leaf. Returns nil if any intermediate key is absent or any value
@@ -66,54 +70,103 @@ func nestedStringMap(raw map[string]any, path ...string) map[string]string {
 	return out
 }
 
-// podTemplateContainers returns the containers slice from a workload
-// resource's spec.template.spec.containers (Deployment, StatefulSet,
-// DaemonSet, Job, CronJob) or spec.containers (raw Pod).
-func podTemplateContainers(r graph.Resource) []any {
-	if c := nestedSlice(r.Raw, "spec", "template", "spec", "containers"); len(c) > 0 {
-		return c
+// selectorStringMap keeps omitted/null selector fields compatible with empty
+// maps, but rejects malformed non-null objects and values atomically. Silently
+// dropping a condition would broaden the selector. Errors contain no input data.
+func selectorStringMap(raw map[string]any, path ...string) (map[string]string, error) {
+	var cur any = raw
+	for _, key := range path {
+		if cur == nil {
+			return nil, nil
+		}
+		object, ok := cur.(map[string]any)
+		if !ok {
+			return nil, errors.New("label selector must be an object")
+		}
+		cur = object[key]
 	}
-	if c := nestedSlice(r.Raw, "spec", "jobTemplate", "spec", "template", "spec", "containers"); len(c) > 0 {
-		return c // CronJob
+	if cur == nil {
+		return nil, nil
 	}
-	return nestedSlice(r.Raw, "spec", "containers")
+	object, ok := cur.(map[string]any)
+	if !ok {
+		return nil, errors.New("label selector must be an object")
+	}
+	out := make(map[string]string, len(object))
+	for key, value := range object {
+		text, ok := value.(string)
+		if !ok {
+			return nil, errors.New("label selector values must be strings")
+		}
+		out[key] = text
+	}
+	return out, nil
 }
 
-// podTemplateVolumes returns the volumes slice from a workload's
-// spec.template.spec.volumes or a raw Pod's spec.volumes.
+// selectorNamespaces preserves omitted/null/empty lists, but rejects malformed
+// lists atomically. Dropping all invalid entries would turn a constraint into
+// an unrestricted namespace query. Strings retain their existing literal meaning.
+func selectorNamespaces(value any) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return nil, errors.New("namespace selector must be a list")
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		namespace, ok := item.(string)
+		if !ok || namespace == "" {
+			return nil, errors.New("namespace selector entries must be nonempty strings")
+		}
+		out = append(out, namespace)
+	}
+	return out, nil
+}
+
+// podTemplateContainers returns one container field (regular, init or ephemeral)
+// from the kind's Pod spec, without falling through empty lists to other paths.
+func podTemplateContainers(r graph.Resource, field string) []any {
+	return nestedSlice(podSpec(r), field)
+}
+
+// podTemplateVolumes returns volumes from the same kind-selected Pod spec
+// used by container references.
 func podTemplateVolumes(r graph.Resource) []any {
-	if v := nestedSlice(r.Raw, "spec", "template", "spec", "volumes"); len(v) > 0 {
-		return v
-	}
-	if v := nestedSlice(r.Raw, "spec", "jobTemplate", "spec", "template", "spec", "volumes"); len(v) > 0 {
-		return v // CronJob
-	}
-	return nestedSlice(r.Raw, "spec", "volumes")
+	return nestedSlice(podSpec(r), "volumes")
 }
 
-// podTemplateMeta returns the spec.template.metadata map for workloads,
-// or the resource's own metadata map for raw Pods. Used by SELECTS
-// matching to look at pod labels.
+// podTemplateMeta selects the kind's Pod metadata. Missing template metadata
+// must not substitute controller labels or another kind's template path.
 func podTemplateMeta(r graph.Resource) map[string]any {
-	if m := nestedMap(r.Raw, "spec", "template", "metadata"); m != nil {
-		return m
+	switch r.Kind {
+	case "Pod":
+		return nestedMap(r.Raw, "metadata")
+	case "CronJob":
+		return nestedMap(r.Raw, "spec", "jobTemplate", "spec", "template", "metadata")
+	default:
+		if hasPodTemplate(r.Kind) {
+			return nestedMap(r.Raw, "spec", "template", "metadata")
+		}
+		return nil
 	}
-	if m := nestedMap(r.Raw, "spec", "jobTemplate", "spec", "template", "metadata"); m != nil {
-		return m
-	}
-	return nestedMap(r.Raw, "metadata")
 }
 
-// podSpec returns the pod template spec for workloads or the
-// resource's own spec for raw Pods.
+// podSpec selects the builtin kind's canonical path. Missing/empty fields must
+// not redirect collection to a Pod-like object at another path.
 func podSpec(r graph.Resource) map[string]any {
-	if m := nestedMap(r.Raw, "spec", "template", "spec"); m != nil {
-		return m
+	switch r.Kind {
+	case "Pod":
+		return nestedMap(r.Raw, "spec")
+	case "CronJob":
+		return nestedMap(r.Raw, "spec", "jobTemplate", "spec", "template", "spec")
+	default:
+		if hasPodTemplate(r.Kind) {
+			return nestedMap(r.Raw, "spec", "template", "spec")
+		}
+		return nil
 	}
-	if m := nestedMap(r.Raw, "spec", "jobTemplate", "spec", "template", "spec"); m != nil {
-		return m
-	}
-	return nestedMap(r.Raw, "spec")
 }
 
 // labelsMatch reports whether every key/value pair in want is present
@@ -124,7 +177,8 @@ func labelsMatch(have, want map[string]string) bool {
 		return false
 	}
 	for k, v := range want {
-		if have[k] != v {
+		actual, exists := have[k]
+		if !exists || actual != v {
 			return false
 		}
 	}

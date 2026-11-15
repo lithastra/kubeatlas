@@ -62,18 +62,26 @@ type DiffResult struct {
 // oldest-first, so group[0] is the earliest and group[len-1] the
 // latest.
 func DiffWindow(ctx context.Context, store graph.GraphStore, from, to time.Time, namespace string) (DiffResult, error) {
-	res := DiffResult{
-		From:     from,
-		To:       to,
-		Added:    []DiffEntry{},
-		Removed:  []DiffEntry{},
-		Modified: []DiffEntry{},
-	}
-
 	events, err := store.ListEvents(ctx, namespace, from, to)
 	if err != nil {
 		return DiffResult{}, err
 	}
+	return diffEvents(from, to, events), nil
+}
+
+// DiffHistoryEvents classifies a previously authorized, bounded single-scope
+// metadata page. Callers reject truncation before invoking it; this function
+// cannot establish collection completeness or Kubernetes creation/deletion time.
+func DiffHistoryEvents(from, to time.Time, events []graph.HistoryEvent) DiffResult {
+	metadata := make([]graph.ResourceEvent, 0, len(events))
+	for _, e := range events {
+		metadata = append(metadata, graph.ResourceEvent{Namespace: e.Namespace, Kind: e.Kind, Name: e.Name, UID: e.UID, EventType: e.EventType, Timestamp: e.Timestamp})
+	}
+	return diffEvents(from, to, metadata)
+}
+
+func diffEvents(from, to time.Time, events []graph.ResourceEvent) DiffResult {
+	res := DiffResult{From: from, To: to, Added: []DiffEntry{}, Removed: []DiffEntry{}, Modified: []DiffEntry{}}
 
 	// Group events by resource identity. UID is the stable key; an
 	// event with no UID (rare — e.g. a resource the apiserver never
@@ -109,7 +117,7 @@ func DiffWindow(ctx context.Context, store graph.GraphStore, from, to time.Time,
 	sortDiffEntries(res.Added)
 	sortDiffEntries(res.Removed)
 	sortDiffEntries(res.Modified)
-	return res, nil
+	return res
 }
 
 // diffEntryOf builds the metadata-only DiffEntry from a

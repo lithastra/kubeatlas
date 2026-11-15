@@ -335,10 +335,21 @@ snapshots:
   # "30d") or any Go duration ("24h", "168h"). A typo fails the
   # pod at startup rather than silently defaulting.
   retention: 7d
-  # Cron schedule for the periodic full-sync snapshot CronJob.
+  # Cron schedule for the periodic stored-graph observation marker.
   # Each tick records one snapshot_meta marker. Standard 5-field
   # cron syntax.
   fullSyncSchedule: "*/5 * * * *"
+  # Unreleased v1.7 member trigger support. Set a matching application image
+  # before using these fields; the chart's v1.6.0 default is unchanged.
+  # One CronJob targets one member. No automatic fan-out or retry.
+  trigger:
+    # Required by the v1.7 server in federation; omit in standalone mode.
+    cluster: ""
+    # Existing Secret in this namespace. No plaintext token values or new RBAC.
+    # The internal HTTP Service path must be trusted before attaching a token.
+    tokenSecretRef:
+      name: ""
+      key: ""
 
 # Multi-cluster federation (F-201, v1.3). When enabled, KubeAtlas
 # attaches an informer to every cluster whose kubeconfig is in the

@@ -32,16 +32,5 @@ func (s *Server) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 		snapshotsUnavailable(w)
 		return
 	}
-	metas, err := s.store.ListSnapshotMeta(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-		return
-	}
-	if metas == nil {
-		metas = []graph.SnapshotMeta{}
-	}
-	writeJSON(w, http.StatusOK, SnapshotListResponse{
-		Snapshots: metas,
-		Count:     len(metas),
-	})
+	s.handleHistory(w, r, false)
 }

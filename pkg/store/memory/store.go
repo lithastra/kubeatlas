@@ -77,6 +77,11 @@ func (s *Store) UpsertResource(_ context.Context, r graph.Resource) error {
 func (s *Store) DeleteResource(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.deleteResourceLocked(id)
+	return nil
+}
+
+func (s *Store) deleteResourceLocked(id string) {
 	delete(s.resources, id)
 	for k := range s.outgoing[id] {
 		if peers := s.incoming[k.other]; peers != nil {
@@ -90,7 +95,25 @@ func (s *Store) DeleteResource(_ context.Context, id string) error {
 		}
 	}
 	delete(s.incoming, id)
-	return nil
+}
+
+// DeleteResourceVersion atomically guards repair against a concurrent update
+// or same-name replacement, including incident-edge cascading.
+func (s *Store) DeleteResourceVersion(ctx context.Context, expected graph.Resource) (bool, error) {
+	if !graph.ValidResourceVersion(expected) {
+		return false, fmt.Errorf("invalid resource version for conditional deletion")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	current, ok := s.resources[expected.ID()]
+	if !ok || !graph.SameResourceVersion(current, expected) {
+		return false, nil
+	}
+	s.deleteResourceLocked(expected.ID())
+	return true, nil
 }
 
 // UpsertEdge inserts or replaces the edge identified by
@@ -477,15 +500,7 @@ func (s *Store) AppendEvent(_ context.Context, e graph.ResourceEvent) error {
 func (s *Store) AppendSnapshotMeta(_ context.Context, m graph.SnapshotMeta) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.eventSeq++
-	m.ID = s.eventSeq
-	if m.Timestamp.IsZero() {
-		m.Timestamp = time.Now()
-	}
-	s.snapshotMeta = append(s.snapshotMeta, m)
-	if len(s.snapshotMeta) > maxMemoryEvents {
-		s.snapshotMeta = append([]graph.SnapshotMeta(nil), s.snapshotMeta[len(s.snapshotMeta)-maxMemoryEvents:]...)
-	}
+	s.appendSnapshotMetaLocked(m)
 	return nil
 }
 
@@ -581,7 +596,8 @@ func collect(peers map[edgeKey]graph.Edge) []graph.Edge {
 // in have. An empty want matches any have.
 func labelsMatch(have, want map[string]string) bool {
 	for k, v := range want {
-		if have[k] != v {
+		actual, exists := have[k]
+		if !exists || actual != v {
 			return false
 		}
 	}

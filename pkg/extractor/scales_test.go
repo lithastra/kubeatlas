@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"context"
 	"testing"
 
 	"github.com/lithastra/kubeatlas/pkg/graph"
@@ -70,26 +71,27 @@ func TestScales_IgnoresNonHPA(t *testing.T) {
 	}
 }
 
-func TestScales_MissingFieldsSkipped(t *testing.T) {
-	// Malformed HPAs (no kind, no name) should drop on the floor
-	// rather than emit dangling edges to "" ids.
+func TestScales_MissingFields(t *testing.T) {
+	// Omitted references retain compatibility; provided references without
+	// required fields report extraction errors rather than emit invalid IDs.
 	cases := []struct {
-		name string
-		spec map[string]any
+		name    string
+		spec    map[string]any
+		wantErr bool
 	}{
-		{"no scaleTargetRef", map[string]any{}},
-		{"no kind", map[string]any{"scaleTargetRef": map[string]any{"name": "x"}}},
-		{"no name", map[string]any{"scaleTargetRef": map[string]any{"kind": "Deployment"}}},
+		{"no scaleTargetRef", map[string]any{}, false},
+		{"no kind", map[string]any{"scaleTargetRef": map[string]any{"name": "x"}}, true},
+		{"no name", map[string]any{"scaleTargetRef": map[string]any{"kind": "Deployment"}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			hpa := graph.Resource{
 				Kind: "HorizontalPodAutoscaler", Namespace: "demo", Name: "broken",
-				Raw:  map[string]any{"spec": tc.spec},
+				Raw: map[string]any{"spec": tc.spec},
 			}
-			got := extractEdges(t, ScalesExtractor{}, hpa, nil)
-			if len(got) != 0 {
-				t.Errorf("expected 0 edges, got %v", got)
+			got, err := (ScalesExtractor{}).Extract(context.Background(), hpa, nil)
+			if (err != nil) != tc.wantErr || len(got) != 0 {
+				t.Errorf("expected no edges and wantErr=%t, got %v, err=%v", tc.wantErr, got, err)
 			}
 		})
 	}

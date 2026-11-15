@@ -28,6 +28,9 @@ import (
 // etcd binaries are missing on this dev/CI box.
 func startEnvOrSkip(t *testing.T) (*envtest.Environment, dynamic.Interface, apiextensionsclient.Interface) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("envtest control plane is excluded from short-mode local validation")
+	}
 	env := &envtest.Environment{}
 	cfg, err := env.Start()
 	if err != nil {
@@ -261,10 +264,10 @@ func TestNew_RejectsNilDeps(t *testing.T) {
 // without booting envtest.
 func TestPickServedGVR(t *testing.T) {
 	cases := []struct {
-		name      string
-		versions  []apiextensionsv1.CustomResourceDefinitionVersion
-		wantOK    bool
-		wantVer   string
+		name     string
+		versions []apiextensionsv1.CustomResourceDefinitionVersion
+		wantOK   bool
+		wantVer  string
 	}{
 		{
 			name: "storage version chosen over earlier served",

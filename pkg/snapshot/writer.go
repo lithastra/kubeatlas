@@ -65,7 +65,7 @@ func (c Config) withDefaults() Config {
 // every buffered event, and waits for them to exit.
 type Writer struct {
 	sink    EventSink
-	queue   chan graph.ResourceEvent
+	queue   chan queuedEvent
 	workers int
 	metrics *Metrics
 
@@ -76,6 +76,14 @@ type Writer struct {
 	// Analysis reads lifecycle/delivery status without inspecting queued events.
 	observation atomic.Pointer[writerObservation]
 	inFlight    atomic.Int64
+	enqueueMu   sync.RWMutex
+	membersMu   sync.Mutex
+	members     atomic.Pointer[memberRecordingIndex]
+}
+
+type queuedEvent struct {
+	event  graph.ResourceEvent
+	member *MemberRecordingSession
 }
 
 // New builds a Writer. The Metrics pointer is shared with the
@@ -86,19 +94,24 @@ func New(sink EventSink, cfg Config, m *Metrics) *Writer {
 	if m == nil {
 		m = NewMetrics()
 	}
-	return &Writer{
+	w := &Writer{
 		sink:    sink,
-		queue:   make(chan graph.ResourceEvent, cfg.QueueSize),
+		queue:   make(chan queuedEvent, cfg.QueueSize),
 		workers: cfg.Workers,
 		metrics: m,
 	}
+	index := make(memberRecordingIndex)
+	w.members.Store(&index)
+	return w
 }
 
-// Start spawns the worker pool. ctx cancellation makes in-flight
+// Start spawns the worker pool once. ctx cancellation makes in-flight
 // retry backoff sleeps return early; the clean shutdown path is
 // Stop, which drains the queue first.
 func (w *Writer) Start(ctx context.Context) {
-	w.observation.CompareAndSwap(nil, &writerObservation{startedAt: time.Now(), done: ctx.Done()})
+	if w.closed.Load() || !w.observation.CompareAndSwap(nil, &writerObservation{startedAt: time.Now(), done: ctx.Done()}) {
+		return
+	}
 	for i := 0; i < w.workers; i++ {
 		w.wg.Add(1)
 		go w.worker(ctx)
@@ -115,30 +128,45 @@ func (w *Writer) Start(ctx context.Context) {
 // the slot in the race window — the new event is dropped. Either
 // way QueueDropped is incremented and Enqueue returns immediately.
 func (w *Writer) Enqueue(e graph.ResourceEvent) {
-	if w.closed.Load() {
-		w.metrics.incQueueDropped()
+	w.enqueue(queuedEvent{event: graph.MetadataOnlyEvent(e)})
+}
+
+func (w *Writer) enqueue(item queuedEvent) {
+	// Stop holds this gate only while closing the channel. TryRLock keeps
+	// informer delivery non-blocking and makes concurrent Stop/send safe.
+	if !w.enqueueMu.TryRLock() {
+		w.dropQueued(item)
 		return
 	}
-	// Clear the payload before it can enter the queue. This is a scalar map
-	// assignment, not a deep copy or marshal, so the informer hot path stays
-	// allocation-light while the queue never retains resource content.
-	e = graph.MetadataOnlyEvent(e)
+	defer w.enqueueMu.RUnlock()
+	if w.closed.Load() {
+		w.dropQueued(item)
+		return
+	}
 
 	select {
-	case w.queue <- e:
+	case w.queue <- item:
 		return
 	default:
 	}
 	// Queue full: drop the oldest to make room, then try once more.
 	select {
-	case <-w.queue:
-		w.metrics.incQueueDropped()
+	case old := <-w.queue:
+		w.dropQueued(old)
 	default:
 	}
 	select {
-	case w.queue <- e:
+	case w.queue <- item:
 	default:
-		w.metrics.incQueueDropped()
+		w.dropQueued(item)
+	}
+}
+
+func (w *Writer) dropQueued(item queuedEvent) {
+	w.metrics.incQueueDropped()
+	if item.member != nil {
+		item.member.queueGap.Store(true)
+		item.member.finish()
 	}
 }
 
@@ -147,10 +175,13 @@ func (w *Writer) Enqueue(e graph.ResourceEvent) {
 // once; a second call is a no-op. After Stop, Enqueue is a no-op
 // drop.
 func (w *Writer) Stop() {
+	w.enqueueMu.Lock()
 	if w.closed.Swap(true) {
+		w.enqueueMu.Unlock()
 		return
 	}
 	close(w.queue)
+	w.enqueueMu.Unlock()
 	w.wg.Wait()
 }
 
@@ -165,14 +196,20 @@ func (w *Writer) Metrics() *Metrics { return w.metrics }
 // event gets up to maxRetries AppendEvent attempts with exponential
 // backoff; a permanently-failing event is dropped (WriteFailed++).
 //
-// Data-size capping runs here (not in Enqueue) so the informer hot
-// path stays light — measuring a payload means marshalling it.
+// Payloads have already been removed before queueing; worker delivery does not
+// retain or marshal a Kubernetes object's resource content.
 func (w *Writer) worker(ctx context.Context) {
 	defer w.wg.Done()
-	for e := range w.queue {
+	for item := range w.queue {
 		w.inFlight.Add(1)
-		w.writeWithRetry(ctx, e)
+		ok := w.writeWithRetry(ctx, item.event)
 		w.inFlight.Add(-1)
+		if item.member != nil {
+			if !ok {
+				item.member.writeGap.Store(true)
+			}
+			item.member.finish()
+		}
 	}
 }
 
@@ -180,20 +217,20 @@ func (w *Writer) worker(ctx context.Context) {
 // exponential backoff. ctx cancellation short-circuits the backoff
 // sleeps (the worker still makes its remaining attempts back-to-back
 // so a closed queue still drains) — see Stop for the clean path.
-func (w *Writer) writeWithRetry(ctx context.Context, e graph.ResourceEvent) {
+func (w *Writer) writeWithRetry(ctx context.Context, e graph.ResourceEvent) bool {
 	delay := retryBaseDelay
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		err := w.sink.AppendEvent(ctx, e)
 		if err == nil {
 			w.metrics.incProcessed()
-			return
+			return true
 		}
 		if attempt == maxRetries {
 			slog.Warn("snapshot writer: dropping event after retry budget exhausted",
 				"namespace", e.Namespace, "kind", e.Kind, "name", e.Name,
 				"attempts", maxRetries, "err", err)
 			w.metrics.incWriteFailed()
-			return
+			return false
 		}
 		select {
 		case <-time.After(delay):
@@ -203,4 +240,5 @@ func (w *Writer) writeWithRetry(ctx context.Context, e graph.ResourceEvent) {
 		}
 		delay *= 2
 	}
+	return false
 }

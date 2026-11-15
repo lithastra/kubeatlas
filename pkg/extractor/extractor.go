@@ -104,20 +104,31 @@ func (r *Registry) Register(e Extractor) {
 // concatenates the results. Implements
 // pkg/discovery.ExtractorRegistry.
 //
-// One extractor's failure never suppresses the others: ExtractAll
+// An active extractor's failure never suppresses the others: ExtractAll
 // collects every extractor's edges and returns the first error
 // alongside them, leaving the caller to log-and-continue.
+// Parent cancellation stops subsequent extractors and discards the whole batch,
+// including late results from an already-started dependency.
 func (r *Registry) ExtractAll(ctx context.Context, res graph.Resource, q graph.ResourceLister) ([]graph.Edge, error) {
 	var (
 		edges    []graph.Edge
 		firstErr error
 	)
 	for _, e := range r.extractors {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		got, err := e.Extract(ctx, res, q)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		edges = append(edges, got...)
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return edges, firstErr
 }

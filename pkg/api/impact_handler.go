@@ -37,8 +37,9 @@ type ImpactScope = impact.Scope
 type ImpactResponse = impact.Response
 
 type impactReply struct {
-	status int
-	body   []byte
+	status           int
+	body             []byte
+	projectionCounts *analysis.ImpactProjectionCounts
 }
 
 func impactFailure(status int, code, message string) impactReply {
@@ -123,6 +124,9 @@ func writeImpactReply(w http.ResponseWriter, ctx context.Context, reply impactRe
 	if reply.status == http.StatusUnauthorized {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 	}
+	if counts := reply.projectionCounts; reply.status == http.StatusOK && counts != nil {
+		w.Header().Set(impact.ProjectionCountsHeader, strconv.Itoa(counts.Resources)+","+strconv.Itoa(counts.Edges))
+	}
 	w.WriteHeader(reply.status)
 	if _, err := w.Write(reply.body); err == nil {
 		_ = controller.Flush()
@@ -183,7 +187,7 @@ func (s *Server) computeImpact(r *http.Request) impactReply {
 	if err != nil {
 		return impactAnalysisFailure(err)
 	}
-	return impactReply{status: http.StatusOK, body: body}
+	return impactReply{status: http.StatusOK, body: body, projectionCounts: result.ProjectionCounts}
 }
 
 func impactAnalysisFailure(err error) impactReply {
@@ -220,7 +224,7 @@ func parseImpactRequest(r *http.Request, federated bool) (graph.Resource, analys
 			return invalid()
 		}
 		switch key {
-		case "cluster", "relation", "max_depth", "limit", "expected_uid":
+		case "cluster", "relation", "max_depth", "limit", "expected_uid", "projection_counts":
 		default:
 			return invalid()
 		}
@@ -243,6 +247,12 @@ func parseImpactRequest(r *http.Request, federated bool) (graph.Resource, analys
 		MaxDepth: analysis.DefaultImpactDepth, Limit: analysis.DefaultImpactLimit, ExpectedUID: query.Get("expected_uid")}
 	if opts.ExpectedUID != "" && !validImpactSegment(opts.ExpectedUID, true) {
 		return invalid()
+	}
+	if projection, present := query["projection_counts"]; present {
+		if projection[0] != "true" {
+			return invalid()
+		}
+		opts.IncludeProjectionCounts = true
 	}
 	if relation, present := query["relation"]; present {
 		opts.Relation = analysis.ImpactRelation(relation[0])

@@ -27,7 +27,6 @@ import (
 	"github.com/lithastra/kubeatlas/pkg/discovery"
 	"github.com/lithastra/kubeatlas/pkg/extractor"
 	"github.com/lithastra/kubeatlas/pkg/extractor/rego"
-	"github.com/lithastra/kubeatlas/pkg/gatekeeper"
 	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
 	"github.com/lithastra/kubeatlas/pkg/multicluster"
@@ -76,9 +75,8 @@ func (s *multiclusterStarter) Start(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// noopStarter parks until ctx is cancelled. Used in place of
-// crd.Discovery in multi-cluster mode, where per-cluster CRD discovery
-// is deferred to a future task (P3-T21 focus: core GVR informers).
+// noopStarter parks until ctx is cancelled. Federation starts CRD/Gatekeeper
+// collectors inside each member bundle instead of these standalone slots.
 type noopStarter struct{}
 
 func (noopStarter) Start(ctx context.Context) error {
@@ -659,10 +657,9 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 
 	// Phase 2 wire-up: the rego engine handles CRD-driven edge
 	// derivation; the built-in extractor.Default() still owns core
-	// K8s GVRs. The two pipelines write to the same store but never
-	// race on the same resource — InformerManager covers the GVRs
-	// in CoreGVRs, crd.Discovery covers everything else through the
-	// dynamic CRD informer.
+	// K8s GVRs. Dynamic sources can overlap (notably Gatekeeper CRDs).
+	// History-enabled collectors share callback locks and current graph
+	// receipts; those receipts do not impose an order across watches.
 	regoEngine, err := buildRegoEngine(ctx, disc, rulePackExtras)
 	if err != nil {
 		log.Fatalf("build rego engine: %v", err)
@@ -712,17 +709,22 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 
 	// API server options. snapWriter is nil unless Tier 2 + snapshots
 	// enabled; when set, /metrics surfaces its counters + queue depth.
-	// Retained metadata is sampled only in standalone mode. Global writer and
-	// legacy unlabelled marker evidence cannot qualify a federated member.
+	// Retained metadata is scoped independently from global writer metrics.
+	// Member observers are owned and joined by their member bundles.
 	var retainedHistory *snapshot.HistoryRetentionObserver
-	if snapWriter != nil && os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") != "true" {
+	var retainedMembers *snapshot.MemberHistoryRetention
+	if snapWriter != nil {
 		reader, _ := graphStore.(graph.HistoryBoundsReader)
-		retainedHistory = snapshot.NewHistoryRetentionObserver(reader, "", snapRetention)
-		go func() {
-			if err := retainedHistory.Start(ctx); err != nil {
-				slog.Error("history retention observer failed to start", "err", err)
-			}
-		}()
+		if os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") == "true" {
+			retainedMembers = snapshot.NewMemberHistoryRetention(reader, snapRetention)
+		} else {
+			retainedHistory = snapshot.NewHistoryRetentionObserver(reader, "", snapRetention)
+			go func() {
+				if err := retainedHistory.Start(ctx); err != nil {
+					slog.Error("history retention observer failed to start", "err", err)
+				}
+			}()
+		}
 	}
 	apiOpts := []api.ServerOption{
 		api.WithWebFS(webFS),
@@ -734,7 +736,7 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 			Availability: snapshot.NewAnalysisAvailabilityReader(operationsMonitor, snapWriter, snapshot.AnalysisAvailabilityConfig{
 				Durable: operationsCfg.StorageDurable, HistoryEnabled: snapEnabled,
 				Federated: os.Getenv("KUBEATLAS_MULTICLUSTER_ENABLED") == "true", Retention: snapRetention,
-			}, snapshot.WithHistoryRetention(retainedHistory)),
+			}, snapshot.WithHistoryRetention(retainedHistory), snapshot.WithMemberHistoryRetention(retainedMembers)),
 		}),
 		api.WithTelemetry(telemetrySender),
 	}
@@ -814,35 +816,20 @@ func runWatch(rulePackExtras []string, kubeconfig, kubeContext string) {
 		}
 		mcKubeconfigs = kubeconfigs
 		mcMgr = multicluster.New(graphStore,
-			multicluster.WithFactory(multicluster.DefaultInformerFactory(baseInformerOpts...)),
+			multicluster.WithDiscoveryFactory(memberInformerFactory(baseInformerOpts, operationsMonitor.Coverage(), regoEngine, extractor.Default(), dynMetrics, retainedMembers, snapWriter)),
 		)
-		// CRD discovery and Gatekeeper discovery are per-cluster work
-		// that doesn't fit the single-shared-informer model. P3-T21
-		// ships the core-GVR federation; per-cluster CRD/policy
-		// discovery is a follow-up.
+		// Each member bundle owns its core, CRD and Gatekeeper collectors.
+		// The two standalone component slots remain parked in federation mode.
 		crdStarter = noopStarter{}
 		gkStarter = noopStarter{}
 		// Report the live attached-cluster count in telemetry.
 		telemetryClusterCount = func() int { return len(mcMgr.ListClusters()) }
 		slog.Info("multicluster enabled", "members", len(kubeconfigs))
 	} else {
-		informerStarter = discovery.NewInformerManager(
-			client.Dynamic(), graphStore,
-			append(baseInformerOpts, discovery.WithOnSynced(srv.Readiness().MarkReady), discovery.WithAPIInventory(disc))...,
-		)
-		crdStarter = crd.New(client.Dynamic(), graphStore,
-			crd.WithRegoEvaluator(regoEngine),
-			crd.WithCoverage(operationsMonitor.Coverage()),
-		)
-		// Gatekeeper: watch ConstraintTemplates and register a dynamic
-		// informer per generated Constraint kind. The manager's metrics
-		// are the dynMetrics surfaced on /metrics above.
-		dynMgr := discovery.NewDynamicInformerManager(
-			client.Dynamic(), discovery.WithDynamicMetrics(dynMetrics),
-		)
-		gkStarter = gatekeeper.New(client.Dynamic(), graphStore, extractor.Default(), dynMgr,
-			gatekeeper.WithCoverage(operationsMonitor.Coverage()),
-			gatekeeper.WithDiscovery(discovery.NewDiscoveryFromClient(client)))
+		informerStarter, crdStarter, gkStarter = standaloneInformerComponents(
+			append(baseInformerOpts, discovery.WithOnSynced(srv.Readiness().MarkReady)),
+			client.Dynamic(), disc, graphStore, operationsMonitor.Coverage(),
+			regoEngine, extractor.Default(), dynMetrics, snapWriter)
 	}
 	if mcMgr != nil {
 		// Re-bind srv with the cluster lister now that mcMgr exists.

@@ -15,6 +15,28 @@ import (
 
 var _ graph.ImpactSnapshotter = (*Store)(nil)
 
+// The bounded projection expands a static JSON allowlist into many SQL
+// expressions. LLVM compilation can dominate this short read even on a small
+// graph. Disable JIT only for this transaction; pooled sessions keep their
+// configured defaults after commit or rollback. The five-second limit remains.
+const impactTransactionSQL = `SET LOCAL statement_timeout = '5s'; SET LOCAL jit = off`
+
+// Only fixed scalar receipt fields may cross the database boundary. Unknown
+// or nested fields in legacy/corrupt storage are never selected as payloads.
+const impactOriginSQL = `CASE WHEN jsonb_typeof(data->'observationOrigin') = 'object'
+  AND NOT EXISTS (SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(data->'observationOrigin') = 'object'
+    THEN data->'observationOrigin' ELSE '{}'::jsonb END) AS origin_field(key,value)
+    WHERE (key IN ('clusterId','source','ownerName','ownerUID','group','version','resource','kind','registration','objectUID','objectVersion') AND jsonb_typeof(value) <> 'string')
+      OR (key = 'namespaced' AND jsonb_typeof(value) <> 'boolean'))
+  THEN jsonb_build_object(
+    'clusterId',data->'observationOrigin'->'clusterId','source',data->'observationOrigin'->'source',
+    'ownerName',data->'observationOrigin'->'ownerName','ownerUID',data->'observationOrigin'->'ownerUID',
+    'group',data->'observationOrigin'->'group','version',data->'observationOrigin'->'version',
+    'resource',data->'observationOrigin'->'resource','kind',data->'observationOrigin'->'kind',
+    'registration',data->'observationOrigin'->'registration','namespaced',data->'observationOrigin'->'namespaced',
+    'objectUID',data->'observationOrigin'->'objectUID','objectVersion',data->'observationOrigin'->'objectVersion')
+  ELSE NULL END`
+
 // Only allowlisted metadata leaves PostgreSQL. The Secret CASE deliberately
 // never selects UID, versions, owners, or object data, including for legacy rows.
 // The indexed generated cluster_id column scopes the read before decoding.
@@ -34,7 +56,8 @@ FROM (
     'clusterId', cluster_id, 'uid', data->>'uid',
     'groupVersion', data->>'groupVersion', 'resourceVersion', data->>'resourceVersion',
     'ownerReferences', ` + impactOwnerReferencesSQL + `)) ||
-    jsonb_build_object('referenceFields', ` + impactReferenceSQL() + `) END AS projected
+    jsonb_build_object('referenceFields', ` + impactReferenceSQL() + `,
+      'observationOrigin', ` + impactOriginSQL + `) END AS projected
   FROM public.resources WHERE cluster_id = $1 LIMIT $2
 ) AS scoped`
 
@@ -84,7 +107,7 @@ func (s *Store) SnapshotImpact(ctx context.Context, opts graph.ImpactSnapshotOpt
 		defer stop()
 		_ = tx.Rollback(cleanup)
 	}()
-	if _, err := tx.Exec(ctx, `SET LOCAL statement_timeout = '5s'`); err != nil {
+	if _, err := tx.Exec(ctx, impactTransactionSQL); err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -93,12 +116,16 @@ func (s *Store) SnapshotImpact(ctx context.Context, opts graph.ImpactSnapshotOpt
 	if err := readImpactRows(ctx, tx, impactResourcesSQL, opts.ClusterID, opts.MaxResources+1, opts.MaxBytes, func(body []byte) error {
 		var row struct {
 			graph.Resource
-			ReferenceFields map[string]any `json:"referenceFields"`
+			ReferenceFields map[string]any        `json:"referenceFields"`
+			Origin          *graph.ResourceOrigin `json:"observationOrigin"`
 		}
 		if err := json.Unmarshal(body, &row); err != nil {
 			return fmt.Errorf("postgres.SnapshotImpact: invalid resource metadata: %w", err)
 		}
 		row.Raw = row.ReferenceFields
+		if row.Origin != nil {
+			row.Resource.Origin = *row.Origin
+		}
 		return builder.AddResource(ctx, row.Resource)
 	}); err != nil {
 		return nil, err

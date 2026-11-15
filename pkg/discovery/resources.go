@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/lithastra/kubeatlas/pkg/operations"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -85,6 +86,24 @@ var CoreGVRs = []schema.GroupVersionResource{
 	{Group: "wgpolicyk8s.io", Version: "v1alpha2", Resource: "clusterpolicyreports"},
 }
 
+// Only canonical endpoints have an unambiguous repair kind when their initial
+// list is empty. Unknown custom WithGVRs inputs fail closed instead of guessing
+// a Kind from a plural (ConfigMap/PVC/RBAC names cannot be safely title-cased).
+func coreRepairKind(gvr schema.GroupVersionResource) string {
+	if !slices.Contains(CoreGVRs, gvr) {
+		return ""
+	}
+	return map[string]string{
+		"namespaces": "Namespace", "pods": "Pod", "services": "Service", "configmaps": "ConfigMap",
+		"persistentvolumeclaims": "PersistentVolumeClaim", "serviceaccounts": "ServiceAccount",
+		"deployments": "Deployment", "replicasets": "ReplicaSet", "statefulsets": "StatefulSet", "daemonsets": "DaemonSet",
+		"jobs": "Job", "cronjobs": "CronJob", "horizontalpodautoscalers": "HorizontalPodAutoscaler",
+		"ingresses": "Ingress", "networkpolicies": "NetworkPolicy", "gateways": "Gateway", "httproutes": "HTTPRoute",
+		"roles": "Role", "rolebindings": "RoleBinding", "clusterroles": "ClusterRole", "clusterrolebindings": "ClusterRoleBinding",
+		"clusterpolicies": "ClusterPolicy", "policies": "Policy", "policyreports": "PolicyReport", "clusterpolicyreports": "ClusterPolicyReport",
+	}[gvr.Resource]
+}
+
 // optionalGroups is the set of API groups whose absence on the cluster
 // is expected (typically CRD-installed). Discovery checks these and
 // drops missing GVRs rather than failing startup.
@@ -95,8 +114,9 @@ var optionalGroups = map[string]bool{
 }
 
 // FilterAvailableGVRs returns the subset of want that the cluster
-// actually exposes. Missing optional GVRs are logged as warnings and
-// dropped; missing required GVRs return an error.
+// advertises with a supported shape. Missing/unsupported optional GVRs are
+// dropped; required ones return an error. Ambiguous or malformed target metadata
+// fails the selection without returning a partial startup set.
 func FilterAvailableGVRs(ctx context.Context, dc discovery.DiscoveryInterface, want []schema.GroupVersionResource) ([]schema.GroupVersionResource, error) {
 	if dc == nil {
 		return nil, errors.New("nil API discovery client")
@@ -137,14 +157,9 @@ func FilterAvailableGVRs(ctx context.Context, dc discovery.DiscoveryInterface, w
 			}
 			cache[gv] = resources
 		}
-		ok := false
-		if resources != nil {
-			for _, resource := range resources.APIResources {
-				if resource.Name == gvr.Resource && slices.Contains(resource.Verbs, "list") && slices.Contains(resource.Verbs, "watch") {
-					ok = true
-					break
-				}
-			}
+		ok, err := startupResourceAvailable(ctx, resources, gvr)
+		if err != nil {
+			return nil, err
 		}
 		if !ok {
 			if optionalGroups[gvr.Group] {
@@ -157,6 +172,46 @@ func FilterAvailableGVRs(ctx context.Context, dc discovery.DiscoveryInterface, w
 		out = append(out, gvr)
 	}
 	return out, nil
+}
+
+func startupResourceAvailable(ctx context.Context, resources *metav1.APIResourceList, gvr schema.GroupVersionResource) (bool, error) {
+	var target *metav1.APIResource
+	if resources != nil {
+		for i := range resources.APIResources {
+			if err := ctx.Err(); err != nil {
+				return false, err
+			}
+			resource := &resources.APIResources[i]
+			if resource.Name != gvr.Resource {
+				continue
+			}
+			if target != nil {
+				return false, errors.New("ambiguous startup resource API discovery response")
+			}
+			target = resource
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if target == nil {
+		return false, nil
+	}
+	descriptor := operations.APIResourceDescriptor{Group: gvr.Group, Version: gvr.Version, Resource: target.Name, Kind: target.Kind, Namespaced: target.Namespaced}
+	if !operations.ValidAPIResourceDescriptor(descriptor) || (target.Group != "" && target.Group != gvr.Group) || (target.Version != "" && target.Version != gvr.Version) {
+		return false, errors.New("invalid startup resource API discovery response")
+	}
+	if kind := coreRepairKind(gvr); kind != "" {
+		namespaced := true
+		switch kind {
+		case "Namespace", "ClusterRole", "ClusterRoleBinding", "ClusterPolicy", "ClusterPolicyReport":
+			namespaced = false
+		}
+		if target.Kind != kind || target.Namespaced != namespaced {
+			return false, nil
+		}
+	}
+	return slices.Contains(target.Verbs, "list") && slices.Contains(target.Verbs, "watch"), nil
 }
 
 // GroupVersionAvailable reports whether the apiserver serves gv. It is

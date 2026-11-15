@@ -38,6 +38,10 @@ type Resource struct {
 	// v1alpha1 freezes its surface, so this field is v1 only — the
 	// v1alpha1 marshaller drops it.
 	ClusterID string `json:"clusterId,omitempty"`
+
+	// Origin is persisted only in the private storage envelope. It never enters
+	// resource JSON, Secret references, exported graphs or history payloads.
+	Origin ResourceOrigin `json:"-"`
 }
 
 // OwnerRef captures the K8s metadata.ownerReferences entry that the

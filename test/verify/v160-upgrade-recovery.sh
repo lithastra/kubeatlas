@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Prove the supported embedded Tier 2 path from the anonymous public v1.5.2
-# artifacts to the current v1.6 candidate, then destroy the original CNPG
+# Prove the supported embedded Tier 2 path from a public release
+# to the current candidate, then destroy the original CNPG
 # database and restore a protected logical backup into a fresh Cluster.
 #
 # The caller must provide a Kubernetes cluster with CloudNativePG 1.30.0 and
@@ -20,9 +20,8 @@ PG_CLUSTER="${KUBEATLAS_PG_CLUSTER:-${RELEASE}-pg}"
 CANDIDATE_IMAGE="${KUBEATLAS_CANDIDATE_IMAGE:-kubeatlas:upgrade-recovery}"
 CANDIDATE_PG_IMAGE="${KUBEATLAS_CANDIDATE_PG_IMAGE:-local-postgres-age:16.15-age1.6.0-rc0.2}"
 PUBLIC_CHART="oci://ghcr.io/lithastra/charts/kubeatlas"
-PUBLIC_VERSION=1.5.2
-PUBLIC_APP_IMAGE="ghcr.io/lithastra/kubeatlas:1.5.2"
-PUBLIC_PG_IMAGE="ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1"
+PUBLIC_VERSION="${KUBEATLAS_UPGRADE_BASELINE:-1.5.2}"
+PUBLIC_CHART_DIR=""
 PF_PORT="${KUBEATLAS_PF_PORT:-18083}"
 PF_PID=""
 BACKUP_FILE=/tmp/kubeatlas-v152-upgrade-recovery.dump
@@ -43,6 +42,21 @@ yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 step()   { yellow "==> $*"; }
 pass()   { green "PASS: $*"; }
 fail()   { red "FAIL: $*"; exit 1; }
+
+case "${PUBLIC_VERSION}" in
+  1.5.2)
+    PUBLIC_APP_IMAGE="ghcr.io/lithastra/kubeatlas:1.5.2"
+    PUBLIC_PG_IMAGE="ghcr.io/lithastra/postgres-age:16.6-age1.6.0-rc0.1"
+    ;;
+  1.6.0)
+    # Immutable release identities from docs/docs/release-process.md.
+    PUBLIC_CHART_DIGEST=sha256:1ba4fe34276337f70d5a5d160dea1a3f225c9d3950b6e869691219a7c528fce3
+    PUBLIC_APP_DIGEST=sha256:ff185a897c10f244de6b014a868af4fecaa1f15c300c1de9a7b58a62a3b338c8
+    PUBLIC_APP_IMAGE="ghcr.io/lithastra/kubeatlas@${PUBLIC_APP_DIGEST}"
+    PUBLIC_PG_IMAGE="ghcr.io/lithastra/postgres-age:16.15-age1.6.0-rc0.2@sha256:412ae56754e71aac96e8cb6327f70782c50bd4aeff75ff0ddf32eb4ee7400936"
+    ;;
+  *) fail "unsupported upgrade baseline: ${PUBLIC_VERSION}" ;;
+esac
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
@@ -69,6 +83,9 @@ cleanup_sensitive_files() {
     collect_failure_diagnostics || true
     sanitize_file "${DUMP_LOG}"
     sanitize_file "${RESTORE_LOG}"
+  fi
+  if [[ -n "${PUBLIC_CHART_DIR}" ]]; then
+    rm -rf -- "${PUBLIC_CHART_DIR}"
   fi
   for path in \
     "${BACKUP_FILE}" \
@@ -119,6 +136,10 @@ collect_failure_diagnostics() {
     kubectl describe pods -n "${NS}" || true
     kubectl logs -n "${NS}" deployment/"${RELEASE}" \
       --all-containers=true --tail=300 || true
+    kubectl logs -n "${NS}" -l "cnpg.io/cluster=${PG_CLUSTER}" \
+      --all-containers --prefix --tail=100 --request-timeout=10s || true
+    kubectl logs -n "${NS}" -l "cnpg.io/cluster=${PG_CLUSTER}" \
+      --all-containers --prefix --tail=100 --request-timeout=10s --previous || true
     kubectl logs -n cnpg-system deployment/cnpg-cloudnative-pg \
       --all-containers=true --tail=300 || true
     anonymous_helm 30 status "${RELEASE}" -n "${NS}" || true
@@ -273,8 +294,22 @@ fi
 SECRET_SENTINEL=$(openssl rand -hex 32)
 SECRET_SENTINEL_B64=$(printf '%s' "${SECRET_SENTINEL}" | openssl base64 -A)
 
-step "verify the anonymous public v1.5.2 chart contract"
-public_chart_metadata=$(anonymous_helm 120 show chart "${PUBLIC_CHART}" --version "${PUBLIC_VERSION}")
+step "verify the anonymous public v${PUBLIC_VERSION} chart contract"
+public_chart_args=("${PUBLIC_CHART}" --version "${PUBLIC_VERSION}")
+public_image_args=()
+if [[ "${PUBLIC_VERSION}" == "1.6.0" ]]; then
+  PUBLIC_CHART_DIR=$(mktemp -d)
+  anonymous_helm 120 pull "${PUBLIC_CHART}@${PUBLIC_CHART_DIGEST}" --destination "${PUBLIC_CHART_DIR}"
+  public_archives=("${PUBLIC_CHART_DIR}"/*.tgz)
+  [[ "${#public_archives[@]}" == "1" && -f "${public_archives[0]}" ]] \
+    || fail "expected exactly one digest-pinned public chart archive"
+  public_chart_args=("${public_archives[0]}")
+  public_image_args=(
+    --set-string "image.digest=${PUBLIC_APP_DIGEST}"
+    --set-string "persistence.embedded.image=${PUBLIC_PG_IMAGE}"
+  )
+fi
+public_chart_metadata=$(anonymous_helm 120 show chart "${public_chart_args[@]}")
 grep -Fxq "version: ${PUBLIC_VERSION}" <<<"${public_chart_metadata}" \
   || fail "public chart version is not ${PUBLIC_VERSION}"
 grep -Fxq "appVersion: ${PUBLIC_VERSION}" <<<"${public_chart_metadata}" \
@@ -295,14 +330,14 @@ kubectl set env deployment/recovery-consumer -n "${NS}" \
   --from=secret/recovery-sentinel >/dev/null
 pass "fixture contains ConfigMap and Secret relationships"
 
-step "install the real public v1.5.2 chart, application, and database image"
-anonymous_helm 720 install "${RELEASE}" "${PUBLIC_CHART}" \
-  --version "${PUBLIC_VERSION}" \
+step "install the real public v${PUBLIC_VERSION} chart, application, and database image"
+anonymous_helm 720 install "${RELEASE}" "${public_chart_args[@]}" \
   --namespace "${NS}" \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \
   --set persistence.embedded.storageSize=1Gi \
   --set snapshots.enabled=true \
+  ${public_image_args[@]+"${public_image_args[@]}"} \
   --wait --timeout 10m
 
 deployed_app_image=$(kubectl get deployment -n "${NS}" "${RELEASE}" \
@@ -351,7 +386,7 @@ schema_before=$(sql_value 'SELECT max(version) FROM public.schema_migrations')
 history_before=$(sql_value "SELECT count(*) FROM public.resource_events WHERE namespace = '${NS}'")
 snapshots_before=$(sql_value 'SELECT count(*) FROM public.snapshot_meta')
 edges_before=$(sql_value "SELECT count(*) FROM public.edges WHERE from_id = '${NS}/Deployment/recovery-consumer'")
-[[ "${schema_before}" == "11" ]] || fail "public v1.5.2 schema is ${schema_before}, want 11"
+[[ "${schema_before}" == "11" ]] || fail "public v${PUBLIC_VERSION} schema is ${schema_before}, want 11"
 (( history_before >= 2 )) || fail "representative history was not seeded"
 (( snapshots_before >= 2 )) || fail "representative snapshots were not seeded"
 (( edges_before >= 2 )) || fail "representative relationships were not seeded"
@@ -369,9 +404,11 @@ backup_sha=$(sha256_file "${BACKUP_FILE}")
 pass "backup is readable, sentinel-free, and protected by checksum ${backup_sha}"
 
 step "upgrade the database image and KubeAtlas application to the candidate"
+# Use candidate defaults and explicitly reapply the fixture values so the
+# public release's image digest cannot shadow the candidate tag.
 anonymous_helm 720 upgrade "${RELEASE}" helm/kubeatlas \
   --namespace "${NS}" \
-  --reuse-values \
+  --reset-values \
   --set image.repository="${CANDIDATE_IMAGE%:*}" \
   --set image.tag="${CANDIDATE_IMAGE##*:}" \
   --set image.pullPolicy=Never \

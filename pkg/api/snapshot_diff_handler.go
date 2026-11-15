@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lithastra/kubeatlas/pkg/graph/analysis"
 	"github.com/lithastra/kubeatlas/pkg/snapshot"
 )
 
@@ -31,47 +30,7 @@ func (s *Server) handleSnapshotDiff(w http.ResponseWriter, r *http.Request) {
 		snapshotsUnavailable(w)
 		return
 	}
-	now := time.Now()
-	q := r.URL.Query()
-
-	fromRaw := strings.TrimSpace(q.Get("from"))
-	if fromRaw == "" {
-		writeError(w, http.StatusBadRequest, CodeInvalidArgument,
-			"from is required (e.g. from=5m, from=1h, or an RFC3339 timestamp)")
-		return
-	}
-	from, err := parseTimeParam(fromRaw, now)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, CodeInvalidArgument, err.Error())
-		return
-	}
-	// `to` defaults to now.
-	to, err := parseTimeParam(orDefault(q.Get("to"), "now"), now)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, CodeInvalidArgument, err.Error())
-		return
-	}
-
-	if !from.Before(to) {
-		writeError(w, http.StatusBadRequest, CodeInvalidArgument,
-			"from must be earlier than to")
-		return
-	}
-	// Window-width guard: a diff wider than retention would scan a
-	// range whose older end has already been pruned.
-	if s.snapshotRetention > 0 && to.Sub(from) > s.snapshotRetention {
-		writeError(w, http.StatusBadRequest, CodeInvalidArgument,
-			fmt.Sprintf("diff window %s exceeds the retention limit %s",
-				to.Sub(from), s.snapshotRetention))
-		return
-	}
-
-	result, err := analysis.DiffWindow(r.Context(), s.store, from, to, q.Get("namespace"))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, CodeInternal, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
+	s.handleHistory(w, r, true)
 }
 
 // parseTimeParam resolves a from/to query value into an absolute

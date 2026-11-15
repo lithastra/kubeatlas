@@ -107,6 +107,9 @@ func TestDiscovery_RegistersConstraintInformerFromTemplate(t *testing.T) {
 
 func startEnvOrSkip(t *testing.T) (dynamic.Interface, apiextensionsclient.Interface) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("envtest control plane is excluded from short-mode local validation")
+	}
 	env := &envtest.Environment{}
 	cfg, err := env.Start()
 	if err != nil {

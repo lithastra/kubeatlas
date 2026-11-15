@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import type { ImpactResponse } from '../../src/api/impactTypes';
+import { download, embeddedJSON, observeImpactResponse } from './impact-capture-helpers';
 
 const matrix = JSON.parse(readFileSync(new URL('../../../test/fixtures/impact-analysis/client-matrix.json', import.meta.url), 'utf8')) as typeof import('../../../test/fixtures/impact-analysis/client-matrix.json');
 type Entry = typeof matrix.cases[number];
@@ -56,25 +57,6 @@ async function impactCalls(request: APIRequestContext, origin: string) {
   return Number(count);
 }
 
-async function download(page: Page, format: 'JSON' | 'HTML') {
-  const event = page.waitForEvent('download');
-  await page.getByRole('button', { name: `Download ${format}`, exact: true }).click();
-  const result = await event;
-  expect(await result.failure()).toBeNull();
-  const path = await result.path();
-  expect(path).not.toBeNull();
-  return readFile(path!, 'utf8');
-}
-
-async function embeddedJSON(page: Page, html: string) {
-  return page.evaluate((source) => {
-    const doc = new DOMParser().parseFromString(source, 'text/html');
-    if (doc.querySelector('script,iframe,object,embed,link,img,form,[src],[href]')) throw new Error('Active/external report content');
-    if (!doc.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute('content')?.includes("default-src 'none'")) throw new Error('Missing report CSP');
-    return doc.getElementById('captured-json')?.textContent;
-  }, html);
-}
-
 async function selectRoot(page: Page, entry: Entry, origin: string) {
   if (!entry.cluster) {
     await page.goto(`${origin}/resources/${entry.namespace}/${entry.kind}/${entry.rootName}`);
@@ -95,29 +77,10 @@ async function selectRoot(page: Page, entry: Entry, origin: string) {
     for (let n = 0; n <= index; n++) await canvas.press('ArrowRight');
     await canvas.press('Enter');
   }
-  let captured: { status: number; raw: string } | undefined;
-  await page.exposeFunction('captureImpactResponse', (status: number, raw: string) => {
-    captured = { status, raw };
+  const capture = await observeImpactResponse(page, {
+    origin, pathname: `/api/v1/impact/${entry.namespace}/${entry.kind}/${entry.rootName}`,
+    relation: entry.relation, depth: entry.depth, cluster: entry.cluster,
   });
-  await page.evaluate((target) => {
-    const nativeFetch = window.fetch.bind(window);
-    const capture = (window as typeof window & {
-      captureImpactResponse: (status: number, raw: string) => Promise<void>;
-    }).captureImpactResponse;
-    window.fetch = async (...args: Parameters<typeof fetch>) => {
-      const response = await nativeFetch(...args);
-      const url = new URL(response.url);
-      if (url.pathname === target.pathname && url.searchParams.get('relation') === target.relation &&
-          url.searchParams.get('max_depth') === String(target.depth) &&
-          (url.searchParams.get('cluster') || '') === target.cluster) {
-        // Drain a native clone before the application's cleanup aborts the fetch.
-        // Return the original response with its body, headers and status intact.
-        await capture(response.status, await response.clone().text());
-      }
-      return response;
-    };
-  }, { pathname: `/api/v1/impact/${entry.namespace}/${entry.kind}/${entry.rootName}`,
-    relation: entry.relation, depth: entry.depth, cluster: entry.cluster });
   await page.getByRole('button', { name: /Analyze impact/ }).click();
   if (entry.depth !== 5) {
     await page.getByRole('combobox', { name: /^Maximum depth / }).click();
@@ -127,9 +90,10 @@ async function selectRoot(page: Page, entry: Entry, origin: string) {
     await page.getByRole('combobox', { name: /^Relation / }).click();
     await page.getByRole('option', { name: 'Dependencies — resources this depends on', exact: true }).click();
   }
-  await expect.poll(() => captured !== undefined, { message: 'matching native impact response captured' }).toBe(true);
-  expect(captured!.status).toBe(200);
-  return captured!.raw;
+  await expect.poll(() => capture() !== undefined, { message: 'matching native impact response captured' }).toBe(true);
+  const captured = capture()!;
+  expect(captured.status).toBe(200);
+  return captured.raw;
 }
 
 for (const entry of matrix.cases) {

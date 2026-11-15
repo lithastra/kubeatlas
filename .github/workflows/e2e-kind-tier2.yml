@@ -13,6 +13,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  # The release producer reuses this unchanged, published database artifact.
+  POSTGRES_AGE_IMAGE: ghcr.io/lithastra/postgres-age:16.15-age1.6.0-rc0.2@sha256:412ae56754e71aac96e8cb6327f70782c50bd4aeff75ff0ddf32eb4ee7400936
+
 jobs:
   e2e-kind-tier2-matrix:
     name: Tier 2 (Kubernetes ${{ matrix.kubernetes }})
@@ -47,6 +51,19 @@ jobs:
           go-version: '1.26'
           cache: true
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the production Web bundle and install the locked browser
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+          npx playwright install --with-deps chromium
+
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
@@ -79,18 +96,16 @@ jobs:
             --namespace cnpg-system \
             --timeout=2m
 
-      - name: Build kubeatlas binary (CGO_ENABLED=0)
+      - name: Build the Web-embedded server and CLI from this source
         run: |
-          mkdir -p cmd/kubeatlas/web/dist
-          # Empty index.html keeps the embed_web build tag happy on
-          # this Tier 2 verifier path; the e2e-kind PR-gating job
-          # already exercises the real Web UI bundle. The //go:embed
-          # directive is package-relative, so the placeholder must live
-          # under cmd/kubeatlas/web/dist (not the repo root).
-          echo '<html><body>tier2 placeholder</body></html>' > cmd/kubeatlas/web/dist/index.html
-          CGO_ENABLED=0 go build \
-            -tags embed_web \
-            -o bin/kubeatlas ./cmd/kubeatlas
+          mkdir -p cmd/kubeatlas/web/dist cmd/kubectl-atlas/web/dist bin
+          cp -R web/dist/. cmd/kubeatlas/web/dist/
+          cp -R web/dist/. cmd/kubectl-atlas/web/dist/
+          version="$(helm show chart helm/kubeatlas | awk '/^version: / {print $2}')"
+          commit="$(git rev-parse HEAD)"
+          package=github.com/lithastra/kubeatlas/pkg/version
+          ldflags="-s -w -X ${package}.Version=${version} -X ${package}.Commit=${commit}"
+          CGO_ENABLED=0 go build -tags embed_web -ldflags "$ldflags" -o bin/ ./cmd/kubeatlas ./cmd/kubectl-atlas
 
       - name: Build kubeatlas runtime image
         run: |
@@ -104,17 +119,9 @@ jobs:
           cp bin/kubeatlas .docker-context/linux/amd64/kubeatlas
           docker build -t kubeatlas:tier2-test .docker-context
 
-      - name: Build CloudNativePG-compatible PostgreSQL + AGE image
-        # The v1.5.1 release publishes this image to GHCR. PR E2E
-        # builds it locally so validation does not depend on an
-        # unreleased package.
-        run: docker build -t local-postgres-age:16.15-age1.6.0-rc0.2 images/postgres-age
-
       - name: Load images into kind
         run: |
           kind load docker-image kubeatlas:tier2-test \
-            --name kubeatlas-tier2-${{ matrix.slug }}
-          kind load docker-image local-postgres-age:16.15-age1.6.0-rc0.2 \
             --name kubeatlas-tier2-${{ matrix.slug }}
 
       - name: Verify a fresh Tier 1 install
@@ -128,6 +135,7 @@ jobs:
           kubectl rollout status deployment/kubeatlas-tier1 \
             --namespace kubeatlas-tier1 \
             --timeout=2m
+          bash test/verify/impact-deployed.sh kubeatlas-tier1 kubeatlas-tier1 tier1
           helm uninstall kubeatlas-tier1 --namespace kubeatlas-tier1
 
       - name: Verify a fresh embedded Tier 2 install
@@ -140,12 +148,13 @@ jobs:
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
             --set persistence.embedded.retainOnDelete=false \
-            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
+            --set-string "persistence.embedded.image=${POSTGRES_AGE_IMAGE}" \
             --set persistence.embedded.storageSize=1Gi \
             --wait --timeout 8m
           kubectl rollout status deployment/kubeatlas-fresh \
             --namespace kubeatlas-fresh \
             --timeout=2m
+          bash test/verify/impact-deployed.sh kubeatlas-fresh kubeatlas-fresh tier2
           helm uninstall kubeatlas-fresh \
             --namespace kubeatlas-fresh \
             --wait --timeout 5m
@@ -177,7 +186,7 @@ jobs:
             --namespace kubeatlas \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
-            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
+            --set-string "persistence.embedded.image=${POSTGRES_AGE_IMAGE}" \
             --set persistence.embedded.storageSize=2Gi \
             --set snapshots.enabled=true \
             --set rulePacks.openshift=true \
@@ -199,7 +208,7 @@ jobs:
             --set image.pullPolicy=Never \
             --set persistence.enabled=true \
             --set persistence.embedded.enabled=true \
-            --set persistence.embedded.image=local-postgres-age:16.15-age1.6.0-rc0.2 \
+            --set-string "persistence.embedded.image=${POSTGRES_AGE_IMAGE}" \
             --set persistence.embedded.storageSize=2Gi \
             --set snapshots.enabled=true \
             --set rulePacks.openshift=true \
@@ -240,6 +249,17 @@ jobs:
           name: kubeatlas-tier2-${{ matrix.slug }}-logs
           path: |
             /tmp/kubeatlas-*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Retain deployed Impact smoke results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kubeatlas-impact-deployed-${{ matrix.slug }}
+          path: |
+            web/playwright-deployed-*-report/
+            web/test-results-impact-*/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -358,12 +378,16 @@ jobs:
             crd/clusters.postgresql.cnpg.io \
             --timeout=2m
 
-  v152-upgrade-recovery:
-    name: Public v1.5.2 upgrade + embedded restore
+  public-upgrade-recovery:
+    name: Public v${{ matrix.baseline }} upgrade + embedded restore
     needs:
       - cnpg-upgrade-chain
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: ['1.5.2', '1.6.0']
 
     steps:
       - uses: actions/checkout@v7
@@ -407,7 +431,7 @@ jobs:
           kubectl rollout status deployment/cnpg-cloudnative-pg \
             --namespace cnpg-system --timeout=2m
 
-      - name: Build the v1.6 candidate application image
+      - name: Build the candidate application image
         run: |
           mkdir -p cmd/kubeatlas/web/dist
           echo '<html><body>upgrade recovery placeholder</body></html>' \
@@ -420,25 +444,18 @@ jobs:
           cp bin/kubeatlas .docker-context/linux/amd64/kubeatlas
           docker build -t kubeatlas:upgrade-recovery .docker-context
 
-      - name: Build the v1.6 PostgreSQL + AGE image
-        run: |
-          docker build \
-            -t local-postgres-age:16.15-age1.6.0-rc0.2 \
-            images/postgres-age
-
       - name: Load only the unreleased candidate images into kind
         run: |
           kind load docker-image kubeatlas:upgrade-recovery \
             --name kubeatlas-upgrade-recovery
-          kind load docker-image local-postgres-age:16.15-age1.6.0-rc0.2 \
-            --name kubeatlas-upgrade-recovery
 
-      - name: Prove public v1.5.2 upgrade and destructive embedded restore
+      - name: Prove public release upgrade and destructive embedded restore
         env:
+          KUBEATLAS_UPGRADE_BASELINE: ${{ matrix.baseline }}
           KUBEATLAS_NAMESPACE: kubeatlas-upgrade-recovery
           KUBEATLAS_RELEASE: kubeatlas-recovery
           KUBEATLAS_CANDIDATE_IMAGE: kubeatlas:upgrade-recovery
-          KUBEATLAS_CANDIDATE_PG_IMAGE: local-postgres-age:16.15-age1.6.0-rc0.2
+          KUBEATLAS_CANDIDATE_PG_IMAGE: ${{ env.POSTGRES_AGE_IMAGE }}
         run: bash test/verify/v160-upgrade-recovery.sh
 
       - name: Show sanitized cluster state on failure
@@ -452,7 +469,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: kubeatlas-v152-upgrade-recovery-logs
+          name: kubeatlas-v${{ matrix.baseline }}-upgrade-recovery-logs
           path: |
             /tmp/kubeatlas-upgrade-recovery-diagnostics.log
             /tmp/kubeatlas-upgrade-recovery-pg-dump.log
@@ -463,44 +480,39 @@ jobs:
 
   postgres-age-architectures:
     name: PostgreSQL + AGE (linux/${{ matrix.arch }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
+            runner: ubuntu-latest
             uname: x86_64
           - arch: arm64
+            runner: ubuntu-24.04-arm
             uname: aarch64
 
     steps:
       - uses: actions/checkout@v7
 
-      - uses: docker/setup-qemu-action@v4
-
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Build and load the architecture-specific image
+      - name: Pull the published architecture-specific image
         env:
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
-          docker buildx build \
-            --platform "linux/${TARGET_ARCH}" \
-            --load \
-            --tag local-postgres-age:architecture-test \
-            images/postgres-age
+          docker pull --platform "linux/${TARGET_ARCH}" "$POSTGRES_AGE_IMAGE"
 
       - name: Verify architecture and embedded dependency versions
         env:
           EXPECTED_UNAME: ${{ matrix.uname }}
           TARGET_ARCH: ${{ matrix.arch }}
         run: |
-          image=local-postgres-age:architecture-test
+          image="$POSTGRES_AGE_IMAGE"
           actual_uname="$(docker run --rm \
             --platform "linux/${TARGET_ARCH}" \
             --entrypoint uname \
             "${image}" -m)"
+          printf "Image architecture %s, expected %s\n" "$actual_uname" "$EXPECTED_UNAME"
           test "${actual_uname}" = "${EXPECTED_UNAME}"
 
           test "$(docker image inspect "${image}" \
@@ -511,7 +523,7 @@ jobs:
             --format '{{ index .Config.Labels "io.kubeatlas.apache-age.commit" }}')" = \
             2db2f060c4c9265a14d40f007eb8c56febf31e4c
 
-          docker run --rm \
+          docker run --rm --network none \
             --platform "linux/${TARGET_ARCH}" \
             --entrypoint sh \
             "${image}" -euc '
@@ -530,6 +542,11 @@ jobs:
               grep -Fq "1.6.0" "${extensiondir}/age.control"
               ldd "${pkglibdir}/age.so" | tee /tmp/age-ldd.txt
               ! grep -Fq "not found" /tmp/age-ldd.txt
+
+              initdb -D /tmp/age-smoke -A trust
+              trap "pg_ctl -D /tmp/age-smoke -m fast -w stop" EXIT
+              pg_ctl -D /tmp/age-smoke -o "-k /tmp -c listen_addresses= -c shared_preload_libraries=age" -w start
+              psql -h /tmp -v ON_ERROR_STOP=1 -d postgres -c "CREATE EXTENSION age"
             '
 
   e2e-kind-tier2:
@@ -538,7 +555,7 @@ jobs:
     needs:
       - e2e-kind-tier2-matrix
       - cnpg-upgrade-chain
-      - v152-upgrade-recovery
+      - public-upgrade-recovery
       - postgres-age-architectures
     runs-on: ubuntu-latest
     steps:
@@ -546,7 +563,7 @@ jobs:
         env:
           MATRIX_RESULT: ${{ needs.e2e-kind-tier2-matrix.result }}
           UPGRADE_RESULT: ${{ needs.cnpg-upgrade-chain.result }}
-          RECOVERY_RESULT: ${{ needs.v152-upgrade-recovery.result }}
+          RECOVERY_RESULT: ${{ needs.public-upgrade-recovery.result }}
           ARCHITECTURE_RESULT: ${{ needs.postgres-age-architectures.result }}
         run: |
           test "${MATRIX_RESULT}" = success

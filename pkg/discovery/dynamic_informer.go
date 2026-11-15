@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/lithastra/kubeatlas/pkg/graph"
 	"github.com/lithastra/kubeatlas/pkg/operations"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -41,6 +43,7 @@ type DynamicInformerManager struct {
 	logger  *slog.Logger
 	metrics *DynamicMetrics
 
+	runs      sync.WaitGroup
 	mu        sync.RWMutex
 	baseCtx   context.Context
 	started   bool
@@ -52,6 +55,7 @@ type dynamicHandle struct {
 	cancel   context.CancelFunc
 	synced   cache.InformerSynced
 	coverage *operations.CoverageSession
+	owner    graph.ResourceOrigin
 }
 
 // DynamicOption configures a DynamicInformerManager at construction.
@@ -135,6 +139,13 @@ func (m *DynamicInformerManager) Add(gvr schema.GroupVersionResource, handler ca
 // is handed to build and the source keeps its limited-inventory signal.
 // build runs under the registration lock and must not reenter the manager.
 func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, source *operations.CoverageSession, build func(context.Context, *operations.CoverageSession) cache.ResourceEventHandler) error {
+	return m.AddObservedOwned(gvr, source, graph.ResourceOrigin{}, build)
+}
+
+// AddObservedOwned additionally binds a valid metadata owner. Owner replacement
+// retires its old endpoint, never its graph rows. Missing legacy owner identity
+// stays unverified and cannot replace an explicitly owned registration.
+func (m *DynamicInformerManager) AddObservedOwned(gvr schema.GroupVersionResource, source *operations.CoverageSession, owner graph.ResourceOrigin, build func(context.Context, *operations.CoverageSession) cache.ResourceEventHandler) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -144,8 +155,31 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 	if isCoreSecretGVR(gvr) || gvr.Version == "" || gvr.Resource == "" || build == nil {
 		return errors.New("invalid dynamic informer registration")
 	}
-	if _, exists := m.informers[gvr]; exists {
-		return nil
+	owner.Registration = strings.Repeat("0", 32) // Validation only, never a stored receipt.
+	owner.ObjectUID, owner.ObjectVersion = "", ""
+	if !owner.Valid() || owner.GVR() != gvr {
+		for _, h := range m.informers {
+			if h.owner.Valid() && owner.OwnerName != "" && h.owner.OwnerName == owner.OwnerName && h.owner.Source == owner.Source && h.owner.ClusterID == owner.ClusterID {
+				return errors.New("unidentified metadata cannot replace an owned endpoint")
+			}
+		}
+		owner = graph.ResourceOrigin{}
+	}
+	if owner.Valid() {
+		for endpoint, h := range m.informers {
+			if h.owner.Source == owner.Source && h.owner.ClusterID == owner.ClusterID && h.owner.OwnerName == owner.OwnerName && h.owner != owner {
+				m.removeLocked(endpoint)
+			}
+		}
+	}
+	if h, exists := m.informers[gvr]; exists {
+		if owner == (graph.ResourceOrigin{}) || h.owner == owner {
+			return nil
+		}
+		if h.owner.Valid() {
+			return errors.New("dynamic endpoint has a different metadata owner")
+		}
+		m.removeLocked(gvr) // Establish a new lifetime for previously unverified ownership.
 	}
 
 	var coverage *operations.CoverageSession
@@ -154,6 +188,9 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 		coverage, err = source.BeginType(gvr, time.Now())
 		if err != nil {
 			m.metrics.incErrors()
+		}
+		if owner.Valid() {
+			coverage.BindOrigin(owner)
 		}
 	}
 	informerCtx, cancel := context.WithCancel(m.baseCtx)
@@ -175,17 +212,20 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 		return fmt.Errorf("dynamic informer add %s: %w", gvr.String(), err)
 	}
 
-	go informer.Run(informerCtx.Done())
+	m.runs.Add(1)
+	go func() { defer m.runs.Done(); informer.Run(informerCtx.Done()) }()
 	if coverage != nil {
+		m.runs.Add(1)
 		go func() {
+			defer m.runs.Done()
 			if cache.WaitForCacheSync(informerCtx.Done(), registration.HasSynced) {
 				coverage.InitialDeliveryComplete(gvr)
 			}
 		}()
 	}
 
-	m.informers[gvr] = &dynamicHandle{cancel: cancel, synced: registration.HasSynced, coverage: coverage}
-	m.metrics.setActive(len(m.informers))
+	m.informers[gvr] = &dynamicHandle{cancel: cancel, synced: registration.HasSynced, coverage: coverage, owner: owner}
+	m.metrics.addActive(1)
 	m.logger.Info("dynamic informer registered",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource))
 	return nil
@@ -196,7 +236,35 @@ func (m *DynamicInformerManager) AddObserved(gvr schema.GroupVersionResource, so
 func (m *DynamicInformerManager) Remove(gvr schema.GroupVersionResource) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.removeLocked(gvr)
+}
 
+// RemoveOwner resolves the stored endpoint by metadata UID, not a possibly old
+// template spec. A delayed tombstone cannot retire a replacement incarnation.
+func (m *DynamicInformerManager) RemoveOwner(owner graph.ResourceOrigin) {
+	if owner.OwnerUID == "" || owner.OwnerName == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for gvr, h := range m.informers {
+		if h.owner.Valid() && h.owner.Source == owner.Source && h.owner.ClusterID == owner.ClusterID && h.owner.OwnerName == owner.OwnerName && h.owner.OwnerUID == owner.OwnerUID {
+			m.removeLocked(gvr)
+		}
+	}
+}
+
+// RemoveUnowned preserves legacy callers without letting an unidentified
+// tombstone revoke an explicitly UID-bound owner.
+func (m *DynamicInformerManager) RemoveUnowned(gvr schema.GroupVersionResource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if h := m.informers[gvr]; h != nil && !h.owner.Valid() {
+		m.removeLocked(gvr)
+	}
+}
+
+func (m *DynamicInformerManager) removeLocked(gvr schema.GroupVersionResource) {
 	h, ok := m.informers[gvr]
 	if !ok {
 		return
@@ -204,7 +272,7 @@ func (m *DynamicInformerManager) Remove(gvr schema.GroupVersionResource) {
 	delete(m.informers, gvr)
 	h.cancel()
 	h.coverage.Stop(time.Now())
-	m.metrics.setActive(len(m.informers))
+	m.metrics.addActive(-1)
 	m.logger.Info("dynamic informer removed",
 		"gvr", fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource))
 }
@@ -226,6 +294,14 @@ func (m *DynamicInformerManager) Has(gvr schema.GroupVersionResource) bool {
 	return ok
 }
 
+// HasSynced reports initial handler delivery for the active registration.
+func (m *DynamicInformerManager) HasSynced(gvr schema.GroupVersionResource) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	h := m.informers[gvr]
+	return h != nil && h.synced()
+}
+
 // ActiveGVRs returns a snapshot of every GVR with a running informer.
 func (m *DynamicInformerManager) ActiveGVRs() []schema.GroupVersionResource {
 	m.mu.RLock()
@@ -240,14 +316,16 @@ func (m *DynamicInformerManager) ActiveGVRs() []schema.GroupVersionResource {
 // removeAll cancels every informer. Called on Start's ctx cancellation.
 func (m *DynamicInformerManager) removeAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	active := len(m.informers)
 	for gvr, h := range m.informers {
 		h.cancel()
 		h.coverage.Stop(time.Now())
 		delete(m.informers, gvr)
 	}
 	m.started = false
-	m.metrics.setActive(0)
+	m.metrics.addActive(-active)
+	m.mu.Unlock()
+	m.runs.Wait()
 }
 
 // DynamicMetrics holds the dynamic-informer counters surfaced on
@@ -261,7 +339,7 @@ type DynamicMetrics struct {
 // NewDynamicMetrics returns a zeroed metrics sink.
 func NewDynamicMetrics() *DynamicMetrics { return &DynamicMetrics{} }
 
-func (m *DynamicMetrics) setActive(n int) { m.active.Store(int64(n)) }
+func (m *DynamicMetrics) addActive(n int) { m.active.Add(int64(n)) }
 func (m *DynamicMetrics) incErrors()      { m.errors.Add(1) }
 
 // DynamicMetricsSnapshot is an immutable read of the counters.

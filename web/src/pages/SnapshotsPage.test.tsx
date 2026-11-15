@@ -40,6 +40,7 @@ function renderPage() {
 }
 
 describe('SnapshotsPage', () => {
+  beforeEach(() => jest.spyOn(snapshotsAPI, 'useHistoryScope').mockReturnValue({ clusterId: '', message: null }));
   afterEach(() => jest.restoreAllMocks());
 
   it('renders the not-enabled banner when the server returns 503', () => {
@@ -48,7 +49,7 @@ describe('SnapshotsPage', () => {
     jest.spyOn(snapshotsAPI, 'useSnapshotDiff').mockReturnValue(asDiffResult(undefined, err));
 
     renderPage();
-    expect(screen.getByText(/Snapshots are not enabled/i)).toBeInTheDocument();
+    expect(screen.getByText(/History is unavailable/i)).toBeInTheDocument();
   });
 
   it('renders the diff with three event sections and the timeline', () => {
@@ -123,4 +124,31 @@ describe('SnapshotsPage', () => {
     // Three "No matches." hints — one per empty section.
     expect(screen.getAllByText(/No matches/i)).toHaveLength(3);
   });
+});
+
+test('member history binds both queries and renders resource identities without a standalone detail link', () => {
+  jest.spyOn(snapshotsAPI, 'useHistoryScope').mockReturnValue({ clusterId: 'east', message: null });
+  const list = jest.spyOn(snapshotsAPI, 'useSnapshots').mockReturnValue(asListResult({ snapshots: [] }));
+  const diff = jest.spyOn(snapshotsAPI, 'useSnapshotDiff').mockReturnValue(asDiffResult({ from: '', to: '', added: [{ namespace: 'demo', kind: 'Pod', name: 'member-only', eventType: 'add', ts: '2026-10-20T00:00:00Z' }], modified: [], removed: [] }));
+  renderPage();
+  expect(list).toHaveBeenCalledWith('east');
+  expect(diff).toHaveBeenCalledWith('1h', 'now', '', 'east');
+  expect(screen.getByText('History scope: east')).toBeVisible();
+  expect(screen.getByText('member-only')).toBeVisible();
+  expect(screen.queryByRole('link', { name: 'member-only' })).not.toBeInTheDocument();
+  jest.restoreAllMocks();
+});
+
+test('pending replacement and denied refresh never render cached prior rows', () => {
+  jest.spyOn(snapshotsAPI, 'useHistoryScope').mockReturnValue({ clusterId: 'west', message: null });
+  const cached = { from: '', to: '', added: [{ namespace: 'demo', kind: 'Pod', name: 'old-private-row', eventType: 'add' as const, ts: '' }], modified: [], removed: [] };
+  jest.spyOn(snapshotsAPI, 'useSnapshots').mockReturnValue(asListResult({ snapshots: [] }));
+  const mock = jest.spyOn(snapshotsAPI, 'useSnapshotDiff').mockReturnValue({ ...asDiffResult(cached), isFetching: true } as UseQueryResult<DiffResult, ApiError>);
+  const page = renderPage();
+  expect(screen.queryByText('old-private-row')).not.toBeInTheDocument();
+  mock.mockReturnValue(asDiffResult(cached, new ApiError(403, 'forbidden', 'not authorized')));
+  page.rerender(<I18nextProvider i18n={i18n}><MemoryRouter><SnapshotsPage /></MemoryRouter></I18nextProvider>);
+  expect(screen.getByText('not authorized')).toBeVisible();
+  expect(screen.queryByText('old-private-row')).not.toBeInTheDocument();
+  jest.restoreAllMocks();
 });

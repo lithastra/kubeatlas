@@ -60,10 +60,7 @@ func (s *Store) ReadHistoryBounds(ctx context.Context, q graph.HistoryBoundsQuer
 	var first, last, marker *time.Time
 	// PostgreSQL timestamps have microsecond precision. Round the lower bound
 	// inward so pgx truncation cannot include a row just outside the window.
-	from := q.From.Truncate(time.Microsecond)
-	if from.Before(q.From) {
-		from = from.Add(time.Microsecond)
-	}
+	from := ceilHistoryTimestamp(q.From)
 	if err := tx.QueryRow(ctx, historyBoundsSQL, q.ClusterID, from, q.To.Truncate(time.Microsecond)).Scan(&first, &last, &marker); err != nil {
 		if ctx.Err() != nil {
 			return graph.HistoryBounds{}, ctx.Err()
@@ -93,4 +90,15 @@ func (s *Store) ReadHistoryBounds(ctx context.Context, q graph.HistoryBoundsQuer
 		return graph.HistoryBounds{}, err
 	}
 	return out, nil
+}
+
+// pgx encodes timestamps at microsecond precision. Use the first
+// representable timestamp at or after an inclusive lower bound or a
+// strict prune cutoff.
+func ceilHistoryTimestamp(at time.Time) time.Time {
+	rounded := at.Truncate(time.Microsecond)
+	if rounded.Before(at) {
+		return rounded.Add(time.Microsecond)
+	}
+	return rounded
 }

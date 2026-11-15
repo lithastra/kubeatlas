@@ -6,9 +6,12 @@
  * mode-per-graph), and the theme switcher. Standalone shell only —
  * Headlamp embeds inside the host's chrome and skips this bar.
  * ============================================================ */
+import { useEffect, useState } from 'react';
 import { Box, Stack, Typography } from '@mui/material';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+
+import { fetchJSON } from '../api/client';
 
 import { ThemeSwitcher } from './ThemeSwitcher';
 
@@ -40,7 +43,20 @@ interface TopBarProps {
   version?: string;
 }
 
-export function TopBar({ version = 'dev' }: TopBarProps) {
+export function TopBar({ version }: TopBarProps) {
+  const [serverVersion, setServerVersion] = useState<string>();
+  useEffect(() => {
+    if (version !== undefined) return;
+    const controller = new AbortController();
+    void fetchJSON<{ version?: unknown }>('/api/v1/info', { signal: controller.signal })
+      .then((info) => {
+        if (!controller.signal.aborted && typeof info.version === 'string' && info.version.trim()) {
+          setServerVersion(info.version);
+        }
+      }).catch(() => { /* An unavailable build identity must not imply a version. */ });
+    return () => controller.abort();
+  }, [version]);
+  const displayedVersion = version ?? serverVersion;
   const { t } = useTranslation('translation');
   const { t: tApp } = useTranslation('app');
   return (
@@ -97,6 +113,7 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
       </Typography>
       <Typography
         component="span"
+        data-testid="server-version"
         sx={{
           fontFamily: 'var(--atlas-font-mono)',
           fontSize: 'var(--atlas-text-caption-size)',
@@ -104,7 +121,7 @@ export function TopBar({ version = 'dev' }: TopBarProps) {
           whiteSpace: 'nowrap',
         }}
       >
-        {tApp('version', { build: version })}
+        {displayedVersion ? tApp('version', { version: displayedVersion }) : tApp('versionUnavailable')}
       </Typography>
       <Box sx={{ flexGrow: 1 }} />
       <Stack direction="row" spacing={2} alignItems="center" component="nav" aria-label="Primary"

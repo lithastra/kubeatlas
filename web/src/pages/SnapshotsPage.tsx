@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { Link as RouterLink } from 'react-router-dom';
 
 import { ApiError } from '../api/client';
-import { useSnapshotDiff, useSnapshots } from '../api/snapshots';
+import { useHistoryScope, useSnapshotDiff, useSnapshots } from '../api/snapshots';
 import type { DiffEntry, EventType, SnapshotMeta } from '../api/types';
 
 // SnapshotsPage answers "what changed in the last X minutes / hours
@@ -50,12 +50,17 @@ export function SnapshotsPage() {
   const [from, setFrom] = useState<(typeof windowPresets)[number]>('1h');
   const [namespace, setNamespace] = useState('');
 
-  const snapshots = useSnapshots();
-  const diff = useSnapshotDiff(from, 'now', namespace);
+  const scope = useHistoryScope();
+  const snapshots = useSnapshots(scope.clusterId);
+  const diff = useSnapshotDiff(from, 'now', namespace, scope.clusterId);
+  if (scope.clusterId === null) {
+    return <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
+      <Stack spacing={2}><Typography variant="h4">{t('page.snapshots.title')}</Typography><Alert severity="info">{scope.message}</Alert></Stack>
+    </Box>;
+  }
 
-  // 503 from either endpoint means snapshots aren't enabled on this
-  // server — both queries share the dedicated banner, no point
-  // showing two stacked errors.
+  // 503 can mean disabled history or missing scoped-reader support.
+  // Do not mislabel an authorization/size/deadline error as feature-disabled.
   const notEnabled =
     (snapshots.error instanceof ApiError && snapshots.error.status === 503) ||
     (diff.error instanceof ApiError && diff.error.status === 503);
@@ -75,6 +80,7 @@ export function SnapshotsPage() {
     <Box sx={{ padding: 'var(--atlas-space-8)', width: '100%', overflow: 'auto' }}>
     <Stack spacing={3}>
       <Typography variant="h4">{t('page.snapshots.title')}</Typography>
+      <Typography variant="body2">History scope: {scope.clusterId || 'standalone'}</Typography>
       <Typography variant="body2" color="text.secondary">
         {t('page.snapshots.subtitle')}
       </Typography>
@@ -104,7 +110,7 @@ export function SnapshotsPage() {
         />
       </Stack>
 
-      <DiffSection diff={diff} from={from} namespace={namespace} />
+      <DiffSection diff={diff} from={from} namespace={namespace} clusterId={scope.clusterId} />
 
       <Divider />
 
@@ -118,12 +124,13 @@ interface DiffSectionProps {
   diff: ReturnType<typeof useSnapshotDiff>;
   from: string;
   namespace: string;
+  clusterId: string;
 }
 
-function DiffSection({ diff, from, namespace }: DiffSectionProps) {
+function DiffSection({ diff, from, namespace, clusterId }: DiffSectionProps) {
   const { t } = useTranslation('translation');
 
-  if (diff.isPending) {
+  if (diff.isPending || diff.isFetching) {
     return (
       <Box display="flex" alignItems="center" gap={1}>
         <CircularProgress size={18} />
@@ -149,9 +156,9 @@ function DiffSection({ diff, from, namespace }: DiffSectionProps) {
           namespace: namespace || t('page.snapshots.allNamespaces'),
         })}
       </Typography>
-      <DiffTable entries={diff.data.added} eventType="add" />
-      <DiffTable entries={diff.data.modified} eventType="update" />
-      <DiffTable entries={diff.data.removed} eventType="delete" />
+      <DiffTable entries={diff.data.added} eventType="add" clusterId={clusterId} />
+      <DiffTable entries={diff.data.modified} eventType="update" clusterId={clusterId} />
+      <DiffTable entries={diff.data.removed} eventType="delete" clusterId={clusterId} />
     </Stack>
   );
 }
@@ -159,9 +166,10 @@ function DiffSection({ diff, from, namespace }: DiffSectionProps) {
 interface DiffTableProps {
   entries: DiffEntry[];
   eventType: EventType;
+  clusterId: string;
 }
 
-function DiffTable({ entries, eventType }: DiffTableProps) {
+function DiffTable({ entries, eventType, clusterId }: DiffTableProps) {
   const { t } = useTranslation('translation');
   const heading = t(`page.snapshots.eventHeader.${eventType}`, {
     count: entries.length,
@@ -193,7 +201,7 @@ function DiffTable({ entries, eventType }: DiffTableProps) {
           </TableHead>
           <TableBody>
             {entries.map((e) => (
-              <DiffRow key={`${e.namespace}/${e.kind}/${e.name}/${e.ts}`} entry={e} />
+              <DiffRow key={`${e.namespace}/${e.kind}/${e.name}/${e.ts}`} entry={e} clusterId={clusterId} />
             ))}
           </TableBody>
         </Table>
@@ -202,11 +210,11 @@ function DiffTable({ entries, eventType }: DiffTableProps) {
   );
 }
 
-function DiffRow({ entry }: { entry: DiffEntry }) {
+function DiffRow({ entry, clusterId }: { entry: DiffEntry; clusterId: string }) {
   // Removed resources cannot be linked to /resources/... — that page
   // would 404. We render plain text for delete rows; add and update
   // rows link to the current resource detail.
-  const isRemoved = entry.eventType === 'delete';
+  const isRemoved = entry.eventType === 'delete' || clusterId !== '';
   const target = `/resources/${encodeURIComponent(entry.namespace || '_')}/${encodeURIComponent(
     entry.kind,
   )}/${encodeURIComponent(entry.name)}`;
@@ -233,7 +241,7 @@ function TimelineSection({ snapshots }: { snapshots: ReturnType<typeof useSnapsh
 
   const rows: SnapshotMeta[] = useMemo(() => snapshots.data?.snapshots ?? [], [snapshots.data]);
 
-  if (snapshots.isPending) {
+  if (snapshots.isPending || snapshots.isFetching) {
     return (
       <Box display="flex" alignItems="center" gap={1}>
         <CircularProgress size={18} />

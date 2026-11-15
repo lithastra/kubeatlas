@@ -28,7 +28,8 @@ and edges for each consistent projection.
 
 The benchmark sends sequential real loopback HTTP GETs through the same
 recovery, metrics, version metrics, access-log and CORS middleware chain as
-`Server.Start`. Timing covers response-body receipt and JSON decoding/checking.
+`Server.Start`. Timing covers response-body receipt, projection-count
+verification and JSON decoding/checking.
 It excludes fixture construction and ten warm-up GETs per benchmark invocation.
 The normal Go one-iteration calibration invocation is separate from the final
 100 measured samples. There is no model, cache tuning, cluster deployment or
@@ -76,3 +77,36 @@ does not establish universal dense-graph support.
 ```bash
 go test ./pkg/api -run '^$' -bench '^BenchmarkImpactAPI(5K|10K|5KHighFanout)$' -benchtime=100x -count=1
 ```
+
+## Sampling an already deployed candidate
+
+Add a performance section to a [candidate probe plan](./impact-analysis.md#read-only-candidate-probe).
+Select one successful case by name. Record the host and bind the deployment
+to its immutable artifact identities before measuring.
+
+```json
+{
+  "case": "member-reference",
+  "shape": "baseline-5k",
+  "resources": 5000,
+  "edges": 6000,
+  "host": "recorded hardware and allocation"
+}
+```
+
+The probe makes ten warm-up requests, then measures 100 sequential impact GETs.
+Each request opts in with `projection_counts=true`. The successful response's
+`KubeAtlas-Impact-Projection` header reports two comma-separated decimal counts
+for the resource and edge records in the selected projection. Counts include
+disconnected resources and same-scope dangling edge records. The header comes
+from the same immutable projection used for the analysis. It adds no second
+graph read and does not describe the full live cluster inventory.
+
+Timing includes response receipt, schema validation and checking the case
+oracle and projection counts. The probe stops on the first failure, including
+a missing header or a count that differs from the plan. A complete run reports
+the verified counts, ordered durations in nanoseconds and the nearest-rank p95.
+The baseline fails above one second. Use separate runs with `dense-5k` and
+`10k` for additional shapes. The probe also checks storage durability against
+the declared tier. Capture workload composition and artifact identities
+separately from the measured dimensions.

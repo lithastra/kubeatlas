@@ -205,3 +205,16 @@ func TestFederationGraph_DefaultLevelIsResource(t *testing.T) {
 		t.Errorf("Level = %q, want 'resource' as the default", view.Level)
 	}
 }
+
+func TestFederationClusters_EmptyConfiguredFederationIsNotStandalone(t *testing.T) {
+	base, _, stop := seedAndServe(t, nil, api.WithClusterLister(stubLister{}))
+	defer stop()
+	var body struct {
+		Mode     string   `json:"mode"`
+		Clusters []string `json:"clusters"`
+	}
+	resp, _ := getJSON(t, base+"/api/v1/federation/clusters", &body)
+	if resp.StatusCode != 200 || body.Mode != "federated" || body.Clusters == nil || len(body.Clusters) != 0 {
+		t.Fatal("empty federation was advertised as safe unlabelled standalone scope")
+	}
+}
