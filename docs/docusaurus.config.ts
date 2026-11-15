@@ -38,14 +38,14 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/lithastra/kubeatlas/tree/main/docs/',
           routeBasePath: '/',
-          lastVersion: '1.6.0',
+          lastVersion: '1.7.0',
           versions: {
             current: {
               label: 'Next (unreleased)',
               path: 'next',
             },
-            '1.6.0': {
-              label: '1.6.0',
+            '1.7.0': {
+              label: '1.7.0',
               path: '',
             },
           },

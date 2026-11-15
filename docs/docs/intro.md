@@ -29,18 +29,23 @@ the tools above instead of replacing them.
 
 ## Project status
 
-**v1.6.0 was released on September 26, 2026.** New installations should pin
-**1.6.0**. It improves production operability on vanilla Kubernetes 1.34–1.36
-with health signals, operator runbooks, and verifiable public OCI artifacts.
-The [release matrix](./release-process.md) links the exact-source validation,
-public artifacts, and independently versioned integrations.
+**v1.7.0 was released on November 15, 2026.** New installations should pin
+**1.7.0**. It adds read-only, explainable impact analysis across the API, Web
+and CLI, with observed dependency paths, reference-field evidence and explicit
+collection/history qualifications. Member-scoped CRD and Gatekeeper collection
+repairs missed deletes and retains source data when deletion cannot be proved.
 
-The supported deployment remains single-replica and requires external
-authentication. One-hour local functional validation and a separate short
-public-install smoke check do not establish endurance, dedicated performance
-acceptance, or a general production-reliability guarantee. The signed release
-source is `69609e320045cbd943185dfa7900c3302359999e`; later `main` commits
-do not change the published v1.6.0 artifacts.
+The [release matrix](./release-process.md#v170-release-matrix) records the
+signed source, immutable artifacts and validation boundaries. The deployment
+remains single-replica and requires external authentication. A ten-minute
+functional window and a bounded 5K sparse-graph query check do not establish
+endurance, HA, effective permissions or arbitrary production-scale performance.
+Impact results are observations, not outage predictions or safe-delete advice.
+
+**v1.6.0** remains a historical release from September 26, 2026. Its signed
+source is `69609e320045cbd943185dfa7900c3302359999e`; later commits do not
+rebuild or replace its artifacts. v1.7 preserves the vanilla Kubernetes
+1.34–1.36 validation baseline, operator runbooks and public artifact checks.
 
 **v1.5.2 is released.** The dependency graph keeps Secret references but
 KubeAtlas no longer lists or watches Secret objects. Defensive inputs are
@@ -48,8 +53,8 @@ reduced to reference-only nodes before rule evaluation or storage, existing
 Tier 2 Secret rows and historical event payloads are scrubbed during migration,
 and snapshot history is metadata-only for every resource. The public release
 artifacts and production install path were verified for that release.
-These protections remain in v1.6.0; v1.5.2 is the supported upgrade starting
-point, not the recommended version for a new installation.
+These protections remain in v1.7.0. Upgrades from public v1.5.2 and v1.6.0
+are covered separately from fresh installation.
 
 **v1.5.1.** The v1.5.0 feature set is unchanged, but the Tier 2
 installation and release lifecycle are hardened:

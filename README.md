@@ -27,18 +27,24 @@ PVCs, RBAC, and CRDs — and lets you query it. It answers questions like:
 
 ## Project status
 
-**v1.6.0 was released on September 26, 2026.** It adds production-operability
-signals and runbooks, a vanilla Kubernetes 1.34–1.36 source-validation matrix,
-and digest-bound signing and attestations for the public OCI images and chart.
-New installations should pin **1.6.0**. See the
-[release notes](https://github.com/lithastra/kubeatlas/releases/tag/v1.6.0)
+**v1.7.0 was released on November 15, 2026.** It adds bounded impact analysis
+with relationship explanations, observation-coverage warnings, member-scoped
+collection, and matching Web/CLI JSON and HTML reports. New installations
+should pin **1.7.0**. See the
+[release notes](https://github.com/lithastra/kubeatlas/releases/tag/v1.7.0)
 and [release matrix](https://docs.kubeatlas.lithastra.com/release-process/)
-for exact artifacts, evidence, and independently versioned integrations.
+for immutable artifacts, exact-source checks, upgrades and coverage limits.
 
-Operation remains single-replica with external authentication required.
-One-hour functional validation and a short public Tier 2 smoke check are not
-endurance, dedicated performance acceptance, or a production-reliability
-guarantee. Commits on `main` after the signed release are not part of v1.6.0.
+Both storage tiers passed a complete ten-minute local functional window and
+a specified 5,000-object sparse performance profile. Operation remains
+single-replica with external authentication required. This qualification is
+not an endurance, HA or general production-reliability guarantee. Commits on
+`main` after the signed release are not part of the published binaries.
+
+**v1.6.0 introduced production-operability signals and runbooks,** a vanilla
+Kubernetes 1.34–1.36 source-validation matrix, and digest-bound signing and
+attestations for public OCI images and charts. Its historical functional
+qualification remains separate from v1.7 evidence.
 
 **v1.5.2 introduced the Secret-data security boundary.** KubeAtlas no longer lists or
 watches Kubernetes Secret objects. Secret relationships remain visible as
@@ -46,7 +52,7 @@ reference-only graph nodes, while Secret values and identifying metadata are
 rejected at collection and scrubbed at both storage boundaries. Snapshot event
 payloads are metadata-only for every resource. See the
 [v1.5.2 changelog](./CHANGELOG.md#v152--secret-data-boundary) for the complete
-upgrade and validation boundary. These protections remain in v1.6.0;
+upgrade and validation boundary. These protections remain in v1.7.0;
 v1.5.2 is the supported starting point for an existing-installation upgrade.
 
 **v1.5.1 hardens release reliability.** This patch release strengthens the Tier 2
@@ -194,7 +200,7 @@ to a running UI):
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.6.0 \
+  --version 1.7.0 \
   --namespace kubeatlas --create-namespace
 
 kubectl -n kubeatlas rollout status deploy/kubeatlas
@@ -212,7 +218,7 @@ helm upgrade --install cnpg cloudnative-pg/cloudnative-pg \
   --wait --timeout 5m
 
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.6.0 \
+  --version 1.7.0 \
   --namespace kubeatlas --create-namespace \
   --set persistence.enabled=true \
   --set persistence.embedded.enabled=true \

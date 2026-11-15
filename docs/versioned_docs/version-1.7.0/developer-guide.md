@@ -1,0 +1,254 @@
+---
+sidebar_position: 4
+title: Developer Guide
+---
+
+# Developer Guide
+
+This guide is for contributors. If you only want to *use* KubeAtlas,
+start with the [Quick Start](./quick-start.md) instead.
+
+## Prerequisites
+
+- **Go 1.26 or later** — KubeAtlas uses `log/slog`, generics, and the
+  Go 1.22+ `net/http` `ServeMux` features.
+- **A Kubernetes cluster you control** — any cluster works for the
+  end-to-end flow. If you don't already have one, install
+  [Docker](https://docs.docker.com/get-docker/) +
+  [kind](https://kind.sigs.k8s.io/); the docs use kind as the example
+  because it's the fastest local path.
+- **kubectl** — at the same minor version as your cluster.
+- **`golangci-lint`** *(optional locally; required in CI)* —
+  `brew install golangci-lint` or see [installation docs](https://golangci-lint.run/).
+- **`setup-envtest`** *(optional)* — needed only to run the informer
+  integration tests locally. Without it, those tests skip with a
+  clear message.
+
+```bash
+# Install the envtest binaries once.
+go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+export KUBEBUILDER_ASSETS=$(setup-envtest use 1.30.x -p path)
+```
+
+## Repository layout
+
+```
+kubeatlas/
+├── cmd/kubeatlas/        # Server + CLI entry point (-once or watch)
+├── cmd/kubectl-atlas/    # kubectl plugin (offline / local-ui / online)
+├── pkg/
+│   ├── graph/            # Resource / Edge / GraphStore types
+│   │   └── storetest/    # Reusable contract test suite
+│   ├── store/
+│   │   ├── memory/       # Tier 1 in-memory backend (default)
+│   │   └── postgres/     # Tier 2 placeholder, enabled in v1.0
+│   ├── discovery/        # K8s client + informer + GVR registry
+│   ├── extractor/        # Edge extractors
+│   ├── aggregator/       # Pre-aggregated views
+│   └── api/              # REST + WebSocket
+├── web/                  # Frontend
+├── helm/                 # Helm Chart
+├── docs/                 # Docusaurus site
+└── test/
+    ├── petclinic/        # Reference fixture
+    └── verify/           # End-to-end verification scripts
+```
+
+## Build & test
+
+```bash
+# Compile everything
+go build ./...
+
+# Unit tests with coverage
+go test ./... -coverprofile=cover.out
+go tool cover -func=cover.out | tail -1
+
+# Integration tests (informer + envtest)
+KUBEBUILDER_ASSETS=$(setup-envtest use 1.30.x -p path) go test ./pkg/discovery/...
+
+# Lint
+golangci-lint run ./...
+
+# End-to-end on a real cluster (kind is one option; any K8s cluster you control works)
+test/petclinic/run.sh base
+
+# Generate the three snapshots the verifier reads (must be run before phase0.sh)
+go run ./cmd/kubeatlas/ -once                                                  > /tmp/graph-resource.json
+go run ./cmd/kubeatlas/ -once -level=cluster                                   > /tmp/graph-cluster.json
+go run ./cmd/kubeatlas/ -once -level=namespace -namespace=petclinic            > /tmp/graph-namespace.json
+
+bash test/verify/phase0.sh
+```
+
+## Repository tooling
+
+### JavaScript dependency overrides
+
+Use `npm ci` with the committed lockfiles and keep `npm audit --audit-level=low`
+enabled. Some consumers currently request older dependency ranges. The manifests
+pin official upstream releases through these overrides:
+
+| Consumer | Override | Compatibility coverage |
+|---|---|---|
+| Docusaurus 3.10.2 | tinypool 2.1.2 | Worker options, concurrent task results, inherited filename rejection, and SSG builds |
+| CSS plugins using selector-parser 6.1.4 | postcss-selector-parser 7.1.6 | The Docusaurus cssnano preset's selector, calc, and media output |
+| Mermaid 11 | KaTeX 0.18.2 | Real browser rendering of ordinary and mathematical flowcharts, plus inherited trust rejection |
+| Istanbul's load-nyc-config 1.1.0 | js-yaml 4.3.2 | YAML config inheritance, typed values, malformed input, and unsafe tag rejection |
+
+The documentation lockfile also resolves launch-editor's `shell-quote` dependency
+to 1.11.0 within its existing `^1.8.4` range. Consumer checks cover quoted editor
+paths and rejection of line terminators in tokens following a comment.
+
+The override releases cross the consumers' declared version ranges and require
+compatibility review. The YAML override removes the old argparse dependency on
+sprintf-js. Remove an override when its consumer accepts a patched upstream
+range, then regenerate the lockfile and rerun the consumer checks:
+
+```bash
+cd docs
+npm ci
+npm audit --audit-level=low
+npm run test:dependencies
+npm run typecheck
+npm run build
+
+cd ../web
+npm ci
+npm audit --audit-level=low
+npm run lint
+npm run typecheck
+npm run typecheck:e2e
+npm test -- --runInBand
+npm run build
+npx playwright install chromium
+npm run test:dependencies:browser
+```
+
+The browser dependency checks start a local Vite fixture and do not require a
+Kubernetes cluster. The production build and synthetic impact suites remain
+separate checks in CI.
+
+### Portable tools
+
+Commit reusable build, test, fixture, and release tools with documented
+prerequisites and configurable inputs. Bash and Python are valid test tools,
+but a script must not depend on a contributor's home directory, private
+files, or a particular workstation. Install its declared tools on `PATH`;
+the multi-cluster fixture requires Bash 4 or later.
+
+Keep workstation launchers, one-off release procedures, and run evidence
+outside the repository. The root `.evidence/`, `release-evidence/`, and
+`.local-validation/` directories are ignored as a safety net, not as a place
+to publish private data. Never commit Secret values, kubeconfigs, credentials,
+or database backups. Run destructive fixtures only in disposable clusters.
+
+## Run modes
+
+The CLI has four modes:
+
+| Flag / subcommand | Behaviour |
+|---|---|
+| *(default)* | Start an informer + REST + WebSocket server and run until `Ctrl-C`. This is what the Helm chart runs in the Pod. |
+| `-once` | Walk every API resource the cluster exposes, build the graph, write it to stdout, and exit. `-format` picks the output: `json` (default), `dot`, or a rendered `svg`. Useful for one-off dumps and for offline tooling. |
+| `export --format=dot` | Same as `-once` but emits only DOT (to stdout or `--output`) and supports `--namespace` filtering + a `--title` override. See [CLI reference](./cli-reference.md). |
+| `rules-test --pack=...` | Offline Rego rule-pack evaluator — load a pack from a directory or OCI ref, evaluate samples, report per-fixture edges. Used by rule-pack contributors before publishing. |
+
+## Adding a new edge type — a worked example
+
+Suppose you want to add `EdgeTypeMountsCSIDriver` (a Pod's CSI volume
+references a `CSIDriver` cluster-scoped resource). Walk through this
+end-to-end so you have a feel for how a contribution lands.
+
+### 1. Declare the type
+
+Edit `pkg/graph/model.go`:
+
+```go
+const (
+    // ... existing constants
+    EdgeTypeMountsCSIDriver EdgeType = "MOUNTS_CSI_DRIVER"
+)
+
+var AllEdgeTypes = []EdgeType{
+    // ... existing types
+    EdgeTypeMountsCSIDriver,
+}
+```
+
+### 2. Make the resource visible
+
+If the `to` end of your edge is a kind KubeAtlas does not yet watch,
+add it to `pkg/discovery/resources.go::CoreGVRs`. CSIDrivers live at
+`storage.k8s.io/v1`.
+
+### 3. Write the extractor
+
+Create `pkg/extractor/csidriver.go` (interface lands in P0-T15):
+
+```go
+package extractor
+
+func (r *Registry) extractCSIDrivers(pod graph.Resource, all []graph.Resource) []graph.Edge {
+    // 1. Read pod.Spec.Volumes for csi.driver references.
+    // 2. For each driver name, emit Edge{
+    //        From: pod.ID(),
+    //        To:   "/CSIDriver/" + name,
+    //        Type: graph.EdgeTypeMountsCSIDriver,
+    //    }
+}
+```
+
+Register it in `Registry.Default()`.
+
+### 4. Test it
+
+Create `pkg/extractor/csidriver_test.go`:
+
+```go
+func TestCSIDriver_HappyPath(t *testing.T) {
+    pod := graph.Resource{ /* ... volumes referencing "ebs.csi.aws.com" ... */ }
+    edges := registry.ExtractAll(pod, allResources)
+    // Assert exactly one edge with Type == EdgeTypeMountsCSIDriver.
+}
+```
+
+Aim for ≥ 80% coverage on the new extractor — the project enforces
+this via `go tool cover` on `pkg/extractor`.
+
+### 5. Document it
+
+Add a row to the edge-type table in
+[`docs/docs/architecture.md`](./architecture.md). One sentence is
+enough: "MOUNTS_CSI_DRIVER — Pod → CSIDriver (cluster scope), via
+spec.volumes[].csi.driver."
+
+### 6. Open a PR
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat(extractor): add MOUNTS_CSI_DRIVER edge
+
+CSI volumes reference a CSIDriver resource at the cluster scope.
+Adds the extractor + 5 test cases and updates architecture.md.
+
+Signed-off-by: Your Name <you@example.com>
+```
+
+CI will reject the PR if any of these fail:
+
+- `go test ./...` (race-enabled)
+- `golangci-lint run ./...`
+- The non-ASCII gate (no CJK in `cmd/` or `pkg/`)
+- The DCO gate (every commit needs `Signed-off-by`)
+- The Conventional Commits gate (PR title and every commit subject)
+
+See the [CONTRIBUTING.md](https://github.com/lithastra/kubeatlas/blob/main/CONTRIBUTING.md)
+for the full list of allowed scopes.
+
+## Where to ask questions
+
+- **Bug reports / feature requests** — open a GitHub issue.
+- **Design discussions** — start a GitHub Discussion.
+- **Security** — see [SECURITY.md](https://github.com/lithastra/kubeatlas/blob/main/SECURITY.md).

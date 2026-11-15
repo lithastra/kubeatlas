@@ -142,7 +142,7 @@ The fifteen built-in edge types are:
 Additional types come from any loaded
 [Rego rule packs](./concepts/rego-rules.md).
 
-## Impact analysis (v1.7, unreleased)
+## Impact analysis (v1.7) {/* #impact-analysis-v17-unreleased */}
 
 This endpoint is implemented in the development tree, **not shipped in v1.6.0**.
 Web/CLI/report integration and real-environment candidate acceptance remain
@@ -369,7 +369,7 @@ for the design.
 
 ### `GET /api/v1/snapshots`
 
-Lists the recorded snapshot markers, most-recent first. In v1.7 development,
+Lists the recorded snapshot markers, most-recent first. In v1.7,
 use `?cluster=prod` to select one attached member in federation mode; omit
 `cluster` in standalone mode to select only unlabelled records. Named-member
 counts exclude unlabelled aggregate markers. The response schema is unchanged.
@@ -398,7 +398,7 @@ exceed the configured retention.
 `400` if `from` is missing or unparseable, if `from` is not before
 `to`, or if the window is wider than retention.
 
-For v1.7 development, both history reads additionally require exactly one
+For v1.7, both history reads additionally require exactly one
 `cluster` in federation mode (`?cluster=prod`); repeated, empty or comma-separated
 values return 400. Member visibility is checked before attachment/storage reads:
 401/403 for missing/denied authorization, 404 for an authorized unattached member.
@@ -421,7 +421,7 @@ curl -s 'http://localhost:8080/api/v1/snapshots/diff?from=1h&to=now' | jq .
 ### `POST /api/_internal/snapshot/trigger`
 
 Writes one `snapshot_meta` observation marker when snapshots are enabled.
-In v1.7 development, resource and edge counts and append share one atomic
+In v1.7, resource and edge counts and append share one atomic
 stored-graph observation for the selected member. Edges with missing endpoints
 or endpoints in different members do not count. This does not perform a Kubernetes
 full sync, drain the history writer, or verify a backup or recovery point.
@@ -451,10 +451,9 @@ The v1.7 `snapshot trigger` CLI sends one selected `--cluster` and optional
 receipt before printing. Its thirty-second client ceiling does not extend the
 server's five-second store budget. The Helm CronJob can pass one
 `snapshots.trigger.cluster` and an existing `tokenSecretRef`, with Job retries
-disabled. Unscoped federation requests still fail closed. The chart's default
-v1.6.0 image is unchanged: member support requires a matching development image.
+disabled. Unscoped federation requests still fail closed. Pin the v1.7.0 chart and application image for member support.
 See [internal member markers](./installation/multicluster.md#internal-member-markers-v17-development)
-for transport trust, unknown outcomes and pending deployment qualification.
+for transport trust, unknown outcomes and deployment boundaries.
 
 ## Search
 

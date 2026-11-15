@@ -15,10 +15,10 @@ section in the Developer Guide.
 ## Prerequisites
 
 - **Kubernetes 1.34–1.36** — the three minor
-  branches frozen and tested for the v1.6.0 source-validation baseline. Vanilla
+  branches frozen and tested for the v1.6.0 and v1.7.0 source-validation baselines. Vanilla
   Kubernetes, Docker Desktop, and `kind` are the release-gating
   environments; provider-specific distributions are not part of the
-  v1.6 gate. If you do not have a cluster, [`kind`](https://kind.sigs.k8s.io/)
+  v1.7 gate. If you do not have a cluster, [`kind`](https://kind.sigs.k8s.io/)
   v0.32 on Docker is the fastest local path.
 - [`kubectl`](https://kubernetes.io/docs/tasks/tools/) at the same
   minor version as your cluster.
@@ -29,14 +29,14 @@ section in the Developer Guide.
 The chart is published as an OCI artifact on GHCR. No `helm repo add`
 needed.
 
-The command below installs the published **v1.6.0** chart. The broader
+The command below installs the published **v1.7.0** chart. The broader
 source-validation matrix covers Kubernetes 1.34–1.36; the final public Tier 2
 installation smoke check covered Linux AMD64 on Kubernetes 1.36.1.
 See the [release matrix](./release-process.md) for evidence and limits.
 
 ```bash
 helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas \
-  --version 1.6.0 \
+  --version 1.7.0 \
   --namespace kubeatlas --create-namespace
 ```
 

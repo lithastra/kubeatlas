@@ -19,20 +19,22 @@ const article = (html) => {
 
 test('stable docs own the root; next and historical versions remain distinct', () => {
   const stable = page();
-  assert.match(stable, /name="?docsearch:version"? content="?1\.6\.0(?:["\s/])/);
+  assert.match(stable, /name="?docsearch:version"? content="?1\.7\.0(?:["\s/])/);
   assert.doesNotMatch(stable, /theme-doc-version-banner/);
-  assert.match(article(stable), /v1\.6\.0 was released on September 26, 2026/);
+  assert.match(article(stable), /v1\.7\.0 was released on November 15, 2026/);
   assert.doesNotMatch(article(stable), /release candidate|has not been published/i);
-  assert.match(stable, /role=button[^>]*>1\.6\.0<\/a>/);
+  assert.match(stable, /role=button[^>]*>1\.7\.0<\/a>/);
   assert.match(stable, /href=\/?next\/?>Next \(unreleased\)/);
   assert.match(text(page('next')), /This is unreleased documentation/);
+  assert.match(text(page('1.6.0')), /no longer actively maintained/);
+  assert.match(article(page('1.6.0')), /v1\.6\.0 was released on September 26, 2026/);
   assert.match(text(page('1.5.2')), /no longer actively maintained/);
   assert.match(page('1.5.2'), /name="?docsearch:version"? content="?1\.5\.2(?:["\s/])/);
   // Preserve the original snapshot, including its historical 1.5.1 pin.
   assert.match(article(page('1.5.2/quick-start')), /--version 1\.5\.1/);
 });
 
-test('the v1.7 development contract is unreleased and does not change stable scope', () => {
+test('the development log preserves its historical evidence boundaries', () => {
   const contract = page('next/development/impact-analysis');
   assert.match(text(contract), /This is unreleased documentation/);
   assert.match(article(contract), /M0 design baseline, not a shipped feature/);
@@ -86,18 +88,20 @@ test('the v1.7 development contract is unreleased and does not change stable sco
   assert.match(article(contract), /not real-cluster acceptance/);
   assert.match(article(page('next/cli-reference')), /kubectl atlas impact/);
   assert.match(article(page('next/cli-reference')), /KUBEATLAS_TOKEN/);
-  assert.doesNotMatch(article(page('cli-reference')), /kubectl atlas impact/);
+  assert.match(article(page('cli-reference')), /kubectl atlas impact/);
+  assert.doesNotMatch(article(page('1.6.0/cli-reference')), /kubectl atlas impact/);
   assert.match(article(contract), /does not disable collection/);
   assert.match(article(contract), /healthy registered types are never a complete API inventory/);
-  assert.match(article(page('next/api-reference')), /Impact analysis \(v1\.7, unreleased\)/);
+  assert.match(article(page('next/api-reference')), /Impact analysis \(v1\.7\)/);
   assert.doesNotMatch(article(page('api-reference')), /Impact analysis \(v1\.7, unreleased\)/);
   assert.match(article(page('next/roadmap')), /v1\.7\.0/);
-  assert.doesNotMatch(article(page('roadmap')), /v1\.7\.0/);
-  assert.doesNotMatch(page(), /href=["']?[^\s>"']*development\/impact-analysis/);
+  assert.match(article(page('roadmap')), /v1\.7\.0 was released on November 15, 2026/);
+  assert.match(article(page('api-reference')), /Impact analysis \(v1\.7\)/);
+  assert.doesNotMatch(article(page('api-reference')), /v1\.7, unreleased/);
 });
 
 for (const prefix of ['', 'next/']) {
-  test(`${prefix || 'stable/'} fresh-install instructions use v1.6.0`, () => {
+  test(`${prefix || 'stable/'} fresh-install instructions use v1.7.0`, () => {
     for (const route of [
       'quick-start', 'installation/helm', 'installation/cert-manager',
       'installation/eks', 'installation/openshift', 'installation/ingress-alb',
@@ -105,7 +109,7 @@ for (const prefix of ['', 'next/']) {
       'installation/otel-integration', 'concepts/snapshots',
     ]) {
       const content = article(page(prefix + route));
-      assert.match(content, /--version 1\.6\.0/, route);
+      assert.match(content, /--version 1\.7\.0/, route);
       assert.doesNotMatch(content, /--version 1\.5\.2/, route);
     }
   });
@@ -118,13 +122,13 @@ for (const prefix of ['', 'next/']) {
     const oldUpgrade = content.slice(start, end);
     assert.match(oldUpgrade, /--version 0\.22\.1/);
     assert.match(oldUpgrade, /--version 1\.5\.2/);
-    assert.doesNotMatch(oldUpgrade, /--version 1\.6\.0/);
+    assert.doesNotMatch(oldUpgrade, /--version 1\.7\.0/);
     const commands = [...page(prefix + 'installation/persistence')
       .matchAll(/<pre[\s\S]*?<\/pre>/g)].map((match) => text(match[0]));
     const fresh = commands.filter((command) =>
       command.includes('helm install kubeatlas oci://ghcr.io/lithastra/charts/kubeatlas'));
     assert.equal(fresh.length, 2, 'embedded and BYO examples must remain pinned');
-    for (const command of fresh) assert.match(command, /--version 1\.6\.0/);
+    for (const command of fresh) assert.match(command, /--version 1\.7\.0/);
     assert.match(content, /Security upgrade to v1\.5\.2/);
   });
 
@@ -138,15 +142,19 @@ for (const prefix of ['', 'next/']) {
       'No 72-hour endurance test, dedicated performance acceptance',
       '1.0.1 source-only delivery',
       'not a v1.6.0 compatibility result',
+      'd819ce163b4885d41510a4dff77c0dc7a8bd4f3c',
+      '600.06-second',
+      '76.2 ms',
+      '62.9 ms',
     ]) assert.ok(content.includes(value), value);
-    assert.doesNotMatch(content, /publication pending|current public release is still v1\.5\.2/);
+    assert.doesNotMatch(content, /publication pending|current public release is still v1\.5\.2|V17_[A-Z_]+/);
   });
 
   test(`${prefix || 'stable/'} renamed sections preserve inbound anchors`, () => {
     for (const [route, ids] of [
       ['release-process', ['verifying-a-v16-core-candidate']],
       ['concepts/performance', ['planned-v16-release-gate']],
-      ['roadmap', ['v16-planned--production-operability', 'committed-scope', 'v160-release-gates']],
+      ['roadmap', ['v16-planned--production-operability', 'committed-scope', 'v160-release-gates', 'v170--explainable-impact-analysis-in-development']],
     ]) {
       const html = page(prefix + route);
       for (const id of ids) {
@@ -162,7 +170,7 @@ test('version-qualified stable URLs have temporary, path-preserving edge aliases
   assert.equal(read('build/_redirects'), source);
   const rules = source.split('\n').map((line) => line.trim())
     .filter((line) => line && !line.startsWith('#'));
-  assert.deepEqual(rules, ['/1.6.0 / 302', '/1.6.0/* /:splat 302']);
+  assert.deepEqual(rules, ['/1.7.0 / 302', '/1.7.0/* /:splat 302']);
   // A 301 would leave historical links pointing at a newer stable version later.
   assert.doesNotMatch(source, /301|\/1\.5\.2/);
 });

@@ -12,7 +12,7 @@ to invoke a specific operation.
 
 ## Subcommands
 
-### `kubeatlas snapshot trigger` (v1.7 development)
+### `kubeatlas snapshot trigger` (v1.7) {/* #kubeatlas-snapshot-trigger-v17-development */}
 
 Records one stored-graph observation marker through an existing internal operator
 endpoint. It does not access Kubernetes or PostgreSQL directly. Federation
@@ -220,7 +220,7 @@ need the `kubeatlas` binary on `PATH`.
 | `--context`, `--kubeconfig` | Select the cluster — the kubeconfig context and file. |
 | `--no-browser` | Print the URL (or file path) instead of opening a browser. |
 
-### `kubectl atlas impact` (v1.7, unreleased)
+### `kubectl atlas impact` (v1.7) {/* #kubectl-atlas-impact-v17-unreleased */}
 
 This new subcommand reads one captured analysis from `GET /api/v1/impact`.
 Unlike the view commands above, it always uses a running KubeAtlas server,

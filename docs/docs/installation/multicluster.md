@@ -39,9 +39,9 @@ The federated surface is served under `/api/v1/federation/*`:
 | `GET /api/v1/federation/clusters` | The attached member clusters. |
 | `GET /api/v1/federation/graph?cluster=a,b` | A merged (or per-cluster, `level=cluster`) view across the named clusters. |
 
-## Impact API inventory (v1.7 development)
+## Impact API inventory (v1.7) {/* #impact-api-inventory-v17-development */}
 
-In development source, each member informer periodically reads that member's
+In v1.7, each member informer periodically reads that member's
 API discovery metadata using its own kubeconfig. The impact response includes
 cached, cluster-scoped inventory evidence; **API observation details** in the
 Web result shows its before/after state. These reads run in the background,
@@ -58,10 +58,10 @@ object collection has separate read-permission requirements described below.
 Rounds retain the ten-second deadline, five-minute polling interval,
 ten-minute expiry, and bounded endpoint inventory. Removing a member or
 shutting down cancels and joins its worker; reattaching the name starts a new
-inventory generation. v1.7 is unreleased and real deployment acceptance remains
-pending.
+inventory generation. See the [release qualification](../release-process.md#v170-release-matrix)
+for the deployed test scope and remaining limits.
 
-## Member CRD and Gatekeeper collection (v1.7 development)
+## Member CRD and Gatekeeper collection (v1.7) {/* #member-crd-and-gatekeeper-collection-v17-development */}
 
 Each member bundle also runs CRD and Gatekeeper discovery using that member's
 clients. Custom-resource instances and Constraints, their derived edges, and
@@ -97,9 +97,9 @@ Different API versions, unregistered/retired endpoints, unversioned rows and
 reference-only nodes are retained. Stopping a member or removing a CRD/template
 does not itself sweep its instances. CRD version equivalence, complete collector
 coverage, member history continuity and real deployment acceptance remain open.
-Frozen-candidate deployment validation remains pending.
+See the release matrix for the bounded deployed validation scope.
 
-## Member retained history metadata (v1.7 development)
+## Member retained history metadata (v1.7) {/* #member-retained-history-metadata-v17-development */}
 
 When Tier 2 storage and snapshots/history recording are enabled, each running
 member bundle also owns a retained-metadata observer. It reads only that
@@ -127,7 +127,7 @@ Event bounds do not prove continuous history; a marker is not a backup or a
 verified recovery point. The scoped history reads described below separately
 apply member visibility to the existing snapshot list and diff routes.
 
-## Member recording state and loss (v1.7 development)
+## Member recording state and loss (v1.7) {/* #member-recording-state-and-loss-v17-development */}
 
 Tier 2 members with history enabled bind their core, CRD instance and Gatekeeper
 constraint event sinks to one independent recording session per member. It uses
@@ -173,7 +173,7 @@ using the existing queue budget with unsupported member recording evidence.
 Retained-metadata observations remain independent and cannot erase recording
 loss, prove a lossless interval or verify a recovery point.
 
-## Scoped history reads (v1.7 development)
+## Scoped history reads (v1.7) {/* #scoped-history-reads-v17-development */}
 
 With Tier 2 history enabled, the existing v1 snapshot list and diff routes now
 select exactly one member before reading retained metadata:
@@ -219,7 +219,7 @@ it does not add write authorization to the visibility rules. The Web and
 read-only snapshot CLI clients supply explicit member scope independently of
 that operator-only write path.
 
-## Internal member markers (v1.7 development)
+## Internal member markers (v1.7) {/* #internal-member-markers-v17-development */}
 
 With snapshots enabled, an operator can send one
 `POST /api/_internal/snapshot/trigger?cluster=prod&trigger=manual` to record a
@@ -249,7 +249,7 @@ operator repeat is another write and may create a second marker.
 
 A marker is graph-observation metadata, not a Kubernetes full sync, drained
 history-writer barrier, backup, or recovery point. It does not clear known
-history gaps. In v1.7 development, `kubeatlas snapshot trigger --cluster prod`
+history gaps. In v1.7, `kubeatlas snapshot trigger --cluster prod`
 now makes one scoped POST with an optional bearer credential from
 `KUBEATLAS_TOKEN`. No member is inferred from kubeconfig or an all-members view.
 The CLI rejects repeated flags and prints only a validated receipt. Non-200
@@ -279,7 +279,7 @@ For an existing Tier 2 federation, the chart can pass one member and inject a
 credential from an existing Secret in the release namespace:
 
 ```yaml
-# Select a matching v1.7 development image separately before using these fields.
+# Pin the v1.7.0 chart and application before using these fields.
 # The chart still defaults to v1.6.0; this change publishes no new image.
 snapshots:
   enabled: true
@@ -308,7 +308,7 @@ execution or operator repeats may create extra markers. Real PostgreSQL/cluster
 qualification remains pending. V1 OpenAPI advertises the internal selector and
 optional member echo; the frozen v1alpha1 specification is unchanged.
 
-## History clients (v1.7 development)
+## History clients (v1.7) {/* #history-clients-v17-development */}
 
 The snapshot page, topology diff canvas and diff change log use the existing
 cluster strip. In federation mode, select one attached member before reading

@@ -18,6 +18,58 @@ weekly public clean-cluster workflow anonymously verifies the current GitHub
 binary/checksum, public OCI Chart, versioned documentation, and clean Tier 1
 and Tier 2 installs. See [Signals, alerts, and recovery](./operations/runbooks.md).
 
+## v1.7.0 release matrix {/* #v170-release-matrix */}
+
+[KubeAtlas v1.7.0](https://github.com/lithastra/kubeatlas/releases/tag/v1.7.0)
+was published on **November 15, 2026**, from signed-tag source
+`d819ce163b4885d41510a4dff77c0dc7a8bd4f3c`.
+
+| Component | Version and identity | Evidence |
+|---|---|---|
+| Server and CLI | `v1.7.0`; ten archives and SHA-256 checksums | Checksums, static metadata for all archives and native macOS ARM64 execution; [public download evidence](https://github.com/lithastra/kubeatlas/releases/tag/v1.7.0). |
+| Application image | `1.7.0`, `sha256:786c70665dab2fa7a99316a658be603df425df4b84596cf7ada5e272f10866ac` | [Signed OCI audits and clean Tier 1/Tier 2 installation](https://github.com/lithastra/kubeatlas/actions/runs/43662489097). |
+| PostgreSQL + AGE | `16.15-age1.6.0-rc0.2`, `sha256:412ae56754e71aac96e8cb6327f70782c50bd4aeff75ff0ddf32eb4ee7400936` | Reused immutable image; native AMD64/ARM64 checks and release-bound signature/attestations. AGE remains upstream `1.6.0-rc0`. |
+| Helm chart | `1.7.0`, `sha256:01b8c64b358e6c529afc445baed2799feb55bbe9c3689ba3354ec7b9142bea5f` | Anonymous OCI verification and clean Tier 1/Tier 2 installation. |
+| Documentation | `1.7.0` stable | Historical versions remain available; `/next/` is unreleased. |
+
+The [exact-source CI](https://github.com/lithastra/kubeatlas/actions/runs/43659451540)
+and [full manual preflight](https://github.com/lithastra/kubeatlas/actions/runs/43659458131)
+cover the final release source. Preflight includes Kubernetes 1.34/1.35/1.36,
+CloudNativePG upgrade windows and public v1.5.2/v1.6.0 upgrade/restore.
+
+### Functional and performance scope
+
+- A complete **600.06-second** local Docker Desktop window passed on
+  implementation candidate `421e09524cd7f81b68e497ce076185248706af4f`.
+  The release source differs only in release documentation and its merge
+  commit; production sources and dependency locks are identical.
+- Both tiers passed real Web/API/CLI capture/export and UID-conflict checks,
+  collection create/update/delete, snapshot marker/diff and Secret-reference
+  checks. The window recorded no unexpected restart, OOM, snapshot drop or
+  write failure. Collector accounts had no Secret-read permission.
+- On Apple M4 with a 10-vCPU, approximately 8 GB Docker VM, the live 5,000-object
+  ConfigMap-heavy sparse profile used 10 warmups and 100 verified samples per
+  tier, depth 5 and result limit 200. Tier 1 p95 was **76.2 ms** with 269 edges;
+  Tier 2 p95 was **62.9 ms** with 286 edges. These are separately declared
+  projections, not a claim about dense graphs or arbitrary production loads.
+- Member API/CLI checks covered allowed/denied scopes, anonymous rejection,
+  UID conflict and denied exports, plus real CRD and Gatekeeper-object
+  create/update/delete. Two logical members used one physical cluster.
+  No Gatekeeper admission engine or external identity-provider integration
+  was exercised by that fixture.
+- An earlier 14,767-object Desktop-cluster attempt returned HTTP 413 and is
+  retained as failed evidence. The successful run used an isolated cluster;
+  old stress workloads were not removed. A selected-cluster projection can
+  exceed its byte budget even for a shallow traversal.
+- The release owner replaced the earlier endurance requirement with the
+  ten-minute functional window. **No endurance, HA, effective-permission or
+  general production-reliability guarantee is claimed.** Binary archives
+  remain checksum-verified; OCI signatures do not sign those archives.
+
+Independently versioned integrations retain the delivery boundaries in the
+historical matrix below. Core publication is not a new plugin compatibility
+or distribution claim.
+
 ## Source-history maintenance (2026-09-24)
 
 Repository history was rewritten to remove workstation-specific validation
